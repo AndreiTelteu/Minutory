@@ -1,20 +1,19 @@
 # Product Overview
 
-This is a Laravel Vue starter kit application that provides a modern full-stack web development foundation. The project combines Laravel's robust backend framework with Vue.js frontend using Inertia.js for seamless SPA-like experiences without the complexity of separate API endpoints.
+MeetingAI is an intelligent platform that provides high-quality transcription and analysis for meetings. By leveraging advanced AI, it captures conversations, identifies speakers, and generates concise summaries, enabling teams to focus on collaboration rather than note-taking.
 
 ## Key Features
 
-- Full-stack web application with Laravel backend and Vue.js frontend
-- Inertia.js integration for smooth page transitions and data flow
-- TypeScript support for type-safe frontend development
-- Tailwind CSS for utility-first styling
-- SQLite database for simple local development
-- Modern build tooling with Vite
-- Comprehensive testing setup with Pest PHP
+- **Meeting Transcription:** Get transcripts of your meeting recordings.
+- **Speaker Identification:** Automatically distinguish between different speakers in the conversation.
+- **Action Item Detection:** Identify and extract actionable tasks and decisions from the discussion.
+- **Automated Summaries:** Receive AI-generated summaries of key topics and outcomes.
+- **Searchable Archives:** Easily search and retrieve information from past meeting transcripts.
+- **Multi-platform Integration:** Works with popular meeting platforms like Zoom, Google Meet, and Microsoft Teams.
 
 ## Target Use Cases
 
-- Rapid prototyping of web applications
-- Building modern SPAs with server-side rendering capabilities
-- Projects requiring both robust backend logic and interactive frontend experiences
-- Applications that benefit from Laravel's ecosystem while maintaining modern frontend practices
+- **Business Meetings:** Keep a perfect record of client calls, team meetings, and board discussions.
+- **User Research:** Capture and analyze customer interviews and feedback sessions.
+- **Educational Lectures:** Provide students with searchable transcripts of classes and lectures.
+- **Journalism:** Accurately transcribe interviews and press conferences.

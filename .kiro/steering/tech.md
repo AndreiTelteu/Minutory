@@ -5,7 +5,7 @@
 - **Laravel 12** - Full-featured web framework
 - **Inertia.js Laravel** - Server-side adapter for SPA-like experiences
 - **SQLite** - Default database for development
-- **Pest PHP** - Modern testing framework
+- **Pest PHP** - Modern testing framework - version 4 beta
 
 ## Frontend
 - **Vue.js 3** - Progressive JavaScript framework
