@@ -15,6 +15,15 @@ Minutory is an intelligent AI meeting platform that lets you upload meeting vide
 - Seamless SPA-like UX with Inertia.js (Laravel + Vue 3)
 - Development-focused workflow using MySQL, queues, and fakes
 
+## Screenshots
+
+Note: Placeholder images are linked below. Will replace these with real screenshots as the project evolves.
+
+| ![Dashboard](https://picsum.photos/seed/meetingai-dashboard/1200/700) <br> Dashboard | ![Clients List](https://picsum.photos/seed/meetingai-clients/1200/700) <br> Clients List |
+| --- | --- |
+| ![Meeting Upload & Processing](https://picsum.photos/seed/meetingai-upload/1200/700) <br> Meeting Upload & Processing | ![Meeting Playback with Transcriptions](https://picsum.photos/seed/meetingai-playback/1200/700) <br> Meeting Playback with Transcriptions |
+| ![AI Chat and Search Results](https://picsum.photos/seed/meetingai-ai-chat/1200/700) <br> AI Chat and Search Results |  |
+
 ## Architecture Overview
 
 - Frontend: Vue.js 3 + TypeScript, Tailwind CSS 4, Inertia.js (client)
@@ -120,15 +129,6 @@ php artisan make:model ModelName
 - Client: name, email, company, phone; has many meetings
 - Meeting: belongs to client; title, video_path, status, duration, timestamps
 - Transcription: belongs to meeting; speaker, text, start/end times, confidence
-
-## Screenshots
-
-Note: Placeholder images are linked below. Will replace these with real screenshots as the project evolves.
-
-| ![Dashboard](https://picsum.photos/seed/meetingai-dashboard/1200/700) <br> Dashboard | ![Clients List](https://picsum.photos/seed/meetingai-clients/1200/700) <br> Clients List |
-| --- | --- |
-| ![Meeting Upload & Processing](https://picsum.photos/seed/meetingai-upload/1200/700) <br> Meeting Upload & Processing | ![Meeting Playback with Transcriptions](https://picsum.photos/seed/meetingai-playback/1200/700) <br> Meeting Playback with Transcriptions |
-| ![AI Chat and Search Results](https://picsum.photos/seed/meetingai-ai-chat/1200/700) <br> AI Chat and Search Results |  |
 
 ## Status and Roadmap
 
