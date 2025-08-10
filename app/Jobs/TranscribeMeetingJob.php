@@ -98,11 +98,15 @@ class TranscribeMeetingJob implements ShouldQueue
             $wavMount = $this->dockerPath($wavPath);
             $transcriptMount = $this->dockerPath($transcriptPath);
     
+            $threads = $this->getCpuThreads();
+            Log::info("Using {$threads} threads for Scriberr transcription on host");
+
             $scriberrCmd = sprintf(
-                'docker run --rm -v "%s:/input.wav" -v "%s:/transcript.json" %s transcribe.py --audio-file /input.wav --model-size medium --output-file /transcript.json --threads 8 --language ro --diarize --align --device cpu --compute-type int8',
+                'docker run --rm -v "%s:/input.wav" -v "%s:/transcript.json" %s transcribe.py --audio-file /input.wav --model-size medium --output-file /transcript.json --threads %d --language ro --diarize --align --device cpu --compute-type int8',
                 $wavMount,
                 $transcriptMount,
-                escapeshellarg($scriberrImage)
+                escapeshellarg($scriberrImage),
+                $threads
             );
     
             Log::info("Running transcription docker command for meeting {$meetingId}");
@@ -203,6 +207,74 @@ class TranscribeMeetingJob implements ShouldQueue
         return str_replace('\\', '/', $real);
     }
     
+    /**
+     * Determine the number of logical CPU cores on the host.
+     * Tries platform-specific strategies with safe fallbacks.
+     */
+    private function getCpuThreads(): int
+    {
+        // Windows often exposes NUMBER_OF_PROCESSORS
+        $env = getenv('NUMBER_OF_PROCESSORS');
+        if ($env && is_numeric($env) && (int)$env > 0) {
+            return (int) $env;
+        }
+
+        $commands = [];
+        switch (PHP_OS_FAMILY) {
+            case 'Windows':
+                $commands = [
+                    'powershell -NoProfile -Command "(Get-CimInstance -ClassName Win32_ComputerSystem).NumberOfLogicalProcessors"',
+                    'powershell -NoProfile -Command "(Get-WmiObject -Class Win32_ComputerSystem).NumberOfLogicalProcessors"',
+                    'wmic cpu get NumberOfLogicalProcessors /value',
+                ];
+                break;
+            case 'Darwin':
+                $commands = [
+                    'sysctl -n hw.logicalcpu',
+                    'getconf _NPROCESSORS_ONLN',
+                ];
+                break;
+            default: // Linux/Unix
+                $commands = [
+                    'nproc',
+                    'getconf _NPROCESSORS_ONLN',
+                    'grep -c ^processor /proc/cpuinfo',
+                ];
+                break;
+        }
+
+        foreach ($commands as $cmd) {
+            try {
+                $p = Process::fromShellCommandline($cmd, base_path(), null, null, 5);
+                $p->run();
+                if (!$p->isSuccessful()) {
+                    continue;
+                }
+                $out = trim($p->getOutput() ?: $p->getErrorOutput());
+
+                if ($out === '') {
+                    continue;
+                }
+
+                // Handle WMIC format: "NumberOfLogicalProcessors=16"
+                if (str_contains($out, '=')) {
+                    [, $out] = array_pad(explode('=', $out, 2), 2, '');
+                    $out = trim($out);
+                }
+
+                $val = (int) preg_replace('/[^0-9]/', '', $out);
+                if ($val > 0) {
+                    return $val;
+                }
+            } catch (\Throwable $e) {
+                // Ignore and try the next strategy
+            }
+        }
+
+        // Sensible minimum fallback
+        return 2;
+    }
+
     /**
      * Run a shell command with logging and error handling.
      *

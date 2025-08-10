@@ -89,26 +89,47 @@ def main():
     )
     args = parser.parse_args()
 
-    # 1. Load the WhisperX model with fallback for compute_type
+    # Configure CPU threading based on --threads for CPU runs
+    # This influences PyTorch ops (alignment/diarization) and many BLAS backends.
+    if args.device == "cpu" and args.threads and args.threads > 0:
+        os.environ["OMP_NUM_THREADS"] = str(args.threads)
+        os.environ["MKL_NUM_THREADS"] = str(args.threads)
+        os.environ["OPENBLAS_NUM_THREADS"] = str(args.threads)
+        os.environ["NUMEXPR_NUM_THREADS"] = str(args.threads)
+        try:
+            import torch  # type: ignore
+            torch.set_num_threads(args.threads)
+            interop = max(1, args.threads // 2)
+            torch.set_num_interop_threads(interop)
+            print(f"Configured CPU threads: torch={args.threads}, interop={interop}")
+        except Exception as _e:
+            print(f"Warning: could not fully configure torch thread settings: {_e}")
+
+    # Prepare kwargs for whisperx.load_model and try to pass through CPU thread hint
+    load_kwargs = dict(
+        device=args.device,
+        compute_type=args.compute_type,
+        language=args.language,  # if None, Whisper will attempt language detection
+        download_root=args.models_dir  # Specify the download directory
+    )
     try:
-        model = whisperx.load_model(
-            args.model_size,
-            device=args.device,
-            compute_type=args.compute_type,
-            language=args.language,  # if None, Whisper will attempt language detection
-            download_root=args.models_dir  # Specify the download directory
-        )
+        load_kwargs_with_threads = dict(load_kwargs)
+        load_kwargs_with_threads["asr_options"] = {"cpu_threads": int(args.threads)}
+        model = whisperx.load_model(args.model_size, **load_kwargs_with_threads)
+    except TypeError:
+        # Fallback if asr_options is not supported in this whisperx version.
+        model = whisperx.load_model(args.model_size, **load_kwargs)
     except ValueError as e:
         if "float16 compute type" in str(e) and args.compute_type == "float16":
             print(f"Warning: {e}")
             print("Trying with float32 compute type instead...")
-            model = whisperx.load_model(
-                args.model_size,
-                device=args.device,
-                compute_type="float32",
-                language=args.language,
-                download_root=args.models_dir
-            )
+            load_kwargs["compute_type"] = "float32"
+            try:
+                load_kwargs_with_threads = dict(load_kwargs)
+                load_kwargs_with_threads["asr_options"] = {"cpu_threads": int(args.threads)}
+                model = whisperx.load_model(args.model_size, **load_kwargs_with_threads)
+            except TypeError:
+                model = whisperx.load_model(args.model_size, **load_kwargs)
         else:
             # Re-raise if it's not the float16 issue or fallback also fails
             raise
