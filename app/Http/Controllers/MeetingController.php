@@ -16,8 +16,7 @@ class MeetingController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = Meeting::with('client')
-            ->orderBy('created_at', 'desc');
+        $query = Meeting::query()->with('client');
 
         // Apply filters if provided
         if ($request->filled('client_id')) {
@@ -36,13 +35,36 @@ class MeetingController extends Controller
             $query->whereDate('uploaded_at', '<=', $request->date_to);
         }
 
-        $meetings = $query->paginate(15);
+        // Sorting
+        $allowedSorts = ['uploaded_at', 'title', 'status', 'duration', 'client'];
+        $sort = in_array($request->get('sort'), $allowedSorts, true) ? $request->get('sort') : 'uploaded_at';
+        $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
+
+        if ($sort === 'client') {
+            $query->select('meetings.*')
+                ->leftJoin('clients', 'clients.id', '=', 'meetings.client_id')
+                ->orderBy('clients.name', $direction)
+                ->orderBy('meetings.created_at', 'desc');
+        } else {
+            $column = match ($sort) {
+                'title' => 'title',
+                'status' => 'status',
+                'duration' => 'duration',
+                'uploaded_at' => 'uploaded_at',
+                default => 'uploaded_at',
+            };
+
+            $query->orderBy($column, $direction)
+                ->orderBy('created_at', 'desc');
+        }
+
+        $meetings = $query->paginate(15)->withQueryString();
         $clients = Client::orderBy('name')->get(['id', 'name']);
 
         return Inertia::render('Meetings/Index', [
             'meetings' => $meetings,
             'clients' => $clients,
-            'filters' => $request->only(['client_id', 'status', 'date_from', 'date_to'])
+            'filters' => $request->only(['client_id', 'status', 'date_from', 'date_to', 'sort', 'direction']),
         ]);
     }
 

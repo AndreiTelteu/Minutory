@@ -16,7 +16,7 @@
                 :href="route('home')"
                 :class="[
                   'px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                  $page.component === 'Welcome'
+                  $page.component === 'Dashboard'
                     ? 'bg-blue-100 text-blue-700'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 ]"
@@ -92,7 +92,7 @@
               :href="route('home')"
               :class="[
                 'block px-3 py-2 text-sm font-medium rounded-md transition-colors',
-                $page.component === 'Welcome'
+                $page.component === 'Dashboard'
                   ? 'bg-blue-100 text-blue-700'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
               ]"

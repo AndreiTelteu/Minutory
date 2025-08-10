@@ -1,7 +1,7 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { shallowRef, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 
-interface Meeting {
+interface BaseMeeting {
   id: number
   status: 'pending' | 'processing' | 'completed' | 'failed'
   elapsed_time?: number | null
@@ -12,14 +12,17 @@ interface Meeting {
   queue_progress?: number | null
 }
 
-export function useRealTimeUpdates(meetings: Meeting[]) {
-  const updatedMeetings = ref<Meeting[]>([...meetings])
+/**
+ * Generic real-time updates composable that preserves extra fields on meeting objects.
+ */
+export function useRealTimeUpdates<T extends BaseMeeting>(meetings: T[]) {
+  const updatedMeetings = shallowRef<T[]>([...meetings])
   let intervalId: number | null = null
 
   const updateMeetingStatuses = async () => {
     // Only update meetings that are pending or processing
     const activeMeetings = updatedMeetings.value.filter(
-      meeting => meeting.status === 'pending' || meeting.status === 'processing'
+      (meeting) => meeting.status === 'pending' || meeting.status === 'processing'
     )
 
     if (activeMeetings.length === 0) {
@@ -31,14 +34,15 @@ export function useRealTimeUpdates(meetings: Meeting[]) {
       const updatePromises = activeMeetings.map(async (meeting) => {
         try {
           const response = await axios.get(`/meetings/${meeting.id}/status`)
-          const updatedData = response.data
+          const updatedData = response.data as Partial<T>
 
           // Find and update the meeting in our array
-          const index = updatedMeetings.value.findIndex(m => m.id === meeting.id)
+          const index = updatedMeetings.value.findIndex((m) => m.id === meeting.id)
           if (index !== -1) {
+            // Preserve existing fields while merging updated status data
             updatedMeetings.value[index] = {
-              ...updatedMeetings.value[index],
-              ...updatedData
+              ...(updatedMeetings.value[index] as T),
+              ...(updatedData as T),
             }
           }
         } catch (error) {
@@ -55,7 +59,7 @@ export function useRealTimeUpdates(meetings: Meeting[]) {
   const startUpdates = () => {
     // Update immediately
     updateMeetingStatuses()
-    
+
     // Then update every 2 seconds
     intervalId = window.setInterval(updateMeetingStatuses, 2000)
   }
@@ -79,6 +83,6 @@ export function useRealTimeUpdates(meetings: Meeting[]) {
     meetings: updatedMeetings,
     startUpdates,
     stopUpdates,
-    updateMeetingStatuses
+    updateMeetingStatuses,
   }
 }

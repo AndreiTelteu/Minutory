@@ -18,7 +18,7 @@
       <!-- Filters -->
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         <h2 class="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label for="client_id" class="block text-sm font-medium text-gray-700 mb-1">
               Client
@@ -62,7 +62,30 @@
               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
           </div>
 
-          <div class="md:col-span-4 flex gap-2">
+          <div>
+            <label for="sort" class="block text-sm font-medium text-gray-700 mb-1">
+              Sort By
+            </label>
+            <div class="flex gap-2">
+              <select id="sort" v-model="filterForm.sort"
+                class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                <option value="uploaded_at">Uploaded Date</option>
+                <option value="title">Title</option>
+                <option value="client">Client</option>
+                <option value="status">Status</option>
+                <option value="duration">Duration</option>
+              </select>
+              <button type="button" @click="toggleDirection"
+                :title="`Toggle direction (currently ${filterForm.direction.toUpperCase()})`"
+                class="px-3 py-2 rounded-md border text-sm"
+                :class="filterForm.direction === 'asc' ? 'border-gray-300 text-gray-700' : 'border-gray-800 text-gray-900'">
+                <span v-if="filterForm.direction === 'asc'">↑</span>
+                <span v-else>↓</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="md:col-span-5 flex gap-2">
             <button type="submit"
               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">
               Apply Filters
@@ -91,19 +114,39 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Meeting
+                  <button @click="setSort('title')" class="inline-flex items-center gap-1 hover:text-gray-700">
+                    Meeting
+                    <span :class="['text-xs', filterForm.sort === 'title' ? 'text-gray-900' : 'text-gray-400']">
+                      {{ filterForm.sort === 'title' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
+                    </span>
+                  </button>
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Client
+                  <button @click="setSort('client')" class="inline-flex items-center gap-1 hover:text-gray-700">
+                    Client
+                    <span :class="['text-xs', filterForm.sort === 'client' ? 'text-gray-900' : 'text-gray-400']">
+                      {{ filterForm.sort === 'client' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
+                    </span>
+                  </button>
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-64">
                   Status & Progress
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Uploaded
+                  <button @click="setSort('uploaded_at')" class="inline-flex items-center gap-1 hover:text-gray-700">
+                    Uploaded
+                    <span :class="['text-xs', filterForm.sort === 'uploaded_at' ? 'text-gray-900' : 'text-gray-400']">
+                      {{ filterForm.sort === 'uploaded_at' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
+                    </span>
+                  </button>
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Duration
+                  <button @click="setSort('duration')" class="inline-flex items-center gap-1 hover:text-gray-700">
+                    Duration
+                    <span :class="['text-xs', filterForm.sort === 'duration' ? 'text-gray-900' : 'text-gray-400']">
+                      {{ filterForm.sort === 'duration' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
+                    </span>
+                  </button>
                 </th>
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -153,7 +196,7 @@
               Showing {{ meetings.from }} to {{ meetings.to }} of {{ meetings.total }} results
             </div>
             <div class="flex space-x-1">
-              <Link v-for="link in meetings.links" :key="link.label" :href="link.url" :class="[
+              <Link v-for="link in meetings.links" :key="link.label" :href="link.url || '#'" :class="[
                 'px-3 py-2 text-sm rounded-md',
                 link.active
                   ? 'bg-blue-600 text-white'
@@ -170,12 +213,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/lib/AppLayout.vue'
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue'
 import MeetingProgressIndicator from '@/lib/MeetingProgressIndicator.vue'
 import { useRealTimeUpdates } from '@/lib/useRealTimeUpdates'
+
 
 interface Client {
   id: number
@@ -217,6 +261,8 @@ interface Props {
     status?: string
     date_from?: string
     date_to?: string
+    sort?: string
+    direction?: 'asc' | 'desc'
   }
 }
 
@@ -225,11 +271,22 @@ const props = defineProps<Props>()
 // Use real-time updates for meetings
 const { meetings: realtimeMeetings } = useRealTimeUpdates(props.meetings.data)
 
+// Keep real-time list in sync when Inertia updates props (e.g., after applying filters/sorting)
+watch(
+  () => props.meetings.data,
+  (newMeetings) => {
+    // Replace array to respect new server-sorted/filtered results
+    realtimeMeetings.value = [...newMeetings]
+  }
+)
+
 const filterForm = reactive({
   client_id: props.filters.client_id || '',
   status: props.filters.status || '',
   date_from: props.filters.date_from || '',
-  date_to: props.filters.date_to || ''
+  date_to: props.filters.date_to || '',
+  sort: props.filters.sort || 'uploaded_at',
+  direction: (props.filters.direction as 'asc' | 'desc') || 'desc'
 })
 
 const applyFilters = () => {
@@ -244,6 +301,8 @@ const clearFilters = () => {
   filterForm.status = ''
   filterForm.date_from = ''
   filterForm.date_to = ''
+  filterForm.sort = 'uploaded_at'
+  filterForm.direction = 'desc'
   applyFilters()
 }
 
@@ -263,6 +322,21 @@ const formatDate = (dateString: string) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+const setSort = (column: string) => {
+  if (filterForm.sort === column) {
+    filterForm.direction = filterForm.direction === 'asc' ? 'desc' : 'asc'
+  } else {
+    filterForm.sort = column
+    filterForm.direction = column === 'title' || column === 'client' ? 'asc' : 'desc'
+  }
+  applyFilters()
+}
+
+const toggleDirection = () => {
+  filterForm.direction = filterForm.direction === 'asc' ? 'desc' : 'asc'
+  applyFilters()
 }
 
 const formatDuration = (duration: number | null) => {

@@ -7,7 +7,31 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
-    return Inertia::render('Welcome');
+    // Dashboard data
+    $recentMeetings = \App\Models\Meeting::with('client')
+        ->orderBy('created_at', 'desc')
+        ->limit(5)
+        ->get();
+
+    $stats = [
+        'total_clients' => \App\Models\Client::count(),
+        'total_meetings' => \App\Models\Meeting::count(),
+        'completed_meetings' => \App\Models\Meeting::where('status', 'completed')->count(),
+        'processing_meetings' => \App\Models\Meeting::where('status', 'processing')->count(),
+        'pending_meetings' => \App\Models\Meeting::where('status', 'pending')->count(),
+        'failed_meetings' => \App\Models\Meeting::where('status', 'failed')->count(),
+    ];
+
+    $topClients = \App\Models\Client::withCount('meetings')
+        ->orderBy('meetings_count', 'desc')
+        ->limit(5)
+        ->get(['id', 'name']);
+
+    return Inertia::render('Dashboard', [
+        'recentMeetings' => $recentMeetings,
+        'stats' => $stats,
+        'topClients' => $topClients,
+    ]);
 })->name('home');
 
 Route::resource('clients', ClientController::class);

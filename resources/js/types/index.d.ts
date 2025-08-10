@@ -10,6 +10,10 @@ export type AppPageProps<T extends Record<string, unknown> = Record<string, unkn
     auth: Auth;
     ziggy: Config & { location: string };
     csrf_token: string;
+    flash?: {
+        success?: string;
+        error?: string;
+    };
 };
 
 export interface User {
