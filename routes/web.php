@@ -11,3 +11,6 @@ Route::get('/', function () {
 
 Route::resource('clients', ClientController::class);
 Route::resource('meetings', MeetingController::class);
+
+// API endpoint for real-time meeting status updates
+Route::get('meetings/{meeting}/status', [MeetingController::class, 'status'])->name('meetings.status');

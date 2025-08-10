@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
 use Illuminate\Http\Request;
@@ -92,8 +93,18 @@ class MeetingController extends Controller
             // Store the file in public disk so it can be served
             $videoPath = $videoFile->storeAs($storagePath, $fileName, 'public');
             
-            // Update meeting with video path
-            $meeting->update(['video_path' => $videoPath]);
+            // Update meeting with video path and estimate duration (for demo purposes)
+            $estimatedDuration = rand(300, 3600); // Random duration between 5-60 minutes
+            $estimatedProcessingTime = max(10, $estimatedDuration / 60); // 1 second per minute of video, minimum 10 seconds
+            
+            $meeting->update([
+                'video_path' => $videoPath,
+                'duration' => $estimatedDuration,
+                'estimated_processing_time' => (int) $estimatedProcessingTime
+            ]);
+
+            // Dispatch transcription job
+            TranscribeMeetingJob::dispatch($meeting);
 
             return redirect()->route('meetings.index')
                 ->with('success', 'Meeting uploaded successfully and is being processed.');
@@ -165,5 +176,23 @@ class MeetingController extends Controller
             return redirect()->route('meetings.index')
                 ->with('error', 'Failed to delete meeting. Please try again.');
         }
+    }
+
+    /**
+     * Get meeting status for real-time updates
+     */
+    public function status(Meeting $meeting)
+    {
+        return response()->json([
+            'id' => $meeting->id,
+            'status' => $meeting->status,
+            'elapsed_time' => $meeting->elapsed_time,
+            'estimated_remaining_time' => $meeting->estimated_remaining_time,
+            'processing_progress' => $meeting->processing_progress,
+            'formatted_elapsed_time' => $meeting->formatted_elapsed_time,
+            'formatted_estimated_remaining_time' => $meeting->formatted_estimated_remaining_time,
+            'queue_progress' => $meeting->queue_progress,
+            'formatted_estimated_processing_time' => $meeting->formatted_estimated_processing_time,
+        ]);
     }
 }

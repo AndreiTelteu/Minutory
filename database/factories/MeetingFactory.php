@@ -20,12 +20,16 @@ class MeetingFactory extends Factory
      */
     public function definition(): array
     {
+        $duration = fake()->numberBetween(300, 3600); // 5 minutes to 1 hour
+        $estimatedProcessingTime = max(10, $duration / 60); // 1 second per minute, minimum 10 seconds
+        
         return [
             'client_id' => Client::factory(),
             'title' => fake()->sentence(3),
             'video_path' => 'meetings/' . fake()->numberBetween(1, 100) . '/' . fake()->numberBetween(1, 1000) . '/video.mp4',
             'status' => fake()->randomElement(['pending', 'processing', 'completed', 'failed']),
-            'duration' => fake()->numberBetween(300, 3600), // 5 minutes to 1 hour
+            'duration' => $duration,
+            'estimated_processing_time' => (int) $estimatedProcessingTime,
             'uploaded_at' => fake()->dateTimeBetween('-1 month', 'now'),
             'processing_started_at' => null,
             'processing_completed_at' => null,
