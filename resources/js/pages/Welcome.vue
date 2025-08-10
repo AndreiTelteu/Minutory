@@ -83,6 +83,14 @@ import { Head, Link } from '@inertiajs/vue3';
                     </ul>
                     <ul class="flex gap-3 text-sm leading-normal">
                         <li>
+                            <Link
+                                :href="route('clients.index')"
+                                class="inline-block rounded-sm border border-indigo-600 bg-indigo-600 px-5 py-1.5 text-sm leading-normal text-white hover:border-indigo-700 hover:bg-indigo-700"
+                            >
+                                Manage Clients
+                            </Link>
+                        </li>
+                        <li>
                             <a
                                 href="https://cloud.laravel.com"
                                 target="_blank"

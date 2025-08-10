@@ -20,3 +20,30 @@ export interface User {
     created_at: string;
     updated_at: string;
 }
+
+export interface Client {
+    id: number;
+    name: string;
+    email: string | null;
+    company: string | null;
+    phone: string | null;
+    meetings_count?: number;
+    meetings?: Meeting[];
+    created_at: string;
+    updated_at: string;
+}
+
+export interface Meeting {
+    id: number;
+    client_id: number;
+    title: string;
+    video_path: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    duration: number | null;
+    uploaded_at: string;
+    processing_started_at: string | null;
+    processing_completed_at: string | null;
+    client?: Client;
+    created_at: string;
+    updated_at: string;
+}
