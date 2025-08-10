@@ -130,7 +130,7 @@ class MeetingController extends Controller
         // Generate video URL for frontend
         $videoUrl = null;
         if ($meeting->video_path && Storage::disk('public')->exists($meeting->video_path)) {
-            $videoUrl = Storage::disk('public')->url($meeting->video_path);
+            $videoUrl = asset('storage/' . $meeting->video_path);
         }
 
         return Inertia::render('Meetings/Show', [

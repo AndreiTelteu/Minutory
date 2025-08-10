@@ -2,7 +2,13 @@
   <AppLayout>
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">Meetings</h1>
+        <div class="flex items-center space-x-4">
+          <h1 class="text-3xl font-bold text-gray-900">Meetings</h1>
+          <div class="flex items-center space-x-2 text-sm text-gray-500">
+            <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span>Live updates active</span>
+          </div>
+        </div>
         <Link :href="route('meetings.create')"
           class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
         Upload Meeting
@@ -17,7 +23,7 @@
             <label for="client_id" class="block text-sm font-medium text-gray-700 mb-1">
               Client
             </label>
-            <select id="client_id" v-model="filterForm.client_id"
+            <select id="client_id" v-model="filterForm.client_id" data-testid="client-filter"
               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
               <option value="">All Clients</option>
               <option v-for="client in clients" :key="client.id" :value="client.id">
@@ -30,7 +36,7 @@
             <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
               Status
             </label>
-            <select id="status" v-model="filterForm.status"
+            <select id="status" v-model="filterForm.status" data-testid="status-filter"
               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
@@ -44,7 +50,7 @@
             <label for="date_from" class="block text-sm font-medium text-gray-700 mb-1">
               From Date
             </label>
-            <input id="date_from" v-model="filterForm.date_from" type="date"
+            <input id="date_from" v-model="filterForm.date_from" type="date" data-testid="date-from"
               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
           </div>
 
@@ -52,7 +58,7 @@
             <label for="date_to" class="block text-sm font-medium text-gray-700 mb-1">
               To Date
             </label>
-            <input id="date_to" v-model="filterForm.date_to" type="date"
+            <input id="date_to" v-model="filterForm.date_to" type="date" data-testid="date-to"
               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
           </div>
 
@@ -71,7 +77,7 @@
 
       <!-- Meetings List -->
       <div class="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div v-if="meetings.data.length === 0" class="p-8 text-center text-gray-500">
+        <div v-if="realtimeMeetings.length === 0" class="p-8 text-center text-gray-500">
           <p class="text-lg">No meetings found.</p>
           <p class="mt-2">
             <Link :href="route('meetings.create')" class="text-blue-600 hover:text-blue-700 font-medium">
@@ -90,8 +96,8 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Client
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-64">
+                  Status & Progress
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Uploaded
@@ -105,15 +111,21 @@
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="meeting in meetings.data" :key="meeting.id" class="hover:bg-gray-50">
+              <tr v-for="meeting in realtimeMeetings" :key="meeting.id" class="hover:bg-gray-50">
                 <td class="px-6 py-4 whitespace-nowrap">
                   <div class="text-sm font-medium text-gray-900">{{ meeting.title }}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <div class="text-sm text-gray-900">{{ meeting.client.name }}</div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <MeetingStatusBadge :status="meeting.status" />
+                <td class="px-6 py-4">
+                  <div class="space-y-2">
+                    <MeetingStatusBadge :status="meeting.status" />
+                    <MeetingProgressIndicator 
+                      v-if="meeting.status === 'pending' || meeting.status === 'processing' || meeting.status === 'failed'"
+                      :meeting="meeting" 
+                    />
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {{ formatDate(meeting.uploaded_at) }}
@@ -162,6 +174,8 @@ import { reactive } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/lib/AppLayout.vue'
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue'
+import MeetingProgressIndicator from '@/lib/MeetingProgressIndicator.vue'
+import { useRealTimeUpdates } from '@/lib/useRealTimeUpdates'
 
 interface Client {
   id: number
@@ -175,6 +189,12 @@ interface Meeting {
   status: 'pending' | 'processing' | 'completed' | 'failed'
   uploaded_at: string
   duration: number | null
+  elapsed_time?: number | null
+  estimated_remaining_time?: number | null
+  processing_progress?: number | null
+  formatted_elapsed_time?: string | null
+  formatted_estimated_remaining_time?: string | null
+  queue_progress?: number | null
 }
 
 interface PaginatedMeetings {
@@ -201,6 +221,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+// Use real-time updates for meetings
+const { meetings: realtimeMeetings } = useRealTimeUpdates(props.meetings.data)
 
 const filterForm = reactive({
   client_id: props.filters.client_id || '',
