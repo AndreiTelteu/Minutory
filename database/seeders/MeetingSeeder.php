@@ -13,6 +13,11 @@ class MeetingSeeder extends Seeder
      */
     public function run(): void
     {
-        Meeting::factory(10)->create();
+        // Create some meetings in different states
+        Meeting::factory(3)->pending()->create();
+        Meeting::factory(2)->processing()->create();
+        Meeting::factory(3)->completed()->withTranscriptions()->create();
+        Meeting::factory(1)->failed()->create();
+        Meeting::factory(1)->completed()->create(); // Completed without transcriptions
     }
 }

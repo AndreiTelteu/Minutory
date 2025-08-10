@@ -73,6 +73,35 @@ class MeetingFactory extends Factory
     }
 
     /**
+     * Create a completed meeting with transcriptions.
+     */
+    public function withTranscriptions(int $count = null): static
+    {
+        return $this->completed()
+            ->afterCreating(function (Meeting $meeting) use ($count) {
+                $transcriptionCount = $count ?? fake()->numberBetween(5, 20);
+                $speakers = ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Chen'];
+                
+                $currentTime = 0;
+                for ($i = 0; $i < $transcriptionCount; $i++) {
+                    $duration = fake()->randomFloat(3, 3, 15); // 3-15 seconds per segment
+                    $speaker = fake()->randomElement($speakers);
+                    
+                    $meeting->transcriptions()->create([
+                        'speaker' => $speaker,
+                        'text' => fake()->paragraph(fake()->numberBetween(1, 3)),
+                        'start_time' => $currentTime,
+                        'end_time' => $currentTime + $duration,
+                        'confidence' => fake()->randomFloat(2, 0.7, 1.0),
+                    ]);
+                    
+                    // Add small gap between segments
+                    $currentTime += $duration + fake()->randomFloat(3, 0.5, 2);
+                }
+            });
+    }
+
+    /**
      * Indicate that the meeting has failed.
      */
     public function failed(): static
