@@ -45,6 +45,17 @@
               >
                 Meetings
               </Link>
+              <Link
+                :href="route('ai.chat')"
+                :class="[
+                  'px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                  $page.component.startsWith('AI/')
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                ]"
+              >
+                AI Assistant
+              </Link>
             </div>
           </div>
 
@@ -109,6 +120,17 @@
               ]"
             >
               Meetings
+            </Link>
+            <Link
+              :href="route('ai.chat')"
+              :class="[
+                'block px-3 py-2 text-sm font-medium rounded-md transition-colors',
+                $page.component.startsWith('AI/')
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              ]"
+            >
+              AI Assistant
             </Link>
           </div>
         </div>

@@ -47,7 +47,7 @@ class TranscriptionFactory extends Factory
     /**
      * Create a sequence of transcriptions with proper timing.
      */
-    public function sequence(float $startTime = 0): static
+    public function withTiming(float $startTime = 0): static
     {
         static $currentTime = 0;
         
