@@ -140,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/lib/AppLayout.vue'
 
@@ -165,6 +165,19 @@ const form = reactive({
   title: '',
   client_id: '',
   video: null as File | null
+})
+
+// Preselect client when navigating from a Client page (e.g. Clients/Show → "Add Meeting")
+onMounted(() => {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const qClientId = params.get('client_id')
+    if (qClientId) {
+      form.client_id = qClientId
+    }
+  } catch {
+    // ignore if not in browser
+  }
 })
 
 const handleFileSelect = (event: Event) => {
@@ -212,8 +225,8 @@ const submit = () => {
   formData.append('video', form.video)
 
   router.post(route('meetings.store'), formData, {
-    onProgress: (progress) => {
-      if (progress.percentage) {
+    onProgress: (progress?: { percentage?: number }) => {
+      if (progress?.percentage !== undefined && progress?.percentage !== null) {
         uploadProgress.value = Math.round(progress.percentage)
       }
     },
