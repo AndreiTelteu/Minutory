@@ -233,12 +233,12 @@ interface Meeting {
   status: 'pending' | 'processing' | 'completed' | 'failed'
   uploaded_at: string
   duration: number | null
-  elapsed_time?: number | null
-  estimated_remaining_time?: number | null
-  processing_progress?: number | null
-  formatted_elapsed_time?: string | null
-  formatted_estimated_remaining_time?: string | null
-  queue_progress?: number | null
+  elapsed_time?: number
+  estimated_remaining_time?: number
+  processing_progress?: number
+  formatted_elapsed_time?: string
+  formatted_estimated_remaining_time?: string
+  queue_progress?: number
 }
 
 interface PaginatedMeetings {
