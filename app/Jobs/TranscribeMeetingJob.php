@@ -19,7 +19,8 @@ class TranscribeMeetingJob implements ShouldQueue
     use Queueable, InteractsWithQueue, SerializesModels;
 
     public $timeout = 3600; // 1 hour timeout
-    public $tries = 1;
+    public $tries = 3; // Allow 3 attempts
+    public $maxExceptions = 3;
 
     /**
      * Create a new job instance.
@@ -303,12 +304,96 @@ class TranscribeMeetingJob implements ShouldQueue
      */
     public function failed(\Throwable $exception): void
     {
-        Log::error("TranscribeMeetingJob failed for meeting {$this->meeting->id}: " . $exception->getMessage());
+        Log::error("TranscribeMeetingJob failed for meeting {$this->meeting->id}", [
+            'error' => $exception->getMessage(),
+            'trace' => $exception->getTraceAsString(),
+            'meeting_id' => $this->meeting->id,
+            'video_path' => $this->meeting->video_path,
+            'attempts' => $this->attempts()
+        ]);
     
-        // Update meeting status to failed
+        // Update meeting status to failed with error details
         $this->meeting->update([
             'status' => 'failed',
             'processing_completed_at' => now(),
+            'error_message' => $this->getUserFriendlyErrorMessage($exception),
+            'technical_error' => $exception->getMessage()
         ]);
+
+        // Clean up any temporary files
+        $this->cleanupTempFiles();
+    }
+
+    /**
+     * Get user-friendly error message based on exception type
+     */
+    private function getUserFriendlyErrorMessage(\Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (str_contains($message, 'Video file not found')) {
+            return 'The video file could not be found. It may have been moved or deleted.';
+        }
+
+        if (str_contains($message, 'WAV conversion')) {
+            return 'Failed to process the video file. The file may be corrupted or in an unsupported format.';
+        }
+
+        if (str_contains($message, 'docker') || str_contains($message, 'Docker')) {
+            return 'Transcription service is temporarily unavailable. Please try again later.';
+        }
+
+        if (str_contains($message, 'timeout') || str_contains($message, 'timed out')) {
+            return 'Transcription took too long to complete. This may happen with very large files.';
+        }
+
+        if (str_contains($message, 'disk') || str_contains($message, 'space')) {
+            return 'Insufficient storage space available for processing.';
+        }
+
+        return 'An unexpected error occurred during transcription. Please try uploading the file again.';
+    }
+
+    /**
+     * Clean up temporary files created during processing
+     */
+    private function cleanupTempFiles(): void
+    {
+        try {
+            $meetingId = $this->meeting->id;
+            $storageDir = base_path() . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . $meetingId;
+            
+            if (File::exists($storageDir)) {
+                $files = File::files($storageDir);
+                foreach ($files as $file) {
+                    if (in_array($file->getExtension(), ['wav', 'json'])) {
+                        File::delete($file->getPathname());
+                    }
+                }
+                
+                // Remove directory if empty
+                if (empty(File::files($storageDir))) {
+                    File::deleteDirectory($storageDir);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning("Failed to cleanup temp files for meeting {$this->meeting->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Determine if the job should be retried based on the exception
+     */
+    public function retryUntil(): \DateTime
+    {
+        return now()->addMinutes(30); // Allow retries for 30 minutes
+    }
+
+    /**
+     * Calculate the number of seconds to wait before retrying the job
+     */
+    public function backoff(): array
+    {
+        return [60, 300, 900]; // 1 minute, 5 minutes, 15 minutes
     }
 }

@@ -157,58 +157,132 @@ const sendMessage = async () => {
 
   await scrollToBottom()
 
-  try {
-    console.log(page)
-    const response = await fetch('/ai/chat', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-CSRF-TOKEN': page.props.csrf_token
-      },
-      body: JSON.stringify({
-        message: messageToSend,
-        conversation_history: messages.value.slice(0, -1).map(msg => ({
-          role: msg.role,
-          content: msg.content
-        }))
-      })
-    })
+  let retryCount = 0
+  const maxRetries = 3
 
-    const data = await response.json()
-
-    if (data.success) {
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date()
+  const attemptSend = async (): Promise<void> => {
+    try {
+      // Check network connectivity
+      if (!navigator.onLine) {
+        throw new Error('No internet connection')
       }
 
-      // Check if there are search results from tool calls
-      if (data.tool_calls && data.tool_calls.length > 0) {
-        const searchToolCall = data.tool_calls.find((call: any) => call.name === 'search_meetings')
-        if (searchToolCall && searchToolCall.result && searchToolCall.result.results) {
-          assistantMessage.searchResults = searchToolCall.result.results
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
+      const response = await fetch('/ai/chat', {
+        method: 'POST',
+        credentials: 'same-origin',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-TOKEN': page.props.csrf_token
+        },
+        body: JSON.stringify({
+          message: messageToSend,
+          conversation_history: messages.value.slice(0, -1).map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }))
+        })
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error('Too many requests. Please wait a moment and try again.')
+        } else if (response.status >= 500) {
+          throw new Error('Server error. Please try again in a few moments.')
+        } else if (response.status === 401) {
+          throw new Error('Your session has expired. Please refresh the page.')
+        } else {
+          throw new Error(`Request failed with status ${response.status}`)
         }
       }
 
-      messages.value.push(assistantMessage)
-    } else {
+      const data = await response.json()
+
+      if (data.success) {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date()
+        }
+
+        // Check if there are search results from tool calls
+        if (data.tool_calls && data.tool_calls.length > 0) {
+          const searchToolCall = data.tool_calls.find((call: any) => call.name === 'search_meetings')
+          if (searchToolCall && searchToolCall.result && searchToolCall.result.results) {
+            assistantMessage.searchResults = searchToolCall.result.results
+          }
+        }
+
+        messages.value.push(assistantMessage)
+      } else {
+        throw new Error(data.error || 'AI service returned an error')
+      }
+    } catch (error: any) {
+      console.error('Chat error:', error)
+
+      // Handle specific error types
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out. Please try again.')
+      }
+
+      if (error.message === 'No internet connection') {
+        throw new Error('No internet connection. Please check your network and try again.')
+      }
+
+      // Retry logic for network errors
+      if (retryCount < maxRetries && (
+        error.name === 'NetworkError' || 
+        error.message.includes('fetch') ||
+        error.message.includes('Server error')
+      )) {
+        retryCount++
+        console.log(`Retrying request (attempt ${retryCount}/${maxRetries})`)
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)) // Exponential backoff
+        return attemptSend()
+      }
+
+      // Add error message to chat
+      const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.'
+      
       messages.value.push({
         role: 'assistant',
-        content: data.error || 'Sorry, I encountered an error. Please try again.',
+        content: errorMessage,
         timestamp: new Date()
       })
+
+      // Show toast notification for better UX
+      if (window.toast) {
+        window.toast.error(
+          'Chat Error',
+          errorMessage,
+          {
+            actions: retryCount < maxRetries ? [
+              {
+                label: 'Retry',
+                handler: () => {
+                  // Remove the error message and retry
+                  messages.value.pop()
+                  currentMessage.value = messageToSend
+                  sendMessage()
+                },
+                primary: true
+              }
+            ] : undefined
+          }
+        )
+      }
     }
-  } catch (error) {
-    console.error('Chat error:', error)
-    messages.value.push({
-      role: 'assistant',
-      content: 'Sorry, I encountered a network error. Please check your connection and try again.',
-      timestamp: new Date()
-    })
+  }
+
+  try {
+    await attemptSend()
   } finally {
     isLoading.value = false
     await scrollToBottom()

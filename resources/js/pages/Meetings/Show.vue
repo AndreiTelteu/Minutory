@@ -44,7 +44,7 @@
                                 <p class="text-gray-600 text-sm">
                                     Client: {{ meeting.client.name }}
                                 </p>
-                                <MeetingStatusBadge :status="meeting.status" />
+                                <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                             </div>
                         </div>
                     </div>
@@ -109,7 +109,7 @@
                             <p class="text-gray-600 text-sm">
                                 Client: {{ meeting.client.name }}
                             </p>
-                            <MeetingStatusBadge :status="meeting.status" />
+                            <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                         </div>
                     </div>
                 </div>
@@ -227,13 +227,13 @@ interface Meeting {
     client: Client
     status: 'pending' | 'processing' | 'completed' | 'failed'
     uploaded_at: string
-    duration: number | null
-    estimated_processing_time: number | null
-    queue_progress: number | null
-    processing_progress: number | null
-    formatted_estimated_processing_time: string | null
-    formatted_elapsed_time: string | null
-    formatted_estimated_remaining_time: string | null
+    duration?: number
+    estimated_processing_time?: number
+    queue_progress?: number
+    processing_progress?: number
+    formatted_estimated_processing_time?: string
+    formatted_elapsed_time?: string
+    formatted_estimated_remaining_time?: string
     transcriptions?: Transcription[]
 }
 
@@ -317,7 +317,8 @@ const pollStatus = async () => {
 
             
             // Reload page if status changed to completed or failed
-            if (data.status !== props.meeting.status) {
+            if (data.data.status !== props.meeting.status) {
+                console.log('Meeting status changed:', data.data.status, props.meeting.status)
                 window.location.reload()
             }
         } catch (error) {

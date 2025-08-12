@@ -163,7 +163,7 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="space-y-2">
-                    <MeetingStatusBadge :status="meeting.status" />
+                    <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                     <MeetingProgressIndicator 
                       v-if="meeting.status === 'pending' || meeting.status === 'processing' || meeting.status === 'failed'"
                       :meeting="meeting" 

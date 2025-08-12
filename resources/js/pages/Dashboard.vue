@@ -85,7 +85,7 @@
                     <div class="text-sm text-gray-900">{{ m.client.name }}</div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <MeetingStatusBadge :status="m.status" />
+                    <MeetingStatusBadge :status="m.status" :meeting="m" />
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {{ formatDate(m.created_at || m.uploaded_at) }}

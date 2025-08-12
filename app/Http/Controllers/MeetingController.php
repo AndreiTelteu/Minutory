@@ -84,19 +84,39 @@ class MeetingController extends Controller
             'client_id' => 'required|exists:clients,id',
             'video' => [
                 'required',
+                'file',
                 File::types(['mp4', 'mov', 'avi', 'webm'])
                     ->max(500 * 1024) // 500MB max
                     ->min(1024) // 1MB min
             ]
         ], [
+            'title.required' => 'Please enter a meeting title.',
+            'title.max' => 'Meeting title cannot exceed 255 characters.',
+            'client_id.required' => 'Please select a client for this meeting.',
+            'client_id.exists' => 'The selected client is invalid.',
+            'video.required' => 'Please select a video file to upload.',
+            'video.file' => 'The uploaded file is not valid.',
             'video.types' => 'The video must be a file of type: MP4, MOV, AVI, or WebM.',
             'video.max' => 'The video file size cannot exceed 500MB.',
             'video.min' => 'The video file must be at least 1MB.',
-            'client_id.required' => 'Please select a client for this meeting.',
-            'client_id.exists' => 'The selected client is invalid.'
         ]);
 
+        $meeting = null;
+        
         try {
+            // Validate file integrity
+            $videoFile = $request->file('video');
+            if (!$videoFile->isValid()) {
+                throw new \RuntimeException('The uploaded file is corrupted or invalid.');
+            }
+
+            // Check available disk space (basic check)
+            $requiredSpace = $videoFile->getSize() * 1.5; // Account for processing overhead
+            $availableSpace = disk_free_space(storage_path('app/public'));
+            if ($availableSpace !== false && $availableSpace < $requiredSpace) {
+                throw new \RuntimeException('Insufficient storage space available.');
+            }
+
             // Create meeting record first
             $meeting = Meeting::create([
                 'title' => $validated['title'],
@@ -107,13 +127,21 @@ class MeetingController extends Controller
             ]);
 
             // Store video file with organized structure
-            $videoFile = $request->file('video');
             $originalExtension = $videoFile->getClientOriginalExtension();
             $fileName = "video.{$originalExtension}";
             $storagePath = "meetings/{$validated['client_id']}/{$meeting->id}";
             
             // Store the file in public disk so it can be served
             $videoPath = $videoFile->storeAs($storagePath, $fileName, 'public');
+            
+            if (!$videoPath) {
+                throw new \RuntimeException('Failed to store video file.');
+            }
+
+            // Verify file was actually stored
+            if (!Storage::disk('public')->exists($videoPath)) {
+                throw new \RuntimeException('Video file was not properly saved.');
+            }
             
             // Update meeting with video path and estimate duration (for demo purposes)
             $estimatedDuration = rand(300, 3600); // Random duration between 5-60 minutes
@@ -131,34 +159,76 @@ class MeetingController extends Controller
             return redirect()->route('meetings.index')
                 ->with('success', 'Meeting uploaded successfully and is being processed.');
 
-        } catch (\Exception $e) {
-            // Clean up meeting record if file storage failed
-            if (isset($meeting)) {
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Re-throw validation exceptions to be handled by Laravel
+            throw $e;
+        } catch (\RuntimeException $e) {
+            // Clean up meeting record if created
+            if ($meeting) {
                 $meeting->delete();
             }
 
             return redirect()->back()
                 ->withInput()
-                ->with('error', 'Failed to upload meeting video. Please try again.');
+                ->with('error', $e->getMessage());
+        } catch (\Exception $e) {
+            // Clean up meeting record if created
+            if ($meeting) {
+                $meeting->delete();
+            }
+
+            // Log the error for debugging
+            \Log::error('Meeting upload failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_input' => $request->only(['title', 'client_id'])
+            ]);
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to upload meeting video. Please try again or contact support if the problem persists.');
         }
     }
 
     public function show(Meeting $meeting): Response
     {
-        $meeting->load(['client', 'transcriptions' => function ($query) {
-            $query->orderBy('start_time');
-        }]);
+        try {
+            $meeting->load(['client', 'transcriptions' => function ($query) {
+                $query->orderBy('start_time');
+            }]);
 
-        // Generate video URL for frontend
-        $videoUrl = null;
-        if ($meeting->video_path && Storage::disk('public')->exists($meeting->video_path)) {
-            $videoUrl = asset('storage/' . $meeting->video_path);
+            // Generate video URL for frontend
+            $videoUrl = null;
+            $videoError = null;
+            
+            if ($meeting->video_path) {
+                if (Storage::disk('public')->exists($meeting->video_path)) {
+                    $videoUrl = asset('storage/' . $meeting->video_path);
+                } else {
+                    $videoError = 'Video file not found. It may have been moved or deleted.';
+                    \Log::warning('Video file missing for meeting', [
+                        'meeting_id' => $meeting->id,
+                        'video_path' => $meeting->video_path
+                    ]);
+                }
+            } else {
+                $videoError = 'No video file associated with this meeting.';
+            }
+
+            return Inertia::render('Meetings/Show', [
+                'meeting' => $meeting,
+                'videoUrl' => $videoUrl,
+                'videoError' => $videoError
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to load meeting', [
+                'meeting_id' => $meeting->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return redirect()->route('meetings.index')
+                ->with('error', 'Failed to load meeting details. Please try again.');
         }
-
-        return Inertia::render('Meetings/Show', [
-            'meeting' => $meeting,
-            'videoUrl' => $videoUrl
-        ]);
     }
 
     public function update(Request $request, Meeting $meeting): RedirectResponse
@@ -205,16 +275,31 @@ class MeetingController extends Controller
      */
     public function status(Meeting $meeting)
     {
-        return response()->json([
-            'id' => $meeting->id,
-            'status' => $meeting->status,
-            'elapsed_time' => $meeting->elapsed_time,
-            'estimated_remaining_time' => $meeting->estimated_remaining_time,
-            'processing_progress' => $meeting->processing_progress,
-            'formatted_elapsed_time' => $meeting->formatted_elapsed_time,
-            'formatted_estimated_remaining_time' => $meeting->formatted_estimated_remaining_time,
-            'queue_progress' => $meeting->queue_progress,
-            'formatted_estimated_processing_time' => $meeting->formatted_estimated_processing_time,
-        ]);
+        try {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $meeting->id,
+                    'status' => $meeting->status,
+                    'elapsed_time' => $meeting->elapsed_time,
+                    'estimated_remaining_time' => $meeting->estimated_remaining_time,
+                    'processing_progress' => $meeting->processing_progress,
+                    'formatted_elapsed_time' => $meeting->formatted_elapsed_time,
+                    'formatted_estimated_remaining_time' => $meeting->formatted_estimated_remaining_time,
+                    'queue_progress' => $meeting->queue_progress,
+                    'formatted_estimated_processing_time' => $meeting->formatted_estimated_processing_time,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to get meeting status', [
+                'meeting_id' => $meeting->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to retrieve meeting status'
+            ], 500);
+        }
     }
 }

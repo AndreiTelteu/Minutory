@@ -128,6 +128,56 @@ const onEnded = () => {
 const onError = (error: Event) => {
   isLoading.value = false
   hasError.value = true
+  
+  // Log detailed error information
+  const videoError = videoElement.value?.error
+  if (videoError) {
+    console.error('Video error:', {
+      code: videoError.code,
+      message: videoError.message,
+      url: props.videoUrl
+    })
+    
+    // Show user-friendly error toast
+    if (window.toast) {
+      let errorMessage = 'Unable to load video'
+      let suggestions = ['Try refreshing the page', 'Check your internet connection']
+      
+      switch (videoError.code) {
+        case MediaError.MEDIA_ERR_ABORTED:
+          errorMessage = 'Video loading was aborted'
+          suggestions = ['Try refreshing the page', 'Check if the video file exists']
+          break
+        case MediaError.MEDIA_ERR_NETWORK:
+          errorMessage = 'Network error while loading video'
+          suggestions = ['Check your internet connection', 'Try again in a few moments']
+          break
+        case MediaError.MEDIA_ERR_DECODE:
+          errorMessage = 'Video format not supported or corrupted'
+          suggestions = ['The video file may be corrupted', 'Contact support for assistance']
+          break
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          errorMessage = 'Video format not supported'
+          suggestions = ['The video format is not supported by your browser', 'Try a different browser']
+          break
+      }
+      
+      window.toast.error(
+        errorMessage,
+        suggestions.join(' • '),
+        {
+          actions: [
+            {
+              label: 'Retry',
+              handler: retryLoad,
+              primary: true
+            }
+          ]
+        }
+      )
+    }
+  }
+  
   emit('error', error)
 }
 
@@ -135,7 +185,18 @@ const retryLoad = () => {
   if (videoElement.value) {
     hasError.value = false
     isLoading.value = true
+    
+    // Clear any existing error state
+    videoElement.value.removeAttribute('src')
     videoElement.value.load()
+    
+    // Set source again after a brief delay
+    setTimeout(() => {
+      if (videoElement.value) {
+        videoElement.value.src = props.videoUrl
+        videoElement.value.load()
+      }
+    }, 100)
   }
 }
 

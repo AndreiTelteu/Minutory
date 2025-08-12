@@ -20,6 +20,8 @@ class Meeting extends Model
         'uploaded_at',
         'processing_started_at',
         'processing_completed_at',
+        'error_message',
+        'technical_error',
     ];
 
     protected $casts = [

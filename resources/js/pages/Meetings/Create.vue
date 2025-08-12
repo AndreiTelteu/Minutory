@@ -57,14 +57,20 @@
             </label>
 
             <!-- File Drop Zone -->
-            <div @drop="handleDrop" @dragover.prevent @dragenter.prevent :class="[
-              'border-2 border-dashed rounded-lg p-8 text-center transition-colors',
-              isDragOver
-                ? 'border-blue-400 bg-blue-50'
-                : errors.video
-                  ? 'border-red-300 bg-red-50'
-                  : 'border-gray-300 hover:border-gray-400'
-            ]">
+            <div 
+              @drop="handleDrop" 
+              @dragover.prevent 
+              @dragenter.prevent 
+              @dragleave="handleDragLeave"
+              :class="[
+                'border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200',
+                isDragOver
+                  ? 'border-blue-400 bg-blue-50 scale-105'
+                  : errors.video
+                    ? 'border-red-300 bg-red-50'
+                    : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+              ]"
+            >
               <div v-if="!form.video" class="space-y-4">
                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                   <path
@@ -94,7 +100,7 @@
                   <p class="text-lg font-medium text-gray-900">{{ form.video.name }}</p>
                   <p class="text-sm text-gray-500">{{ formatFileSize(form.video.size) }}</p>
                   <button type="button" @click="removeFile"
-                    class="mt-2 text-red-600 hover:text-red-700 text-sm font-medium">
+                    class="mt-2 text-red-600 hover:text-red-700 text-sm font-medium transition-colors">
                     Remove file
                   </button>
                 </div>
@@ -105,19 +111,67 @@
               accept=".mp4,.mov,.avi,.webm,video/mp4,video/quicktime,video/x-msvideo,video/webm"
               @change="handleFileSelect" class="hidden" />
 
-            <p v-if="errors.video" class="mt-2 text-sm text-red-600">
-              {{ errors.video }}
-            </p>
+            <!-- File validation info -->
+            <div class="mt-2 text-xs text-gray-500 space-y-1">
+              <p>• Maximum file size: 500MB</p>
+              <p>• Supported formats: MP4, MOV, AVI, WebM</p>
+              <p>• Minimum file size: 1MB</p>
+            </div>
+
+            <!-- Error message -->
+            <div v-if="errors.video" class="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+              <div class="flex">
+                <svg class="h-5 w-5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+                <div class="ml-3">
+                  <p class="text-sm text-red-700 font-medium">Upload Error</p>
+                  <p class="text-sm text-red-600 mt-1">{{ errors.video }}</p>
+                </div>
+              </div>
+            </div>
 
             <!-- Upload Progress -->
             <div v-if="uploadProgress !== null" class="mt-4">
-              <div class="flex justify-between text-sm text-gray-600 mb-1">
-                <span>Uploading...</span>
+              <div class="flex justify-between text-sm text-gray-600 mb-2">
+                <span class="font-medium">Uploading...</span>
                 <span>{{ uploadProgress }}%</span>
               </div>
-              <div class="w-full bg-gray-200 rounded-full h-2">
-                <div class="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  :style="{ width: uploadProgress + '%' }"></div>
+              <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div 
+                  class="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+                  :style="{ width: uploadProgress + '%' }"
+                ></div>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">
+                Please don't close this page while uploading...
+              </p>
+            </div>
+
+            <!-- Upload Error Recovery -->
+            <div v-if="uploadError" class="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+              <div class="flex items-start">
+                <svg class="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+                <div class="ml-3 flex-1">
+                  <h4 class="text-sm font-medium text-red-800">Upload Failed</h4>
+                  <p class="text-sm text-red-700 mt-1">{{ uploadError }}</p>
+                  <div class="mt-3 flex space-x-3">
+                    <button
+                      @click="retryUpload"
+                      class="text-sm bg-red-100 text-red-800 px-3 py-1 rounded-md hover:bg-red-200 transition-colors"
+                    >
+                      Try Again
+                    </button>
+                    <button
+                      @click="clearUploadError"
+                      class="text-sm text-red-600 hover:text-red-800 transition-colors"
+                    >
+                      Choose Different File
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -140,7 +194,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/lib/AppLayout.vue'
 
@@ -160,6 +214,9 @@ const fileInput = ref<HTMLInputElement>()
 const isDragOver = ref(false)
 const uploadProgress = ref<number | null>(null)
 const processing = ref(false)
+const uploadError = ref<string>('')
+const retryCount = ref(0)
+const maxRetries = 3
 
 const form = reactive({
   title: '',
@@ -183,7 +240,11 @@ onMounted(() => {
 const handleFileSelect = (event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.files && target.files[0]) {
-    form.video = target.files[0]
+    const file = target.files[0]
+    if (validateFile(file)) {
+      form.video = file
+      uploadError.value = ''
+    }
   }
 }
 
@@ -192,8 +253,42 @@ const handleDrop = (event: DragEvent) => {
   isDragOver.value = false
 
   if (event.dataTransfer?.files && event.dataTransfer.files[0]) {
-    form.video = event.dataTransfer.files[0]
+    const file = event.dataTransfer.files[0]
+    if (validateFile(file)) {
+      form.video = file
+      uploadError.value = ''
+    }
   }
+}
+
+const handleDragLeave = (event: DragEvent) => {
+  // Only set isDragOver to false if we're leaving the drop zone entirely
+  if (!event.currentTarget?.contains(event.relatedTarget as Node)) {
+    isDragOver.value = false
+  }
+}
+
+const validateFile = (file: File): boolean => {
+  const maxSize = 500 * 1024 * 1024 // 500MB
+  const minSize = 1024 * 1024 // 1MB
+  const allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm']
+  
+  if (!allowedTypes.includes(file.type)) {
+    uploadError.value = 'Please select a valid video file (MP4, MOV, AVI, or WebM)'
+    return false
+  }
+  
+  if (file.size > maxSize) {
+    uploadError.value = 'File size must be less than 500MB'
+    return false
+  }
+  
+  if (file.size < minSize) {
+    uploadError.value = 'File size must be at least 1MB'
+    return false
+  }
+  
+  return true
 }
 
 const removeFile = () => {
@@ -214,10 +309,11 @@ const formatFileSize = (bytes: number) => {
 }
 
 const submit = () => {
-  if (!form.video) return
+  if (!form.video || !validateFile(form.video)) return
 
   processing.value = true
   uploadProgress.value = 0
+  uploadError.value = ''
 
   const formData = new FormData()
   formData.append('title', form.title)
@@ -233,10 +329,47 @@ const submit = () => {
     onSuccess: () => {
       processing.value = false
       uploadProgress.value = null
+      retryCount.value = 0
+      
+      // Show success toast
+      if (window.toast) {
+        window.toast.success(
+          'Meeting uploaded successfully!',
+          'Your meeting is now being processed and will be ready for review shortly.'
+        )
+      }
     },
-    onError: () => {
+    onError: (errors) => {
       processing.value = false
       uploadProgress.value = null
+      
+      // Handle specific error types
+      if (errors.video) {
+        uploadError.value = errors.video
+      } else if (errors.title) {
+        uploadError.value = 'Please check the meeting title'
+      } else if (errors.client_id) {
+        uploadError.value = 'Please select a client'
+      } else {
+        uploadError.value = 'Upload failed. Please try again.'
+      }
+      
+      // Show error toast with retry option
+      if (window.toast && retryCount.value < maxRetries) {
+        window.toast.error(
+          'Upload Failed',
+          uploadError.value,
+          {
+            actions: [
+              {
+                label: 'Try Again',
+                handler: retryUpload,
+                primary: true
+              }
+            ]
+          }
+        )
+      }
     },
     onFinish: () => {
       processing.value = false
@@ -245,21 +378,62 @@ const submit = () => {
   })
 }
 
+const retryUpload = () => {
+  if (retryCount.value < maxRetries) {
+    retryCount.value++
+    uploadError.value = ''
+    submit()
+  } else {
+    uploadError.value = 'Maximum retry attempts reached. Please try a different file or contact support.'
+  }
+}
+
+const clearUploadError = () => {
+  uploadError.value = ''
+  form.video = null
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
+
+// Prevent accidental navigation during upload
+const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (processing.value && uploadProgress.value !== null) {
+    event.preventDefault()
+    event.returnValue = 'Upload in progress. Are you sure you want to leave?'
+    return event.returnValue
+  }
+}
+
 // Drag and drop event handlers
-document.addEventListener('dragenter', (e) => {
+const handleGlobalDragEnter = (e: DragEvent) => {
   e.preventDefault()
   isDragOver.value = true
-})
+}
 
-document.addEventListener('dragleave', (e) => {
+const handleGlobalDragLeave = (e: DragEvent) => {
   e.preventDefault()
   if (!e.relatedTarget) {
     isDragOver.value = false
   }
-})
+}
 
-document.addEventListener('drop', (e) => {
+const handleGlobalDrop = (e: DragEvent) => {
   e.preventDefault()
   isDragOver.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  document.addEventListener('dragenter', handleGlobalDragEnter)
+  document.addEventListener('dragleave', handleGlobalDragLeave)
+  document.addEventListener('drop', handleGlobalDrop)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  document.removeEventListener('dragenter', handleGlobalDragEnter)
+  document.removeEventListener('dragleave', handleGlobalDragLeave)
+  document.removeEventListener('drop', handleGlobalDrop)
 })
 </script>
