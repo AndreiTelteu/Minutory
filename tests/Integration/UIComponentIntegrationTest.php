@@ -74,17 +74,17 @@ describe('UI Component Integration', function () {
             );
         });
 
-        it('shows status badges in meetings index', function () {
-            $response = get(route('meetings.index'));
-            
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 4)
-                    ->has('meetings.data.0', fn ($meeting) =>
-                        $meeting->whereIn('status', ['completed', 'processing', 'pending', 'failed'])
-                    )
-            );
-        });
+it('shows status badges in meetings index', function () {
+    $response = get(route('meetings.index'));
+    
+    $response->assertInertia(fn ($page) => 
+        $page->component('Meetings/Index')
+            ->has('meetings.data', 4)
+            ->has('meetings.data.0', fn ($meeting) =>
+                $meeting->where('status', fn ($s) => in_array($s, ['completed', 'processing', 'pending', 'failed'], true))
+            )
+    );
+});
     });
 
     describe('Pagination Component', function () {
