@@ -2,7 +2,7 @@
 """
 Transcription script using NVIDIA Parakeet TDT 0.6B v3 via ONNX-ASR.
 Multilingual ASR model supporting 25 European languages.
-Handles long audio by chunking into smaller segments.
+Uses VAD for segmenting long audio into natural speech segments.
 """
 
 import argparse
@@ -16,8 +16,57 @@ import numpy as np
 
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
-CHUNK_DURATION_SECONDS = 60
 SAMPLE_RATE = 16000
+
+
+def group_tokens_into_segments(
+    tokens, timestamps, max_segment_duration=30.0, min_segment_duration=1.0
+):
+    segments = []
+    if not tokens or not timestamps:
+        return segments
+
+    current_segment_tokens = []
+    current_segment_start = None
+    current_segment_end = None
+
+    for i, (token, ts) in enumerate(zip(tokens, timestamps)):
+        if current_segment_start is None:
+            current_segment_start = ts
+
+        current_segment_tokens.append(token)
+        current_segment_end = ts
+
+        segment_duration = current_segment_end - current_segment_start
+
+        is_sentence_end = token.strip().endswith((".", "!", "?", "。", "！", "？"))
+        is_long_segment = segment_duration >= max_segment_duration
+        is_last_token = i == len(tokens) - 1
+
+        if (
+            (is_sentence_end and segment_duration >= min_segment_duration)
+            or is_long_segment
+            or is_last_token
+        ):
+            text = "".join(current_segment_tokens).strip()
+            text = text.replace("▁", " ").strip()
+            text = " ".join(text.split())
+
+            if text and segment_duration >= 0.5:
+                segments.append(
+                    {
+                        "start": current_segment_start,
+                        "end": current_segment_end,
+                        "text": text,
+                        "speaker": "unknown",
+                    }
+                )
+
+            current_segment_tokens = []
+            current_segment_start = None
+            current_segment_end = None
+
+    return segments
 
 
 def main():
@@ -92,18 +141,24 @@ def main():
 
     print("Loading Parakeet TDT 0.6B v3 model via ONNX-ASR...")
 
-    from onnx_asr import load_model
+    from onnx_asr import load_model, load_vad
 
     sess_options = ort.SessionOptions()
     sess_options.intra_op_num_threads = threads
     sess_options.inter_op_num_threads = threads
     sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
 
-    model = load_model(
-        "nemo-parakeet-tdt-0.6b-v3",
-        sess_options=sess_options,
-        providers=["CPUExecutionProvider"],
-    ).with_timestamps()
+    vad = load_vad("silero", sess_options=sess_options)
+
+    model = (
+        load_model(
+            "nemo-parakeet-tdt-0.6b-v3",
+            sess_options=sess_options,
+            providers=["CPUExecutionProvider"],
+        )
+        .with_vad(vad)
+        .with_timestamps()
+    )
 
     print("Loading audio into memory...")
     with wave.open(wav_path, "rb") as wf:
@@ -112,62 +167,116 @@ def main():
         total_duration = len(audio) / SAMPLE_RATE
 
     print(f"Audio duration: {total_duration:.2f} seconds")
+    print("Transcribing with VAD segmentation...")
 
-    chunk_samples = CHUNK_DURATION_SECONDS * SAMPLE_RATE
-    num_chunks = int(np.ceil(len(audio) / chunk_samples))
-
-    print(f"Processing in {num_chunks} chunks of {CHUNK_DURATION_SECONDS}s each...")
-
-    all_text = []
     segments = []
+    all_text = []
 
-    for i in range(num_chunks):
-        start_sample = i * chunk_samples
-        end_sample = min((i + 1) * chunk_samples, len(audio))
-        chunk_audio = audio[start_sample:end_sample]
+    try:
+        results = model.recognize(audio)
+        for result in results:
+            text = result.text.strip() if result.text else ""
+            if text:
+                all_text.append(text)
 
-        chunk_start_time = start_sample / SAMPLE_RATE
+            segment_tokens = result.tokens if result.tokens else []
+            segment_timestamps = result.timestamps if result.timestamps else []
 
-        print(
-            f"Processing chunk {i + 1}/{num_chunks} ({chunk_start_time:.1f}s - {end_sample / SAMPLE_RATE:.1f}s)..."
-        )
+            if segment_tokens and segment_timestamps:
+                local_segments = group_tokens_into_segments(
+                    segment_tokens,
+                    segment_timestamps,
+                    max_segment_duration=30.0,
+                    min_segment_duration=1.0,
+                )
 
-        try:
-            result = model.recognize(chunk_audio)
+                segment_start = result.start if hasattr(result, "start") else 0
+                for seg in local_segments:
+                    seg["start"] += segment_start
+                    seg["end"] += segment_start
+                    segments.append(seg)
+            elif text:
+                start = result.start if hasattr(result, "start") else 0
+                end = result.end if hasattr(result, "end") else start + 5.0
+                segments.append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "text": text,
+                        "speaker": "unknown",
+                    }
+                )
 
-            if hasattr(result, "text") and result.text:
-                all_text.append(result.text)
+    except Exception as e:
+        print(f"VAD transcription failed, falling back to simple mode: {e}")
+        print("Trying without VAD...")
 
-            if hasattr(result, "segments") and result.segments:
-                for seg in result.segments:
+        simple_model = load_model(
+            "nemo-parakeet-tdt-0.6b-v3",
+            sess_options=sess_options,
+            providers=["CPUExecutionProvider"],
+        ).with_timestamps()
+
+        chunk_duration = 30.0
+        chunk_samples = int(chunk_duration * SAMPLE_RATE)
+        num_chunks = int(np.ceil(len(audio) / chunk_samples))
+
+        print(f"Processing in {num_chunks} chunks of {chunk_duration}s each...")
+
+        for i in range(num_chunks):
+            start_sample = i * chunk_samples
+            end_sample = min((i + 1) * chunk_samples, len(audio))
+            chunk_audio = audio[start_sample:end_sample]
+            chunk_start_time = start_sample / SAMPLE_RATE
+
+            print(
+                f"Processing chunk {i + 1}/{num_chunks} ({chunk_start_time:.1f}s - {end_sample / SAMPLE_RATE:.1f}s)..."
+            )
+
+            try:
+                result = simple_model.recognize(chunk_audio)
+                text = result.text.strip() if result.text else ""
+
+                if text:
+                    all_text.append(text)
+
+                tokens = result.tokens if result.tokens else []
+                timestamps = result.timestamps if result.timestamps else []
+
+                if tokens and timestamps:
+                    local_segments = group_tokens_into_segments(
+                        tokens,
+                        timestamps,
+                        max_segment_duration=30.0,
+                        min_segment_duration=1.0,
+                    )
+                    for seg in local_segments:
+                        seg["start"] += chunk_start_time
+                        seg["end"] += chunk_start_time
+                        segments.append(seg)
+                elif text:
                     segments.append(
                         {
-                            "start": seg.start + chunk_start_time
-                            if hasattr(seg, "start")
-                            else chunk_start_time,
-                            "end": seg.end + chunk_start_time
-                            if hasattr(seg, "end")
-                            else chunk_start_time + CHUNK_DURATION_SECONDS,
-                            "text": seg.text.strip() if hasattr(seg, "text") else "",
-                            "avg_logprob": None,
-                            "no_speech_prob": None,
+                            "start": chunk_start_time,
+                            "end": min(
+                                chunk_start_time + chunk_duration, total_duration
+                            ),
+                            "text": text,
                             "speaker": "unknown",
                         }
                     )
-        except Exception as e:
-            print(f"Warning: Chunk {i + 1} failed: {e}")
-            continue
+            except Exception as chunk_error:
+                print(f"Warning: Chunk {i + 1} failed: {chunk_error}")
+                continue
 
     text = " ".join(all_text)
 
-    if not segments:
+    if not segments and text:
         segments.append(
             {
                 "start": 0,
                 "end": total_duration,
-                "text": text.strip(),
-                "avg_logprob": None,
-                "no_speech_prob": None,
+                "text": text,
                 "speaker": "unknown",
             }
         )
