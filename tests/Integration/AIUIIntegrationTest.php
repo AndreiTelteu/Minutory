@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\Meeting;
 use Illuminate\Support\Facades\Http;
+
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
 
@@ -21,10 +22,9 @@ describe('AI UI Integration', function () {
     describe('AI Chat Page', function () {
         it('displays AI chat page', function () {
             $response = get(route('ai.chat'));
-            
+
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('AI/Chat')
+            $response->assertInertia(fn ($page) => $page->component('AI/Chat')
             );
         });
 
@@ -34,26 +34,26 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'This is a test AI response.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'This is a test AI response.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             $response = post(route('ai.chat.send'), [
-                'message' => 'What was discussed in the recent meetings?'
+                'message' => 'What was discussed in the recent meetings?',
             ]);
 
             $response->assertStatus(200);
             $response->assertJson([
-                'response' => 'This is a test AI response.'
+                'response' => 'This is a test AI response.',
             ]);
         });
 
         it('handles empty message', function () {
             $response = post(route('ai.chat.send'), [
-                'message' => ''
+                'message' => '',
             ]);
 
             $response->assertSessionHasErrors(['message']);
@@ -61,16 +61,16 @@ describe('AI UI Integration', function () {
 
         it('handles AI service error gracefully', function () {
             Http::fake([
-                'api.openai.com/*' => Http::response([], 500)
+                'api.openai.com/*' => Http::response([], 500),
             ]);
 
             $response = post(route('ai.chat.send'), [
-                'message' => 'Test message'
+                'message' => 'Test message',
             ]);
 
             $response->assertStatus(500);
             $response->assertJson([
-                'error' => 'Failed to get AI response'
+                'error' => 'Failed to get AI response',
             ]);
         });
     });
@@ -82,26 +82,26 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'Based on the search, I found information about project planning.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'Based on the search, I found information about project planning.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             $response = post(route('ai.search'), [
-                'query' => 'project planning'
+                'query' => 'project planning',
             ]);
 
             $response->assertStatus(200);
             $response->assertJson([
-                'response' => 'Based on the search, I found information about project planning.'
+                'response' => 'Based on the search, I found information about project planning.',
             ]);
         });
 
         it('validates search query', function () {
             $response = post(route('ai.search'), [
-                'query' => ''
+                'query' => '',
             ]);
 
             $response->assertSessionHasErrors(['query']);
@@ -113,22 +113,23 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'Found relevant information in Test Meeting.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'Found relevant information in Test Meeting.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             $response = post(route('ai.search'), [
-                'query' => 'project'
+                'query' => 'project',
             ]);
 
             $response->assertStatus(200);
-            
+
             // Verify that the AI service was called with meeting context
             Http::assertSent(function ($request) {
                 $body = json_decode($request->body(), true);
+
                 return str_contains($body['messages'][0]['content'], 'Test Meeting') &&
                        str_contains($body['messages'][0]['content'], 'project planning');
             });
@@ -140,20 +141,20 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'No relevant information found in your meetings.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'No relevant information found in your meetings.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             $response = post(route('ai.search'), [
-                'query' => 'irrelevant topic'
+                'query' => 'irrelevant topic',
             ]);
 
             $response->assertStatus(200);
             $response->assertJson([
-                'response' => 'No relevant information found in your meetings.'
+                'response' => 'No relevant information found in your meetings.',
             ]);
         });
     });
@@ -165,19 +166,20 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'Based on your meetings, here is the information.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'Based on your meetings, here is the information.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             post(route('ai.chat.send'), [
-                'message' => 'What was discussed?'
+                'message' => 'What was discussed?',
             ]);
 
             Http::assertSent(function ($request) {
                 $body = json_decode($request->body(), true);
+
                 return str_contains($body['messages'][0]['content'], 'This is a test transcript');
             });
         });
@@ -188,19 +190,20 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'Based on your meeting summaries.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'Based on your meeting summaries.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             post(route('ai.chat.send'), [
-                'message' => 'Summarize recent meetings'
+                'message' => 'Summarize recent meetings',
             ]);
 
             Http::assertSent(function ($request) {
                 $body = json_decode($request->body(), true);
+
                 return str_contains($body['messages'][0]['content'], 'Meeting summary about project planning');
             });
         });
@@ -219,21 +222,22 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'Response based on available data.'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'Response based on available data.',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             post(route('ai.chat.send'), [
-                'message' => 'What meetings do you have?'
+                'message' => 'What meetings do you have?',
             ]);
 
             Http::assertSent(function ($request) {
                 $body = json_decode($request->body(), true);
+
                 return str_contains($body['messages'][0]['content'], 'Test Meeting') &&
-                       !str_contains($body['messages'][0]['content'], 'Incomplete Meeting');
+                       ! str_contains($body['messages'][0]['content'], 'Incomplete Meeting');
             });
         });
     });
@@ -245,20 +249,20 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => "Here's what I found:\n\n1. First point\n2. Second point"
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => "Here's what I found:\n\n1. First point\n2. Second point",
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             $response = post(route('ai.chat.send'), [
-                'message' => 'Give me a summary'
+                'message' => 'Give me a summary',
             ]);
 
             $response->assertStatus(200);
             $response->assertJson([
-                'response' => "Here's what I found:\n\n1. First point\n2. Second point"
+                'response' => "Here's what I found:\n\n1. First point\n2. Second point",
             ]);
         });
 
@@ -268,20 +272,20 @@ describe('AI UI Integration', function () {
                     'choices' => [
                         [
                             'message' => [
-                                'content' => 'Response with "quotes" and special chars: @#$%'
-                            ]
-                        ]
-                    ]
-                ], 200)
+                                'content' => 'Response with "quotes" and special chars: @#$%',
+                            ],
+                        ],
+                    ],
+                ], 200),
             ]);
 
             $response = post(route('ai.chat.send'), [
-                'message' => 'Test message'
+                'message' => 'Test message',
             ]);
 
             $response->assertStatus(200);
             $response->assertJson([
-                'response' => 'Response with "quotes" and special chars: @#$%'
+                'response' => 'Response with "quotes" and special chars: @#$%',
             ]);
         });
     });

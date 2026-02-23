@@ -4,10 +4,11 @@ use App\Models\Client;
 use App\Models\Meeting;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+
+use function Pest\Laravel\delete;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
 use function Pest\Laravel\put;
-use function Pest\Laravel\delete;
 
 describe('Error Handling UI Integration', function () {
     beforeEach(function () {
@@ -112,7 +113,7 @@ describe('Error Handling UI Integration', function () {
     describe('Business Logic Errors', function () {
         it('prevents deletion of client with meetings', function () {
             $response = delete(route('clients.destroy', $this->client));
-            
+
             $response->assertSessionHasErrors();
             $response->assertRedirect();
             $this->assertDatabaseHas('clients', ['id' => $this->client->id]);
@@ -195,8 +196,7 @@ describe('Error Handling UI Integration', function () {
 
             // Should still load the page, just ignore invalid filters
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
             );
         });
     });
@@ -241,7 +241,7 @@ describe('Error Handling UI Integration', function () {
 
         it('handles concurrent meeting deletions', function () {
             $meetingId = $this->meeting->id;
-            
+
             // Delete the meeting first
             $this->meeting->delete();
 
@@ -259,7 +259,7 @@ describe('Error Handling UI Integration', function () {
             ]);
 
             $response->assertRedirect();
-            
+
             // Check that the data was sanitized/escaped
             $client = Client::where('email', 'test@example.com')->first();
             expect($client->name)->not->toContain('<script>');
@@ -275,7 +275,7 @@ describe('Error Handling UI Integration', function () {
             ]);
 
             $response->assertRedirect();
-            
+
             // Check that the data was sanitized/escaped
             $meeting = Meeting::where('client_id', $this->client->id)->latest()->first();
             expect($meeting->title)->not->toContain('<script>');

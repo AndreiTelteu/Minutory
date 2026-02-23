@@ -37,7 +37,7 @@ it('handles invalid file types with proper error messages', function () {
 
     $response->assertSessionHasErrors(['video']);
     $response->assertSessionHasErrorsIn('default', [
-        'video' => 'The video must be a file of type: MP4, MOV, AVI, or WebM.'
+        'video' => 'The video must be a file of type: MP4, MOV, AVI, or WebM.',
     ]);
 });
 
@@ -69,7 +69,7 @@ it('handles missing client validation', function () {
 it('returns proper error response for meeting status API', function () {
     // Test with non-existent meeting
     $response = $this->getJson(route('meetings.status', ['meeting' => 999]));
-    
+
     $response->assertStatus(404);
 });
 
@@ -97,7 +97,7 @@ it('stores error information when meeting processing fails', function () {
     $meeting = Meeting::factory()->create([
         'status' => 'failed',
         'error_message' => 'Test error message',
-        'technical_error' => 'Technical details here'
+        'technical_error' => 'Technical details here',
     ]);
 
     expect($meeting->error_message)->toBe('Test error message');
@@ -107,21 +107,20 @@ it('stores error information when meeting processing fails', function () {
 
 it('handles meeting show with missing video file gracefully', function () {
     $meeting = Meeting::factory()->create([
-        'video_path' => 'non-existent-path.mp4'
+        'video_path' => 'non-existent-path.mp4',
     ]);
 
     $response = $this->get(route('meetings.show', $meeting));
 
     $response->assertOk();
-    $response->assertInertia(fn ($page) => 
-        $page->component('Meetings/Show')
-             ->has('videoError')
+    $response->assertInertia(fn ($page) => $page->component('Meetings/Show')
+        ->has('videoError')
     );
 });
 
 it('provides proper error context in meeting status response', function () {
     $meeting = Meeting::factory()->create([
-        'status' => 'processing'
+        'status' => 'processing',
     ]);
 
     $response = $this->getJson(route('meetings.status', $meeting));
@@ -138,7 +137,7 @@ it('provides proper error context in meeting status response', function () {
             'formatted_elapsed_time',
             'formatted_estimated_remaining_time',
             'queue_progress',
-            'formatted_estimated_processing_time'
-        ]
+            'formatted_estimated_processing_time',
+        ],
     ]);
 });

@@ -32,8 +32,8 @@ class TestTranscriptionWorkflow extends Command
 
         // Create a test client
         $client = Client::factory()->create([
-            'name' => 'Test Client - ' . now()->format('H:i:s'),
-            'email' => 'test-' . now()->timestamp . '@example.com'
+            'name' => 'Test Client - '.now()->format('H:i:s'),
+            'email' => 'test-'.now()->timestamp.'@example.com',
         ]);
         $this->info("Created client: {$client->name}");
 
@@ -56,7 +56,7 @@ class TestTranscriptionWorkflow extends Command
 
         $this->info('Job dispatched! Run "php artisan queue:work" to process it.');
         $this->info("You can check the meeting status at: /meetings/{$meeting->id}/status");
-        
+
         return 0;
     }
 }

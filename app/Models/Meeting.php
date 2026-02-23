@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Meeting extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'client_id',
         'title',
@@ -72,11 +73,12 @@ class Meeting extends Model
      */
     public function getElapsedTimeAttribute(): ?int
     {
-        if (!$this->processing_started_at) {
+        if (! $this->processing_started_at) {
             return null;
         }
 
         $endTime = $this->processing_completed_at ?? now();
+
         return $this->processing_started_at->diffInSeconds($endTime);
     }
 
@@ -85,14 +87,14 @@ class Meeting extends Model
      */
     public function getEstimatedRemainingTimeAttribute(): ?int
     {
-        if (!$this->isProcessing() || !$this->processing_started_at || !$this->duration) {
+        if (! $this->isProcessing() || ! $this->processing_started_at || ! $this->duration) {
             return null;
         }
 
         // Estimate processing time as 1 second per minute of video (minimum 10 seconds)
         $estimatedTotalProcessingTime = max(10, $this->duration / 60);
         $elapsedTime = $this->elapsed_time;
-        
+
         return max(0, (int) ($estimatedTotalProcessingTime - $elapsedTime));
     }
 
@@ -101,13 +103,13 @@ class Meeting extends Model
      */
     public function getProcessingProgressAttribute(): ?float
     {
-        if (!$this->isProcessing() || !$this->processing_started_at || !$this->duration) {
+        if (! $this->isProcessing() || ! $this->processing_started_at || ! $this->duration) {
             return null;
         }
 
         $estimatedTotalProcessingTime = max(10, $this->duration / 60);
         $elapsedTime = $this->elapsed_time;
-        
+
         return min(100, ($elapsedTime / $estimatedTotalProcessingTime) * 100);
     }
 
@@ -123,7 +125,7 @@ class Meeting extends Model
 
         $minutes = floor($elapsed / 60);
         $seconds = $elapsed % 60;
-        
+
         return sprintf('%d:%02d', $minutes, $seconds);
     }
 
@@ -139,7 +141,7 @@ class Meeting extends Model
 
         $minutes = floor($remaining / 60);
         $seconds = $remaining % 60;
-        
+
         return sprintf('%d:%02d', $minutes, $seconds);
     }
 
@@ -149,7 +151,7 @@ class Meeting extends Model
      */
     public function getQueueProgressAttribute(): ?float
     {
-        if ($this->status !== 'pending' || !$this->estimated_processing_time || !$this->uploaded_at) {
+        if ($this->status !== 'pending' || ! $this->estimated_processing_time || ! $this->uploaded_at) {
             return null;
         }
 
@@ -157,7 +159,7 @@ class Meeting extends Model
         // Assume it takes 30 seconds to start processing after upload
         $queueWaitTime = 30;
         $elapsedSinceUpload = $this->uploaded_at->diffInSeconds(now());
-        
+
         return min(100, ($elapsedSinceUpload / $queueWaitTime) * 100);
     }
 
@@ -166,13 +168,13 @@ class Meeting extends Model
      */
     public function getFormattedEstimatedProcessingTimeAttribute(): ?string
     {
-        if (!$this->estimated_processing_time) {
+        if (! $this->estimated_processing_time) {
             return null;
         }
 
         $minutes = floor($this->estimated_processing_time / 60);
         $seconds = $this->estimated_processing_time % 60;
-        
+
         return sprintf('%d:%02d', $minutes, $seconds);
     }
 }

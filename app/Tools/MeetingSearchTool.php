@@ -15,7 +15,7 @@ class MeetingSearchTool
 
         if (empty($query)) {
             return [
-                'error' => 'Search query cannot be empty'
+                'error' => 'Search query cannot be empty',
             ];
         }
 
@@ -51,7 +51,7 @@ class MeetingSearchTool
                         'timestamp' => (float) $transcription->start_time,
                         'formatted_timestamp' => self::formatTimestamp($transcription->start_time),
                         'confidence' => $transcription->confidence,
-                        'meeting_url' => route('meetings.show', $transcription->meeting->id)
+                        'meeting_url' => route('meetings.show', $transcription->meeting->id),
                     ];
                 })
                 ->toArray();
@@ -61,12 +61,12 @@ class MeetingSearchTool
                 'total_found' => count($results),
                 'search_query' => $query,
                 'client_filter' => $clientId,
-                'speaker_filter' => $speaker
+                'speaker_filter' => $speaker,
             ];
 
         } catch (\Exception $e) {
             return [
-                'error' => 'Search failed: ' . $e->getMessage()
+                'error' => 'Search failed: '.$e->getMessage(),
             ];
         }
     }

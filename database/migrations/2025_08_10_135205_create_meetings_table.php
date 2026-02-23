@@ -22,7 +22,7 @@ return new class extends Migration
             $table->timestamp('processing_started_at')->nullable();
             $table->timestamp('processing_completed_at')->nullable();
             $table->timestamps();
-            
+
             // Indexes for performance
             $table->index('client_id');
             $table->index('status');

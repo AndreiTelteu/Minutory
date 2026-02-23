@@ -4,10 +4,11 @@ use App\Models\Client;
 use App\Models\Meeting;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+
+use function Pest\Laravel\delete;
 use function Pest\Laravel\get;
 use function Pest\Laravel\post;
 use function Pest\Laravel\put;
-use function Pest\Laravel\delete;
 
 describe('Full UI Workflow Integration', function () {
     beforeEach(function () {
@@ -19,17 +20,15 @@ describe('Full UI Workflow Integration', function () {
             // 1. Start at dashboard
             $response = get('/');
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_clients', 0)
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_clients', 0)
             );
 
             // 2. Navigate to clients index
             $response = get(route('clients.index'));
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Clients/Index')
-                    ->has('clients.data', 0)
+            $response->assertInertia(fn ($page) => $page->component('Clients/Index')
+                ->has('clients.data', 0)
             );
 
             // 3. Create new client
@@ -48,12 +47,10 @@ describe('Full UI Workflow Integration', function () {
 
             // 4. Verify client appears in index
             $response = get(route('clients.index'));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Clients/Index')
-                    ->has('clients.data', 1)
-                    ->has('clients.data.0', fn ($client) =>
-                        $client->where('name', 'Test Client')
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Clients/Index')
+                ->has('clients.data', 1)
+                ->has('clients.data.0', fn ($client) => $client->where('name', 'Test Client')
+                )
             );
 
             $client = Client::where('email', 'test@example.com')->first();
@@ -61,11 +58,9 @@ describe('Full UI Workflow Integration', function () {
             // 5. View client details
             $response = get(route('clients.show', $client));
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Clients/Show')
-                    ->has('client', fn ($client) =>
-                        $client->where('name', 'Test Client')
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Clients/Show')
+                ->has('client', fn ($client) => $client->where('name', 'Test Client')
+                )
             );
 
             // 6. Edit client
@@ -84,18 +79,15 @@ describe('Full UI Workflow Integration', function () {
 
             // 7. Verify update
             $response = get(route('clients.show', $client));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Clients/Show')
-                    ->has('client', fn ($client) =>
-                        $client->where('name', 'Updated Client')
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Clients/Show')
+                ->has('client', fn ($client) => $client->where('name', 'Updated Client')
+                )
             );
 
             // 8. Verify dashboard reflects changes
             $response = get('/');
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_clients', 1)
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_clients', 1)
             );
         });
     });
@@ -107,25 +99,22 @@ describe('Full UI Workflow Integration', function () {
 
             // 1. Start at dashboard
             $response = get('/');
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_meetings', 0)
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_meetings', 0)
             );
 
             // 2. Navigate to meetings index
             $response = get(route('meetings.index'));
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 0)
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.data', 0)
             );
 
             // 3. Create new meeting
             $response = get(route('meetings.create'));
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Create')
-                    ->has('clients', 1)
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Create')
+                ->has('clients', 1)
             );
 
             $file = UploadedFile::fake()->create('meeting.mp4', 1000, 'video/mp4');
@@ -140,13 +129,11 @@ describe('Full UI Workflow Integration', function () {
 
             // 4. Verify meeting appears in index
             $response = get(route('meetings.index'));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 1)
-                    ->has('meetings.data.0', fn ($meeting) =>
-                        $meeting->where('title', 'Test Meeting')
-                            ->where('status', 'pending')
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.data', 1)
+                ->has('meetings.data.0', fn ($meeting) => $meeting->where('title', 'Test Meeting')
+                    ->where('status', 'pending')
+                )
             );
 
             $meeting = Meeting::where('title', 'Test Meeting')->first();
@@ -154,12 +141,10 @@ describe('Full UI Workflow Integration', function () {
             // 5. View meeting details
             $response = get(route('meetings.show', $meeting));
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Show')
-                    ->has('meeting', fn ($meeting) =>
-                        $meeting->where('title', 'Test Meeting')
-                            ->where('status', 'pending')
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Show')
+                ->has('meeting', fn ($meeting) => $meeting->where('title', 'Test Meeting')
+                    ->where('status', 'pending')
+                )
             );
 
             // 6. Simulate processing completion
@@ -172,22 +157,19 @@ describe('Full UI Workflow Integration', function () {
 
             // 7. View completed meeting
             $response = get(route('meetings.show', $meeting));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Show')
-                    ->has('meeting', fn ($meeting) =>
-                        $meeting->where('status', 'completed')
-                            ->where('transcript', 'This is a test transcript.')
-                            ->where('summary', 'This is a test summary.')
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Show')
+                ->has('meeting', fn ($meeting) => $meeting->where('status', 'completed')
+                    ->where('transcript', 'This is a test transcript.')
+                    ->where('summary', 'This is a test summary.')
+                )
             );
 
             // 8. Verify dashboard reflects changes
             $response = get('/');
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_meetings', 1)
-                    ->where('stats.completed_meetings', 1)
-                    ->has('recentMeetings', 1)
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_meetings', 1)
+                ->where('stats.completed_meetings', 1)
+                ->has('recentMeetings', 1)
             );
 
             // 9. Delete meeting
@@ -196,9 +178,8 @@ describe('Full UI Workflow Integration', function () {
 
             // 10. Verify deletion
             $response = get(route('meetings.index'));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 0)
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.data', 0)
             );
         });
     });
@@ -241,66 +222,56 @@ describe('Full UI Workflow Integration', function () {
 
             // 4. Verify dashboard shows correct stats
             $response = get('/');
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_clients', 1)
-                    ->where('stats.total_meetings', 2)
-                    ->where('stats.completed_meetings', 1)
-                    ->where('stats.pending_meetings', 1)
-                    ->has('recentMeetings', 2)
-                    ->has('topClients', 1)
-                    ->has('topClients.0', fn ($client) =>
-                        $client->where('meetings_count', 2)
-                    )
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_clients', 1)
+                ->where('stats.total_meetings', 2)
+                ->where('stats.completed_meetings', 1)
+                ->where('stats.pending_meetings', 1)
+                ->has('recentMeetings', 2)
+                ->has('topClients', 1)
+                ->has('topClients.0', fn ($client) => $client->where('meetings_count', 2)
+                )
             );
 
             // 5. Filter meetings by client
             $response = get(route('meetings.index', ['client_id' => $client->id]));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 2)
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.data', 2)
             );
 
             // 6. Filter meetings by status
             $response = get(route('meetings.index', ['status' => 'completed']));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 1)
-                    ->where('meetings.data.0.title', 'First Meeting')
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.data', 1)
+                ->where('meetings.data.0.title', 'First Meeting')
             );
 
             // 7. Search meetings
             $response = get(route('meetings.index', ['search' => 'First']));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.data', 1)
-                    ->where('meetings.data.0.title', 'First Meeting')
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.data', 1)
+                ->where('meetings.data.0.title', 'First Meeting')
             );
 
             // 8. View client with meetings
             $response = get(route('clients.show', $client));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Clients/Show')
-                    ->has('meetings.data', 2)
+            $response->assertInertia(fn ($page) => $page->component('Clients/Show')
+                ->has('meetings.data', 2)
             );
 
             // 9. Navigate from dashboard to meeting details
             $response = get(route('meetings.show', $meeting1));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Show')
-                    ->has('meeting', fn ($meeting) =>
-                        $meeting->where('title', 'First Meeting')
-                            ->has('client', fn ($client) =>
-                                $client->where('name', 'Integration Client')
-                            )
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Show')
+                ->has('meeting', fn ($meeting) => $meeting->where('title', 'First Meeting')
+                    ->has('client', fn ($client) => $client->where('name', 'Integration Client')
                     )
+                )
             );
 
             // 10. Test AI integration (if available)
             $response = get(route('ai.chat'));
             $response->assertStatus(200);
-            $response->assertInertia(fn ($page) => 
-                $page->component('AI/Chat')
+            $response->assertInertia(fn ($page) => $page->component('AI/Chat')
             );
         });
     });
@@ -354,10 +325,9 @@ describe('Full UI Workflow Integration', function () {
 
             // 7. Verify everything is cleaned up
             $response = get('/');
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_clients', 0)
-                    ->where('stats.total_meetings', 0)
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_clients', 0)
+                ->where('stats.total_meetings', 0)
             );
         });
     });
@@ -374,28 +344,25 @@ describe('Full UI Workflow Integration', function () {
 
             // 3. Test pagination on clients index
             $response = get(route('clients.index'));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Clients/Index')
-                    ->has('clients.links')
-                    ->has('clients.meta')
+            $response->assertInertia(fn ($page) => $page->component('Clients/Index')
+                ->has('clients.links')
+                ->has('clients.meta')
             );
 
             // 4. Test pagination on meetings index
             $response = get(route('meetings.index'));
-            $response->assertInertia(fn ($page) => 
-                $page->component('Meetings/Index')
-                    ->has('meetings.links')
-                    ->has('meetings.meta')
+            $response->assertInertia(fn ($page) => $page->component('Meetings/Index')
+                ->has('meetings.links')
+                ->has('meetings.meta')
             );
 
             // 5. Test dashboard with large dataset
             $response = get('/');
-            $response->assertInertia(fn ($page) => 
-                $page->component('Dashboard')
-                    ->where('stats.total_clients', 25)
-                    ->where('stats.total_meetings', 30)
-                    ->has('recentMeetings', 5) // Limited to 5
-                    ->has('topClients', 5) // Limited to 5
+            $response->assertInertia(fn ($page) => $page->component('Dashboard')
+                ->where('stats.total_clients', 25)
+                ->where('stats.total_meetings', 30)
+                ->has('recentMeetings', 5) // Limited to 5
+                ->has('topClients', 5) // Limited to 5
             );
 
             // 6. Test filtering with large dataset

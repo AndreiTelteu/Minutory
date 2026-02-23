@@ -23,7 +23,7 @@ class TranscriptionFactory extends Factory
         $speakers = ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Chen', 'David Wilson', 'Lisa Brown'];
         $startTime = fake()->randomFloat(3, 0, 3000); // Random start time up to 50 minutes
         $duration = fake()->randomFloat(3, 2, 30); // Duration between 2-30 seconds
-        
+
         return [
             'meeting_id' => Meeting::factory(),
             'speaker' => fake()->randomElement($speakers),
@@ -50,18 +50,18 @@ class TranscriptionFactory extends Factory
     public function withTiming(float $startTime = 0): static
     {
         static $currentTime = 0;
-        
+
         if ($startTime > 0) {
             $currentTime = $startTime;
         }
-        
+
         $duration = fake()->randomFloat(3, 3, 15); // 3-15 seconds per segment
         $segmentStartTime = $currentTime;
         $segmentEndTime = $currentTime + $duration;
-        
+
         // Add small gap between segments
         $currentTime = $segmentEndTime + fake()->randomFloat(3, 0.5, 2);
-        
+
         return $this->state(fn (array $attributes) => [
             'start_time' => $segmentStartTime,
             'end_time' => $segmentEndTime,

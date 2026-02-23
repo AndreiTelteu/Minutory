@@ -9,7 +9,7 @@ class PrismMeetingSearchTool extends Tool
     public function __construct()
     {
         parent::__construct();
-        
+
         $this->as('search_meetings')
             ->for('Search through meeting transcriptions to find specific content, topics, or keywords')
             ->withStringParameter('query', 'The search query to find in meeting transcriptions', true)
@@ -24,11 +24,11 @@ class PrismMeetingSearchTool extends Tool
                     'query' => $query,
                     'client_id' => $client_id,
                     'speaker' => $speaker,
-                    'limit' => $limit
+                    'limit' => $limit,
                 ]);
 
                 if (isset($result['error'])) {
-                    return "Error: " . $result['error'];
+                    return 'Error: '.$result['error'];
                 }
 
                 if (empty($result['results'])) {
@@ -36,7 +36,7 @@ class PrismMeetingSearchTool extends Tool
                 }
 
                 $output = "Found {$result['total_found']} results for '{$query}':\n\n";
-                
+
                 foreach ($result['results'] as $item) {
                     $output .= "**{$item['meeting_title']}** ({$item['client_name']})\n";
                     $output .= "Speaker: {$item['speaker']} at {$item['formatted_timestamp']}\n";

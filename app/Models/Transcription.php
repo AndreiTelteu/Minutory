@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Transcription extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'meeting_id',
         'speaker',
@@ -33,6 +34,7 @@ class Transcription extends Model
     {
         $minutes = floor($this->start_time / 60);
         $seconds = $this->start_time % 60;
+
         return sprintf('%02d:%05.2f', $minutes, $seconds);
     }
 
@@ -40,6 +42,7 @@ class Transcription extends Model
     {
         $minutes = floor($this->end_time / 60);
         $seconds = $this->end_time % 60;
+
         return sprintf('%02d:%05.2f', $minutes, $seconds);
     }
 

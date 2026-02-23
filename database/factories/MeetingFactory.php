@@ -22,11 +22,11 @@ class MeetingFactory extends Factory
     {
         $duration = fake()->numberBetween(300, 3600); // 5 minutes to 1 hour
         $estimatedProcessingTime = max(10, $duration / 60); // 1 second per minute, minimum 10 seconds
-        
+
         return [
             'client_id' => Client::factory(),
             'title' => fake()->sentence(3),
-            'video_path' => 'meetings/' . fake()->numberBetween(1, 100) . '/' . fake()->numberBetween(1, 1000) . '/video.mp4',
+            'video_path' => 'meetings/'.fake()->numberBetween(1, 100).'/'.fake()->numberBetween(1, 1000).'/video.mp4',
             'status' => fake()->randomElement(['pending', 'processing', 'completed', 'failed']),
             'duration' => $duration,
             'estimated_processing_time' => (int) $estimatedProcessingTime,
@@ -75,18 +75,18 @@ class MeetingFactory extends Factory
     /**
      * Create a completed meeting with transcriptions.
      */
-    public function withTranscriptions(int $count = null): static
+    public function withTranscriptions(?int $count = null): static
     {
         return $this->completed()
             ->afterCreating(function (Meeting $meeting) use ($count) {
                 $transcriptionCount = $count ?? fake()->numberBetween(5, 20);
                 $speakers = ['John Smith', 'Sarah Johnson', 'Mike Davis', 'Emily Chen'];
-                
+
                 $currentTime = 0;
                 for ($i = 0; $i < $transcriptionCount; $i++) {
                     $duration = fake()->randomFloat(3, 3, 15); // 3-15 seconds per segment
                     $speaker = fake()->randomElement($speakers);
-                    
+
                     $meeting->transcriptions()->create([
                         'speaker' => $speaker,
                         'text' => fake()->paragraph(fake()->numberBetween(1, 3)),
@@ -94,7 +94,7 @@ class MeetingFactory extends Factory
                         'end_time' => $currentTime + $duration,
                         'confidence' => fake()->randomFloat(2, 0.7, 1.0),
                     ]);
-                    
+
                     // Add small gap between segments
                     $currentTime += $duration + fake()->randomFloat(3, 0.5, 2);
                 }

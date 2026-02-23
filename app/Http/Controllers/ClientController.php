@@ -3,11 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Validation\Rule;
 
 class ClientController extends Controller
 {
@@ -18,7 +18,7 @@ class ClientController extends Controller
             ->get();
 
         return Inertia::render('Clients/Index', [
-            'clients' => $clients
+            'clients' => $clients,
         ]);
     }
 
@@ -49,14 +49,14 @@ class ClientController extends Controller
         }]);
 
         return Inertia::render('Clients/Show', [
-            'client' => $client
+            'client' => $client,
         ]);
     }
 
     public function edit(Client $client): Response
     {
         return Inertia::render('Clients/Edit', [
-            'client' => $client
+            'client' => $client,
         ]);
     }
 
@@ -67,7 +67,7 @@ class ClientController extends Controller
             'email' => [
                 'nullable',
                 'email',
-                Rule::unique('clients', 'email')->ignore($client->id)
+                Rule::unique('clients', 'email')->ignore($client->id),
             ],
             'company' => 'nullable|string|max:255',
             'phone' => 'nullable|string|max:255',

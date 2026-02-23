@@ -23,7 +23,7 @@ createInertiaApp({
             errorHandler.handleError(error, {
                 component: instance?.$options.name || 'unknown',
                 action: 'vue_error',
-                data: { info }
+                data: { info },
             });
         };
 

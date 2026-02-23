@@ -21,7 +21,7 @@ it('updates meeting status to processing and then completed', function () {
     $job->handle();
 
     $meeting->refresh();
-    
+
     expect($meeting->status)->toBe('completed');
     expect($meeting->processing_started_at)->not->toBeNull();
     expect($meeting->processing_completed_at)->not->toBeNull();
@@ -30,13 +30,13 @@ it('updates meeting status to processing and then completed', function () {
 
 it('dispatches transcription job when meeting is uploaded', function () {
     Queue::fake();
-    
+
     $client = Client::factory()->create();
-    
+
     $response = $this->post(route('meetings.store'), [
         'title' => 'Test Meeting',
         'client_id' => $client->id,
-        'video' => \Illuminate\Http\Testing\File::fake()->create('test-video.mp4', 1024)
+        'video' => \Illuminate\Http\Testing\File::fake()->create('test-video.mp4', 1024),
     ]);
 
     Queue::assertPushed(TranscribeMeetingJob::class);
@@ -70,21 +70,21 @@ it('provides status endpoint for real-time updates', function () {
     $response = $this->get(route('meetings.status', $meeting));
 
     $response->assertStatus(200)
-             ->assertJsonStructure([
-                 'id',
-                 'status',
-                 'elapsed_time',
-                 'estimated_remaining_time',
-                 'processing_progress',
-                 'formatted_elapsed_time',
-                 'formatted_estimated_remaining_time',
-                 'queue_progress',
-                 'formatted_estimated_processing_time',
-             ])
-             ->assertJson([
-                 'id' => $meeting->id,
-                 'status' => 'processing',
-             ]);
+        ->assertJsonStructure([
+            'id',
+            'status',
+            'elapsed_time',
+            'estimated_remaining_time',
+            'processing_progress',
+            'formatted_elapsed_time',
+            'formatted_estimated_remaining_time',
+            'queue_progress',
+            'formatted_estimated_processing_time',
+        ])
+        ->assertJson([
+            'id' => $meeting->id,
+            'status' => 'processing',
+        ]);
 });
 
 it('calculates queue progress for pending meetings', function () {
@@ -104,15 +104,15 @@ it('calculates queue progress for pending meetings', function () {
 
 it('stores estimated processing time when meeting is uploaded', function () {
     $client = Client::factory()->create();
-    
+
     $response = $this->post(route('meetings.store'), [
         'title' => 'Test Meeting with Estimation',
         'client_id' => $client->id,
-        'video' => \Illuminate\Http\Testing\File::fake()->create('test-video.mp4', 1024)
+        'video' => \Illuminate\Http\Testing\File::fake()->create('test-video.mp4', 1024),
     ]);
 
     $meeting = Meeting::latest()->first();
-    
+
     expect($meeting->estimated_processing_time)->not->toBeNull();
     expect($meeting->estimated_processing_time)->toBeGreaterThan(0);
     expect($meeting->formatted_estimated_processing_time)->not->toBeNull();
