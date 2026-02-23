@@ -17,17 +17,18 @@ pest()->extend(Tests\TestCase::class)
 
 /*
 |--------------------------------------------------------------------------
-| Browser Testing
+| Integration Testing
 |--------------------------------------------------------------------------
 |
-| Configure browser testing for comprehensive integration tests
+| Configure integration testing for comprehensive UI tests
 |
 */
 
 pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
-    ->use(Pest\Browser\Browsable::class)
-    ->in('Browser');
+    ->in('Integration');
+
+
 
 /*
 |--------------------------------------------------------------------------
