@@ -6,13 +6,14 @@
 
 ## Core Tasks
 
-- [ ] **Task 1: Project Configuration**
-  - Create a MariaDB database for the project.
-  - Set up the database credentials in the `.env` file.
-  - Run `composer install`.
-  - Run `npm install` and `npm run build`.
-  - Run database migrations and seeders (`php artisan migrate --seed`).
-  - Navigate to `@/transcribe-microservice/` and install dependencies using `uv`.
+- [x] **Task 1: Project Configuration** ✅
+  - Create a MariaDB database for the project. ✅
+  - Set up the database credentials in the `.env` file. ✅
+  - Run `composer install`. ✅ (used composer update due to PHP 8.5)
+  - Run `npm install` and `npm run build`. ✅
+  - Run database migrations and seeders (`php artisan migrate --seed`). ✅
+  - Navigate to `@/transcribe-microservice/` and install dependencies using `uv`. ✅
+    - **Note:** torch>=2.5.1 not available for x86_64 macOS. Using torch 2.2.2 with faster-whisper 1.0.3 directly instead of whisperx.
 
 - [ ] **Task 2: Playwright UI & Functionality Audit**
   - Ensure the local project server is running.
