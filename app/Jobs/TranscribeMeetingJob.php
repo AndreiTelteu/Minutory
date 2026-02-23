@@ -8,22 +8,24 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Process\Exception\ProcessFailedException;
 
 class TranscribeMeetingJob implements ShouldQueue
 {
-    use Queueable, InteractsWithQueue, SerializesModels;
+    use InteractsWithQueue, Queueable, SerializesModels;
 
     public $timeout = 3600; // 1 hour timeout
+
     public $tries = 3; // Allow 3 attempts
+
     public $maxExceptions = 3;
 
     // Python environment paths
     private string $pythonPath;
+
     private string $transcribeScript;
 
     /**
@@ -54,19 +56,19 @@ class TranscribeMeetingJob implements ShouldQueue
             // Resolve paths
             $meetingId = $this->meeting->id;
             $projectRoot = base_path();
-            $storageDir = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . $meetingId;
-            $wavPath = $storageDir . DIRECTORY_SEPARATOR . 'audio.wav';
-            $transcriptPath = $storageDir . DIRECTORY_SEPARATOR . 'transcript.json';
+            $storageDir = $projectRoot.DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.$meetingId;
+            $wavPath = $storageDir.DIRECTORY_SEPARATOR.'audio.wav';
+            $transcriptPath = $storageDir.DIRECTORY_SEPARATOR.'transcript.json';
 
             // Ensure storage/{meeting_id} directory exists
-            if (!File::exists($storageDir)) {
+            if (! File::exists($storageDir)) {
                 File::makeDirectory($storageDir, 0755, true);
             }
 
             // Resolve input video path from the public storage disk
             $videoPath = Storage::disk('public')->path($this->meeting->video_path);
 
-            if (!File::exists($videoPath)) {
+            if (! File::exists($videoPath)) {
                 throw new \RuntimeException("Video file not found at path: {$videoPath}");
             }
 
@@ -80,12 +82,12 @@ class TranscribeMeetingJob implements ShouldQueue
             Log::info("Running ffmpeg for meeting {$meetingId}: {$ffmpegCmd}");
             $this->runShell($ffmpegCmd, $this->timeout - 60);
 
-            if (!File::exists($wavPath)) {
+            if (! File::exists($wavPath)) {
                 throw new \RuntimeException("WAV conversion did not produce expected file at: {$wavPath}");
             }
 
             // 2) Prepare transcript file and run transcription using native Python
-            if (!File::exists($transcriptPath)) {
+            if (! File::exists($transcriptPath)) {
                 File::put($transcriptPath, '');
             }
 
@@ -94,10 +96,9 @@ class TranscribeMeetingJob implements ShouldQueue
 
             // Build transcription command using native Python
             $hfToken = config('services.huggingface.token', env('HUGGINGFACE_TOKEN', ''));
-            
+
             $transcribeCmd = sprintf(
-                'HF_API_KEY=%s KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --model-size tiny --output-file %s --threads %d --language ro --diarize --align --device cpu --compute-type int8 2>&1',
-                escapeshellarg($hfToken),
+                'KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --output-file %s --threads %d --device cpu 2>&1',
                 $this->pythonPath,
                 $this->transcribeScript,
                 $wavPath,
@@ -119,7 +120,7 @@ class TranscribeMeetingJob implements ShouldQueue
 
             Log::info("Completed transcription for meeting {$this->meeting->id} -> transcript at {$transcriptPath}");
         } catch (\Throwable $e) {
-            Log::error("Transcription failed for meeting {$this->meeting->id}: " . $e->getMessage());
+            Log::error("Transcription failed for meeting {$this->meeting->id}: ".$e->getMessage());
 
             // Update meeting status to failed
             $this->meeting->update([
@@ -136,16 +137,18 @@ class TranscribeMeetingJob implements ShouldQueue
      */
     private function saveTranscriptionSegments(string $transcriptPath): void
     {
-        if (!File::exists($transcriptPath)) {
+        if (! File::exists($transcriptPath)) {
             Log::warning("Transcript file not found at: {$transcriptPath}");
+
             return;
         }
 
         $content = File::get($transcriptPath);
         $transcript = json_decode($content, true);
 
-        if (!$transcript || !isset($transcript['segments'])) {
+        if (! $transcript || ! isset($transcript['segments'])) {
             Log::warning("Invalid transcript format at: {$transcriptPath}");
+
             return;
         }
 
@@ -163,12 +166,13 @@ class TranscribeMeetingJob implements ShouldQueue
             ]);
         }
 
-        Log::info("Saved " . count($transcript['segments']) . " transcription segments for meeting {$this->meeting->id}");
+        Log::info('Saved '.count($transcript['segments'])." transcription segments for meeting {$this->meeting->id}");
     }
-    
+
     private function processPathForLocalTesting(string $path): string
     {
         $path = str_replace('E:\\', '/mnt/e/', $path);
+
         return $path;
     }
 
@@ -181,34 +185,34 @@ class TranscribeMeetingJob implements ShouldQueue
         $faker = fake();
         $duration = $this->meeting->duration ?? 1800; // Default 30 minutes
         $speakers = ['Speaker A', 'Speaker B', 'Speaker C'];
-    
+
         // Generate transcription segments
         $currentTime = 0;
         $segmentCount = rand(20, 50); // Random number of segments
-    
+
         for ($i = 0; $i < $segmentCount; $i++) {
             $segmentDuration = rand(5, 30); // 5-30 seconds per segment
             $endTime = min($currentTime + $segmentDuration, $duration);
-    
+
             // Generate realistic meeting content
             $meetingPhrases = [
                 "Let's discuss the quarterly results and our performance metrics.",
-                "I think we should focus on improving customer satisfaction scores.",
-                "The budget allocation for next quarter needs to be reviewed.",
-                "Can we schedule a follow-up meeting to discuss the implementation details?",
-                "I agree with the proposed timeline, but we might need additional resources.",
-                "The client feedback has been overwhelmingly positive so far.",
-                "We need to address the technical challenges before moving forward.",
+                'I think we should focus on improving customer satisfaction scores.',
+                'The budget allocation for next quarter needs to be reviewed.',
+                'Can we schedule a follow-up meeting to discuss the implementation details?',
+                'I agree with the proposed timeline, but we might need additional resources.',
+                'The client feedback has been overwhelmingly positive so far.',
+                'We need to address the technical challenges before moving forward.',
                 "Let's table this discussion and revisit it in our next meeting.",
-                "The marketing campaign results exceeded our expectations.",
+                'The marketing campaign results exceeded our expectations.',
                 "I'll send out the action items and meeting notes after this call.",
-                "We should consider the long-term implications of this decision.",
-                "The development team has made significant progress this sprint.",
+                'We should consider the long-term implications of this decision.',
+                'The development team has made significant progress this sprint.',
                 "Let's review the key performance indicators for this project.",
-                "I think we need to involve the stakeholders in this decision.",
-                "The deadline is tight, but I believe we can deliver on time."
+                'I think we need to involve the stakeholders in this decision.',
+                'The deadline is tight, but I believe we can deliver on time.',
             ];
-    
+
             Transcription::create([
                 'meeting_id' => $this->meeting->id,
                 'speaker' => $speakers[array_rand($speakers)],
@@ -217,15 +221,15 @@ class TranscribeMeetingJob implements ShouldQueue
                 'end_time' => $endTime,
                 'confidence' => $faker->randomFloat(2, 0.85, 0.99), // High confidence scores
             ]);
-    
+
             $currentTime = $endTime;
-    
+
             // Stop if we've reached the video duration
             if ($currentTime >= $duration) {
                 break;
             }
         }
-    
+
         Log::info("Generated {$segmentCount} transcription segments for meeting {$this->meeting->id}");
     }
 
@@ -236,9 +240,10 @@ class TranscribeMeetingJob implements ShouldQueue
     {
         $real = realpath($path) ?: $path;
         $real = $this->processPathForLocalTesting($real);
+
         return str_replace('\\', '/', $real);
     }
-    
+
     /**
      * Determine the number of logical CPU cores on the host.
      * Tries platform-specific strategies with safe fallbacks.
@@ -247,7 +252,7 @@ class TranscribeMeetingJob implements ShouldQueue
     {
         // Windows often exposes NUMBER_OF_PROCESSORS
         $env = getenv('NUMBER_OF_PROCESSORS');
-        if ($env && is_numeric($env) && (int)$env > 0) {
+        if ($env && is_numeric($env) && (int) $env > 0) {
             return (int) $env;
         }
 
@@ -279,7 +284,7 @@ class TranscribeMeetingJob implements ShouldQueue
             try {
                 $p = Process::fromShellCommandline($cmd, base_path(), null, null, 5);
                 $p->run();
-                if (!$p->isSuccessful()) {
+                if (! $p->isSuccessful()) {
                     continue;
                 }
                 $out = trim($p->getOutput() ?: $p->getErrorOutput());
@@ -322,14 +327,14 @@ class TranscribeMeetingJob implements ShouldQueue
                 Log::warning(trim($buffer));
             }
         });
-    
-        if (!$process->isSuccessful()) {
+
+        if (! $process->isSuccessful()) {
             $exitCode = $process->getExitCode();
             $err = $process->getErrorOutput() ?: $process->getOutput();
             throw new \RuntimeException("Command failed (exit {$exitCode}): {$err}");
         }
     }
-    
+
     /**
      * Handle a job failure.
      */
@@ -340,15 +345,15 @@ class TranscribeMeetingJob implements ShouldQueue
             'trace' => $exception->getTraceAsString(),
             'meeting_id' => $this->meeting->id,
             'video_path' => $this->meeting->video_path,
-            'attempts' => $this->attempts()
+            'attempts' => $this->attempts(),
         ]);
-    
+
         // Update meeting status to failed with error details
         $this->meeting->update([
             'status' => 'failed',
             'processing_completed_at' => now(),
             'error_message' => $this->getUserFriendlyErrorMessage($exception),
-            'technical_error' => $exception->getMessage()
+            'technical_error' => $exception->getMessage(),
         ]);
 
         // Clean up any temporary files
@@ -392,8 +397,8 @@ class TranscribeMeetingJob implements ShouldQueue
     {
         try {
             $meetingId = $this->meeting->id;
-            $storageDir = base_path() . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . $meetingId;
-            
+            $storageDir = base_path().DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.$meetingId;
+
             if (File::exists($storageDir)) {
                 $files = File::files($storageDir);
                 foreach ($files as $file) {
@@ -401,14 +406,14 @@ class TranscribeMeetingJob implements ShouldQueue
                         File::delete($file->getPathname());
                     }
                 }
-                
+
                 // Remove directory if empty
                 if (empty(File::files($storageDir))) {
                     File::deleteDirectory($storageDir);
                 }
             }
         } catch (\Exception $e) {
-            Log::warning("Failed to cleanup temp files for meeting {$this->meeting->id}: " . $e->getMessage());
+            Log::warning("Failed to cleanup temp files for meeting {$this->meeting->id}: ".$e->getMessage());
         }
     }
 

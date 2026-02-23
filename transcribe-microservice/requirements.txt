@@ -1,14 +1,5 @@
-# Requirements for transcribe-microservice
-# Note: torch>=2.5.1 not available for x86_64 macOS (only arm64)
-# Using torch 2.2.2 which is the latest for x86_64 macOS
-
+onnx-asr>=0.10.2
+onnx>=1.17.0
+onnxruntime>=1.23.0
+huggingface_hub>=0.20.0
 numpy<2
-faster-whisper==1.0.3
-pyannote-audio==3.3.2
-pyannote-core==5.0.0
-pyannote-pipeline==3.0.1
-pyannote-database==5.1.3
-pyannote-metrics==3.2.1
-
-# Note: whisperx requires torch>=2.5.1 which is not available on x86_64 macOS
-# Use faster-whisper directly instead
