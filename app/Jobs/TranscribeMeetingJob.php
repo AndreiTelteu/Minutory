@@ -22,12 +22,20 @@ class TranscribeMeetingJob implements ShouldQueue
     public $tries = 3; // Allow 3 attempts
     public $maxExceptions = 3;
 
+    // Python environment paths
+    private string $pythonPath;
+    private string $transcribeScript;
+
     /**
      * Create a new job instance.
      */
     public function __construct(
         public Meeting $meeting
-    ) {}
+    ) {
+        // Use uv virtual environment Python
+        $this->pythonPath = base_path('transcribe-microservice/.venv/bin/python');
+        $this->transcribeScript = base_path('transcribe-microservice/transcribe.py');
+    }
 
     /**
      * Execute the job.
@@ -36,103 +44,126 @@ class TranscribeMeetingJob implements ShouldQueue
     {
         try {
             Log::info("Starting transcription for meeting {$this->meeting->id}");
-    
+
             // Update meeting status to processing
             $this->meeting->update([
                 'status' => 'processing',
                 'processing_started_at' => now(),
             ]);
-    
+
             // Resolve paths
             $meetingId = $this->meeting->id;
             $projectRoot = base_path();
             $storageDir = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . $meetingId;
             $wavPath = $storageDir . DIRECTORY_SEPARATOR . 'audio.wav';
             $transcriptPath = $storageDir . DIRECTORY_SEPARATOR . 'transcript.json';
-    
+
             // Ensure storage/{meeting_id} directory exists
             if (!File::exists($storageDir)) {
                 File::makeDirectory($storageDir, 0755, true);
             }
-    
-                                    // Resolve input video path from the public storage disk
-                                    $videoPath = Storage::disk('public')->path($this->meeting->video_path);
-                        
-                                    if (!File::exists($videoPath)) {
-                                        throw new \RuntimeException("Video file not found at path: {$videoPath}");
-                                    }
-            
-                        // Build docker-friendly mount paths
-                        $inDirHost = dirname($videoPath);
-                        $inFileBase = basename($videoPath);
-                        $outDirHost = $storageDir;
-    
-            $inDirDocker = $this->dockerPath($inDirHost);
-            $outDirDocker = $this->dockerPath($outDirHost);
-    
-            // Docker image names (allow override via env)
-            $ffmpegImage = config('services.ffmpeg.image', 'jrottenberg/ffmpeg:latest');
-            $scriberrImage = config('services.scriberr.image', 'scriberr-local:latest');
-    
-            // 1) Convert video to WAV using ffmpeg in Docker
+
+            // Resolve input video path from the public storage disk
+            $videoPath = Storage::disk('public')->path($this->meeting->video_path);
+
+            if (!File::exists($videoPath)) {
+                throw new \RuntimeException("Video file not found at path: {$videoPath}");
+            }
+
+            // 1) Convert video to WAV using native ffmpeg
             $ffmpegCmd = sprintf(
-                'docker run --rm -v "%s:/in/" -v "%s:/out" %s -hide_banner -y -i "/in/%s" -vn -acodec pcm_s16le -ar 16000 -ac 1 "/out/audio.wav"',
-                $inDirDocker,
-                $outDirDocker,
-                escapeshellarg($ffmpegImage),
-                str_replace('"', '\"', $inFileBase)
+                'ffmpeg -hide_banner -y -i "%s" -vn -acodec pcm_s16le -ar 16000 -ac 1 "%s" 2>&1',
+                $videoPath,
+                $wavPath
             );
-    
-            Log::info("Running ffmpeg docker command for meeting {$meetingId}: {$ffmpegCmd}");
-            $this->runShell($ffmpegCmd, $this->timeout - 60); // leave buffer
-    
+
+            Log::info("Running ffmpeg for meeting {$meetingId}: {$ffmpegCmd}");
+            $this->runShell($ffmpegCmd, $this->timeout - 60);
+
             if (!File::exists($wavPath)) {
                 throw new \RuntimeException("WAV conversion did not produce expected file at: {$wavPath}");
             }
-    
-            // 2) Prepare transcript file and run transcription container
+
+            // 2) Prepare transcript file and run transcription using native Python
             if (!File::exists($transcriptPath)) {
-                // Equivalent to touch
                 File::put($transcriptPath, '');
             }
-    
-            $wavMount = $this->dockerPath($wavPath);
-            $transcriptMount = $this->dockerPath($transcriptPath);
-    
-            $threads = $this->getCpuThreads();
-            Log::info("Using {$threads} threads for Scriberr transcription on host");
 
-            $scriberrCmd = sprintf(
-                'docker run --rm -v "%s:/input.wav" -v "%s:/transcript.json" %s transcribe.py --audio-file /input.wav --model-size medium --output-file /transcript.json --threads %d --language ro --diarize --align --device cpu --compute-type int8',
-                $wavMount,
-                $transcriptMount,
-                escapeshellarg($scriberrImage),
+            $threads = $this->getCpuThreads();
+            Log::info("Using {$threads} threads for transcription on meeting {$meetingId}");
+
+            // Build transcription command using native Python
+            $hfToken = config('services.huggingface.token', env('HUGGINGFACE_TOKEN', ''));
+            
+            $transcribeCmd = sprintf(
+                'HF_API_KEY=%s %s %s --audio-file %s --model-size medium --output-file %s --threads %d --language ro --diarize --align --device cpu --compute-type int8 2>&1',
+                escapeshellarg($hfToken),
+                $this->pythonPath,
+                $this->transcribeScript,
+                $wavPath,
+                $transcriptPath,
                 $threads
             );
-    
-            Log::info("Running transcription docker command for meeting {$meetingId}");
-            $this->runShell($scriberrCmd, $this->timeout - 120); // leave more buffer
-    
-            // Optional: If you want to read transcript and persist segments later, do it here.
-    
+
+            Log::info("Running transcription for meeting {$meetingId}");
+            $this->runShell($transcribeCmd, $this->timeout - 120);
+
+            // 3) Parse and save transcription segments
+            $this->saveTranscriptionSegments($transcriptPath);
+
             // Update meeting status to completed
             $this->meeting->update([
                 'status' => 'completed',
                 'processing_completed_at' => now(),
             ]);
-    
+
             Log::info("Completed transcription for meeting {$this->meeting->id} -> transcript at {$transcriptPath}");
         } catch (\Throwable $e) {
             Log::error("Transcription failed for meeting {$this->meeting->id}: " . $e->getMessage());
-    
+
             // Update meeting status to failed
             $this->meeting->update([
                 'status' => 'failed',
                 'processing_completed_at' => now(),
             ]);
-    
+
             throw $e;
         }
+    }
+
+    /**
+     * Save transcription segments to database
+     */
+    private function saveTranscriptionSegments(string $transcriptPath): void
+    {
+        if (!File::exists($transcriptPath)) {
+            Log::warning("Transcript file not found at: {$transcriptPath}");
+            return;
+        }
+
+        $content = File::get($transcriptPath);
+        $transcript = json_decode($content, true);
+
+        if (!$transcript || !isset($transcript['segments'])) {
+            Log::warning("Invalid transcript format at: {$transcriptPath}");
+            return;
+        }
+
+        // Clear existing transcriptions for this meeting
+        Transcription::where('meeting_id', $this->meeting->id)->delete();
+
+        foreach ($transcript['segments'] as $segment) {
+            Transcription::create([
+                'meeting_id' => $this->meeting->id,
+                'speaker' => $segment['speaker'] ?? 'Unknown',
+                'text' => $segment['text'] ?? '',
+                'start_time' => $segment['start'] ?? 0,
+                'end_time' => $segment['end'] ?? 0,
+                'confidence' => $segment['avg_logprob'] ?? null,
+            ]);
+        }
+
+        Log::info("Saved " . count($transcript['segments']) . " transcription segments for meeting {$this->meeting->id}");
     }
     
     private function processPathForLocalTesting(string $path): string
