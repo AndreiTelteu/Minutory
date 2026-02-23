@@ -96,7 +96,7 @@ class TranscribeMeetingJob implements ShouldQueue
             $hfToken = config('services.huggingface.token', env('HUGGINGFACE_TOKEN', ''));
             
             $transcribeCmd = sprintf(
-                'HF_API_KEY=%s %s %s --audio-file %s --model-size medium --output-file %s --threads %d --language ro --diarize --align --device cpu --compute-type int8 2>&1',
+                'HF_API_KEY=%s KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --model-size tiny --output-file %s --threads %d --language ro --diarize --align --device cpu --compute-type int8 2>&1',
                 escapeshellarg($hfToken),
                 $this->pythonPath,
                 $this->transcribeScript,

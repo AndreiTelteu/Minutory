@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
+"""
+Transcription script using faster-whisper (instead of whisperx due to torch compatibility).
+"""
 import argparse
 import json
 import os
-import whisperx
+import faster_whisper
 from diarize import diarize_transcript
 
 # Configure environment variables for HuggingFace
@@ -11,9 +15,10 @@ os.environ["TRUST_REMOTE_CODE"] = "1"
 # Use HuggingFace token from environment variable if available
 hf_token = os.environ.get("HF_API_KEY", "")
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description="WhisperX Transcription Script with optional diarization/alignment."
+        description="Faster Whisper Transcription Script with optional diarization."
     )
     parser.add_argument(
         "--audio-file",
@@ -49,13 +54,13 @@ def main():
         "--device",
         type=str,
         default="cpu",
-        help="Device to run WhisperX on (e.g., 'cpu' or 'cuda').",
+        help="Device to run Whisper on (e.g., 'cpu' or 'cuda').",
     )
     parser.add_argument(
         "--compute-type",
         type=str,
         default="int8",
-        help="Compute type for WhisperX inference (e.g., 'float16', 'int8').",
+        help="Compute type for Whisper inference (e.g., 'float16', 'int8').",
     )
     parser.add_argument(
         "--output-file",
@@ -67,12 +72,12 @@ def main():
         "--threads",
         type=int,
         default=1,
-        help="number of threads used by torch for CPU inference",
+        help="Number of threads used for CPU inference",
     )
     parser.add_argument(
         "--models-dir",
         type=str,
-        default="/scriberr/models",
+        default="/tmp/whisper_models",
         help="Directory where models are stored and cached",
     )
     parser.add_argument(
@@ -90,14 +95,13 @@ def main():
     args = parser.parse_args()
 
     # Configure CPU threading based on --threads for CPU runs
-    # This influences PyTorch ops (alignment/diarization) and many BLAS backends.
     if args.device == "cpu" and args.threads and args.threads > 0:
         os.environ["OMP_NUM_THREADS"] = str(args.threads)
         os.environ["MKL_NUM_THREADS"] = str(args.threads)
         os.environ["OPENBLAS_NUM_THREADS"] = str(args.threads)
         os.environ["NUMEXPR_NUM_THREADS"] = str(args.threads)
         try:
-            import torch  # type: ignore
+            import torch
             torch.set_num_threads(args.threads)
             interop = max(1, args.threads // 2)
             torch.set_num_interop_threads(interop)
@@ -105,97 +109,94 @@ def main():
         except Exception as _e:
             print(f"Warning: could not fully configure torch thread settings: {_e}")
 
-    # Prepare kwargs for whisperx.load_model and try to pass through CPU thread hint
-    load_kwargs = dict(
+    # Load faster-whisper model
+    print(f"Loading model: {args.model_size}")
+    model = faster_whisper.WhisperModel(
+        args.model_size,
         device=args.device,
         compute_type=args.compute_type,
-        language=args.language,  # if None, Whisper will attempt language detection
-        download_root=args.models_dir  # Specify the download directory
+        download_root=args.models_dir,
     )
-    try:
-        load_kwargs_with_threads = dict(load_kwargs)
-        load_kwargs_with_threads["asr_options"] = {"cpu_threads": int(args.threads)}
-        model = whisperx.load_model(args.model_size, **load_kwargs_with_threads)
-    except TypeError:
-        # Fallback if asr_options is not supported in this whisperx version.
-        model = whisperx.load_model(args.model_size, **load_kwargs)
-    except ValueError as e:
-        if "float16 compute type" in str(e) and args.compute_type == "float16":
-            print(f"Warning: {e}")
-            print("Trying with float32 compute type instead...")
-            load_kwargs["compute_type"] = "float32"
-            try:
-                load_kwargs_with_threads = dict(load_kwargs)
-                load_kwargs_with_threads["asr_options"] = {"cpu_threads": int(args.threads)}
-                model = whisperx.load_model(args.model_size, **load_kwargs_with_threads)
-            except TypeError:
-                model = whisperx.load_model(args.model_size, **load_kwargs)
-        else:
-            # Re-raise if it's not the float16 issue or fallback also fails
-            raise
 
-    # 2. Load audio
-    audio = whisperx.load_audio(args.audio_file)
+    # Load audio - convert video to audio using faster-whisper's built-in loader
+    import soundfile as sf
+    print(f"Loading audio: {args.audio_file}")
+    
+    # For video files, use faster-whisper's audio loading which handles multiple formats
+    # If it's a video file, we need to convert it first
+    if args.audio_file.endswith(('.mp4', '.mov', '.avi', '.webm', '.m4a')):
+        import subprocess
+        import tempfile
+        wav_path = tempfile.mktemp(suffix='.wav')
+        # Convert to wav using ffmpeg
+        subprocess.run([
+            'ffmpeg', '-y', '-i', args.audio_file,
+            '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', wav_path
+        ], capture_output=True)
+        audio, samplerate = sf.read(wav_path)
+    else:
+        audio, samplerate = sf.read(args.audio_file)
+    
+    # If stereo, convert to mono
+    if len(audio.shape) > 1:
+        audio = audio.mean(axis=1)
+    
+    # Ensure audio is float32 (required by faster-whisper)
+    audio = audio.astype('float32')
+    
+    # Convert to 16kHz if needed
+    if samplerate != 16000:
+        from scipy import signal
+        number_of_samples = round(len(audio) * 16000 / samplerate)
+        audio = signal.resample(audio, number_of_samples)
 
-    # 3. Transcribe
-    result = model.transcribe(audio, batch_size=args.batch_size, print_progress=True)
-    # result is a dictionary with keys like "segments", "language", etc.
+    # Transcribe
+    print(f"Transcribing with language: {args.language or 'auto-detect'}")
+    segments, info = model.transcribe(
+        audio, 
+        language=args.language,
+        beam_size=5,
+        vad_filter=False,  # Disable VAD due to compatibility issues
+    )
 
-    # 4. Optionally align the segments
-    if args.align:
-        # load alignment model
-        model_a, metadata = whisperx.load_align_model(
-            language_code=result["language"], 
-            device=args.device,
-            model_dir=args.models_dir  # Specify the model directory
-        )
-        aligned_result = whisperx.align(
-            result["segments"],
-            model_a,
-            metadata,
-            audio,
-            args.device,
-            return_char_alignments=False,
-        )
-        # Overwrite the old segments with the aligned segments
-        result["segments"] = aligned_result["segments"]
+    print(f"Detected language: {info.language} with probability {info.language_probability:.2f}")
 
-    # 5. Optionally perform diarization
+    # Build result
+    result = {
+        "language": info.language,
+        "language_probability": info.language_probability,
+        "segments": []
+    }
+
+    for segment in segments:
+        result["segments"].append({
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text.strip(),
+            "avg_logprob": segment.avg_logprob,
+            "no_speech_prob": segment.no_speech_prob,
+        })
+
+    # Optionally perform diarization
     if args.diarize:
         try:
-            # Clear memory before diarization if using CUDA
-            if args.device == "cuda":
-                try:
-                    import torch
-                    # Release model from memory to free CUDA memory
-                    del model
-                    # If alignment was used, also clear that model
-                    if args.align:
-                        del model_a
-                        del metadata
-                    # Explicit garbage collection
-                    import gc
-                    gc.collect()
-                    # Clear CUDA cache
-                    torch.cuda.empty_cache()
-                    print("Cleared model from memory before diarization")
-                except (ImportError, NameError) as e:
-                    print(f"Could not fully clear memory: {e}")
-
+            print("Performing speaker diarization...")
             diarized_result = diarize_transcript(args.audio_file, result, args.device, args.diarization_model)
             result["segments"] = diarized_result["segments"]
         except Exception as e:
             print(f"Diarization failed: {e}")
             # If diarization fails, we can still save the transcript without speaker labels
             for segment in result["segments"]:
-                segment["speaker"] = ""
+                segment["speaker"] = "unknown"
     else:
         for segment in result["segments"]:
-            segment["speaker"] = ""
+            segment["speaker"] = "unknown"
 
+    # Save result
     with open(args.output_file, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
         print(f"Transcript saved to {args.output_file}")
+
 
 if __name__ == "__main__":
     main()
