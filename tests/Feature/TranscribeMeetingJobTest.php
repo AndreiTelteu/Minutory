@@ -4,7 +4,9 @@ use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -40,6 +42,32 @@ it('dispatches transcription job when meeting is uploaded', function () {
     ]);
 
     Queue::assertPushed(TranscribeMeetingJob::class);
+});
+
+it('stores generated artifacts beside the uploaded video', function () {
+    Storage::fake('public');
+
+    $client = Client::factory()->create();
+    $meeting = Meeting::factory()->create([
+        'client_id' => $client->id,
+        'video_path' => "meetings/{$client->id}/91/video.mp4",
+    ]);
+
+    Storage::disk('public')->put($meeting->video_path, 'video');
+
+    $job = new TranscribeMeetingJob($meeting);
+    $method = new ReflectionMethod($job, 'cleanupTempFiles');
+    $artifactDirectory = dirname(Storage::disk('public')->path($meeting->video_path));
+
+    File::put($artifactDirectory.'/audio.wav', 'audio');
+    File::put($artifactDirectory.'/transcript.json', json_encode(['segments' => []]));
+    $method->invoke($job);
+
+    Storage::disk('public')->assertExists($meeting->video_path);
+    Storage::disk('public')->assertMissing("meetings/{$client->id}/91/audio.wav");
+    Storage::disk('public')->assertMissing("meetings/{$client->id}/91/transcript.json");
+    expect(File::exists(storage_path("{$meeting->id}/audio.wav")))->toBeFalse()
+        ->and(File::exists(storage_path("{$meeting->id}/transcript.json")))->toBeFalse();
 });
 
 it('calculates progress tracking attributes correctly', function () {

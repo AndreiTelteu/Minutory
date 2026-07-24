@@ -63,12 +63,13 @@ class TranscribeMeetingJob implements ShouldBeUnique
 
             // Resolve paths
             $meetingId = $this->meeting->id;
-            $projectRoot = base_path();
-            $storageDir = $projectRoot.DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.$meetingId;
+            // Keep every meeting artifact beside the uploaded video on the public disk.
+            // video_path is meetings/{client_id}/{meeting_id}/video.{extension}.
+            $storageDir = dirname(Storage::disk('public')->path($this->meeting->video_path));
             $wavPath = $storageDir.DIRECTORY_SEPARATOR.'audio.wav';
             $transcriptPath = $storageDir.DIRECTORY_SEPARATOR.'transcript.json';
 
-            // Ensure storage/{meeting_id} directory exists
+            // Ensure the meeting directory exists before writing generated artifacts.
             if (! File::exists($storageDir)) {
                 File::makeDirectory($storageDir, 0755, true);
             }
@@ -405,20 +406,14 @@ class TranscribeMeetingJob implements ShouldBeUnique
     private function cleanupTempFiles(): void
     {
         try {
-            $meetingId = $this->meeting->id;
-            $storageDir = base_path().DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.$meetingId;
+            $storageDir = dirname(Storage::disk('public')->path($this->meeting->video_path));
 
             if (File::exists($storageDir)) {
-                $files = File::files($storageDir);
-                foreach ($files as $file) {
-                    if (in_array($file->getExtension(), ['wav', 'json'])) {
-                        File::delete($file->getPathname());
-                    }
-                }
-
-                // Remove directory if empty
-                if (empty(File::files($storageDir))) {
-                    File::deleteDirectory($storageDir);
+                foreach ([
+                    $storageDir.DIRECTORY_SEPARATOR.'audio.wav',
+                    $storageDir.DIRECTORY_SEPARATOR.'transcript.json',
+                ] as $artifact) {
+                    File::delete($artifact);
                 }
             }
         } catch (\Exception $e) {
