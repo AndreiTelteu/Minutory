@@ -1,12 +1,23 @@
 <template>
-    <div class="transcription-viewer">
-        <div class="mb-3 flex items-center justify-between">
+    <div class="transcription-viewer flex min-h-0 flex-1 flex-col">
+        <div class="mb-3 flex shrink-0 items-center justify-between gap-3">
             <h3 class="text-[13px] font-semibold">Transcript</h3>
-            <span class="tnum text-[12px] text-ink-tertiary">{{ transcriptions.length }} segments</span>
+            <div class="flex items-center gap-3">
+                <label class="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-secondary select-none">
+                    <input
+                        v-model="autoScroll"
+                        type="checkbox"
+                        class="h-3.5 w-3.5 rounded border-border-strong accent-accent"
+                        @change="onAutoScrollToggle"
+                    />
+                    Auto-scroll
+                </label>
+                <span class="tnum text-[12px] text-ink-tertiary">{{ transcriptions.length }} segments</span>
+            </div>
         </div>
 
         <!-- Search -->
-        <div class="relative mb-3">
+        <div class="relative mb-3 shrink-0">
             <input
                 v-model="searchQuery"
                 type="text"
@@ -19,40 +30,39 @@
         </div>
 
         <!-- Segments -->
-        <div ref="transcriptionContainer" class="max-h-[32rem] overflow-y-auto rounded-lg border border-border bg-ground-subtle">
+        <div
+            ref="transcriptionContainer"
+            class="max-h-[70vh] min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-ground-subtle"
+            @scroll.passive="onContainerScroll"
+            @wheel.passive="onManualScrollIntent"
+            @touchmove.passive="onManualScrollIntent"
+        >
             <div v-if="filteredTranscriptions.length === 0" class="p-8 text-center text-[13px] text-ink-secondary">
                 {{ searchQuery ? 'No segments match your search.' : 'No transcription available.' }}
             </div>
 
-            <div v-else class="space-y-1 p-2">
+            <div v-else class="space-y-0.5 p-1.5">
                 <div
                     v-for="transcription in filteredTranscriptions"
                     :key="transcription.id"
                     :ref="(el) => setTranscriptionRef(transcription.id, el)"
                     :class="[
-                        'transcription-segment cursor-pointer rounded-md p-2.5 transition-colors duration-150',
+                        'transcription-segment cursor-pointer rounded px-2 py-1.5 leading-snug transition-colors duration-150',
                         isCurrentSegment(transcription) ? 'bg-accent-subtle' : 'hover:bg-ground-raised',
                     ]"
                     @click="onTimestampClick(transcription.start_time)"
                 >
-                    <div class="mb-1 flex items-center justify-between gap-2">
-                        <div class="flex items-center gap-2">
-                            <span class="text-[12px] font-semibold" :class="isCurrentSegment(transcription) ? 'text-accent' : 'text-ink'">
-                                {{ transcription.speaker || 'Unknown Speaker' }}
-                            </span>
-                            <span
-                                class="tnum rounded bg-ground-raised px-1.5 py-0.5 text-[11px] text-ink-secondary"
-                                :class="{ 'bg-ground': isCurrentSegment(transcription) }"
-                                :title="`Jump to ${formatTime(transcription.start_time)}`"
-                            >
-                                {{ formatTime(transcription.start_time) }}
-                            </span>
-                        </div>
-                        <span class="tnum text-[11px] text-ink-tertiary">
-                            {{ formatDuration(transcription.end_time - transcription.start_time) }}
-                        </span>
-                    </div>
-                    <p class="text-[13px] leading-relaxed text-ink-secondary" :class="{ 'text-ink': isCurrentSegment(transcription) }" v-html="highlightSearchTerm(transcription.text)"></p>
+                    <span class="text-[12px] font-semibold" :class="isCurrentSegment(transcription) ? 'text-accent' : 'text-ink'">
+                        {{ transcription.speaker || 'Unknown Speaker' }}
+                    </span>
+                    <span class="tnum ml-1.5 text-[11px] text-ink-tertiary" :title="`Jump to ${formatTime(transcription.start_time)}`">
+                        {{ formatTime(transcription.start_time) }}
+                    </span>
+                    <span
+                        class="ml-1.5 text-[13px] text-ink-secondary"
+                        :class="{ 'text-ink': isCurrentSegment(transcription) }"
+                        v-html="highlightSearchTerm(transcription.text)"
+                    ></span>
                 </div>
             </div>
         </div>
@@ -87,6 +97,10 @@ const transcriptionContainer = ref<HTMLElement | null>(null);
 const transcriptionRefs = ref<Map<number, HTMLElement>>(new Map());
 const searchQuery = ref('');
 const currentSegmentIndex = ref(-1);
+const autoScroll = ref(true);
+
+let programmaticScroll = false;
+let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
 
 const filteredTranscriptions = computed(() => {
     if (!searchQuery.value.trim()) {
@@ -124,7 +138,33 @@ const scrollToCurrentSegment = async () => {
     await nextTick();
     const element = transcriptionRefs.value.get(currentSegment.value.id);
     if (element) {
+        markProgrammaticScroll();
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+};
+
+const markProgrammaticScroll = () => {
+    programmaticScroll = true;
+    if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+    programmaticScrollTimer = setTimeout(() => {
+        programmaticScroll = false;
+    }, 600);
+};
+
+const onContainerScroll = () => {
+    if (programmaticScroll) return;
+    if (autoScroll.value) autoScroll.value = false;
+};
+
+const onManualScrollIntent = () => {
+    programmaticScroll = false;
+    if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer);
+    if (autoScroll.value) autoScroll.value = false;
+};
+
+const onAutoScrollToggle = () => {
+    if (autoScroll.value) {
+        scrollToCurrentSegment();
     }
 };
 
@@ -154,15 +194,6 @@ const formatTime = (seconds: number): string => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const formatDuration = (seconds: number): string => {
-    if (seconds < 60) {
-        return `${Math.round(seconds)}s`;
-    }
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.round(seconds % 60);
-    return `${minutes}m ${remainingSeconds}s`;
-};
-
 const highlightSearchTerm = (text: string): string => {
     if (!searchQuery.value.trim()) return text;
     const query = searchQuery.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -174,7 +205,9 @@ watch(currentSegment, (newSegment) => {
     if (newSegment) {
         const index = filteredTranscriptions.value.findIndex((t) => t.id === newSegment.id);
         currentSegmentIndex.value = index;
-        scrollToCurrentSegment();
+        if (autoScroll.value) {
+            scrollToCurrentSegment();
+        }
     }
 });
 

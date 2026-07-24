@@ -3,6 +3,7 @@
 use App\Http\Controllers\AIAgentController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\MeetingController;
+use App\Http\Controllers\SearchController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -39,6 +40,9 @@ Route::resource('meetings', MeetingController::class);
 
 // API endpoint for real-time meeting status updates
 Route::get('meetings/{meeting}/status', [MeetingController::class, 'status'])->name('meetings.status');
+
+// Spotlight search
+Route::get('search', [SearchController::class, 'index'])->name('search');
 
 // AI Agent routes
 Route::get('ai/chat', [AIAgentController::class, 'index'])->name('ai.chat');

@@ -12,8 +12,22 @@
                     <span class="text-[14px] font-semibold tracking-tight">Minutory</span>
                 </div>
 
+                <!-- Search -->
+                <div class="p-2">
+                    <button
+                        @click="spotlightRef?.show()"
+                        class="flex w-full items-center gap-2.5 rounded-md border border-border bg-ground-raised px-2.5 py-1.5 text-[13px] text-ink-tertiary transition-colors duration-150 hover:border-border-strong hover:text-ink-secondary"
+                    >
+                        <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                        </svg>
+                        <span class="flex-1 text-left">Search…</span>
+                        <kbd class="rounded border border-border bg-ground-subtle px-1 py-0.5 text-[10px]">⌘K</kbd>
+                    </button>
+                </div>
+
                 <!-- Nav -->
-                <nav class="flex-1 space-y-0.5 overflow-y-auto p-2">
+                <nav class="space-y-0.5 px-2">
                     <Link
                         v-for="item in navItems"
                         :key="item.label"
@@ -30,6 +44,25 @@
                         {{ item.label }}
                     </Link>
                 </nav>
+
+                <!-- Recent meetings -->
+                <div class="mt-4 flex min-h-0 flex-1 flex-col">
+                    <div class="px-4 pb-1 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Recent</div>
+                    <div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+                        <Link
+                            v-for="m in sidebarMeetings"
+                            :key="m.id"
+                            :href="route('meetings.show', m.id)"
+                            class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-ink-secondary transition-colors duration-150 hover:bg-ground-raised hover:text-ink"
+                            :class="{ 'bg-ground-raised text-ink': isActiveMeeting(m.id) }"
+                            @click="sidebarOpen = false"
+                        >
+                            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="statusDotClass(m.status)" />
+                            <span class="min-w-0 flex-1 truncate">{{ m.title }}</span>
+                        </Link>
+                        <div v-if="sidebarMeetings.length === 0" class="px-2.5 py-1.5 text-[12px] text-ink-tertiary">No meetings yet</div>
+                    </div>
+                </div>
 
                 <!-- Footer: theme toggle -->
                 <div class="border-t border-border p-2">
@@ -138,22 +171,65 @@
 
         <Toast ref="toastComponent" />
         <NetworkStatus />
+        <SpotlightSearch ref="spotlightRef" />
     </ErrorBoundary>
 </template>
 
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
-import { h, onMounted, ref, type FunctionalComponent } from 'vue';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { computed, h, onMounted, onUnmounted, ref, type FunctionalComponent } from 'vue';
 import ErrorBoundary from './ErrorBoundary.vue';
 import NetworkStatus from './NetworkStatus.vue';
+import SpotlightSearch from './SpotlightSearch.vue';
 import Toast from './Toast.vue';
+
+interface SidebarMeeting {
+    id: number;
+    title: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    client_id: number;
+    created_at: string;
+}
 
 const sidebarOpen = ref(false);
 const isDark = ref(false);
 const toastComponent = ref();
+const spotlightRef = ref<InstanceType<typeof SpotlightSearch>>();
+
+const page = usePage<{ sidebarMeetings?: SidebarMeeting[] }>();
+const sidebarMeetings = computed(() => page.props.sidebarMeetings ?? []);
+
+const isActiveMeeting = (id: number) => {
+    return page.component.startsWith('Meetings/Show') && (page.props as any).meeting?.id === id;
+};
+
+const statusDotClass = (status: string) => {
+    switch (status) {
+        case 'completed':
+            return 'bg-green-500';
+        case 'processing':
+            return 'bg-amber-500';
+        case 'failed':
+            return 'bg-red-500';
+        default:
+            return 'bg-zinc-400';
+    }
+};
+
+const onGlobalKeydown = (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        spotlightRef.value?.show();
+    }
+};
 
 onMounted(() => {
     isDark.value = document.documentElement.classList.contains('dark');
+    window.addEventListener('keydown', onGlobalKeydown);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', onGlobalKeydown);
 });
 
 const toggleTheme = () => {

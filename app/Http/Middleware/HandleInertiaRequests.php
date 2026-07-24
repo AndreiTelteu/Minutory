@@ -60,6 +60,12 @@ class HandleInertiaRequests extends Middleware
             'user' => fn () => $request->user()
                 ? $request->user()->only('id', 'name', 'email')
                 : null,
+
+            'sidebarMeetings' => fn () => \App\Models\Meeting::query()
+                ->with('client:id,name')
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get(['id', 'title', 'status', 'client_id', 'created_at']),
         ]);
     }
 }

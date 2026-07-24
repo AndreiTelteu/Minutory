@@ -1,6 +1,6 @@
 <template>
     <AppLayout>
-        <div class="mx-auto max-w-7xl px-6 py-8 lg:px-10">
+        <div class="px-6 py-8 lg:px-10">
             <!-- Header -->
             <div class="mb-6">
                 <Link
@@ -44,9 +44,9 @@
             <!-- Video + transcript -->
             <div
                 v-if="meeting.status === 'completed' && videoUrl && meeting.transcriptions && meeting.transcriptions.length > 0"
-                class="grid grid-cols-1 gap-6 lg:grid-cols-2"
+                class="grid grid-cols-1 gap-6 xl:grid-cols-5"
             >
-                <section class="rounded-lg border border-border bg-ground-raised p-5">
+                <section class="rounded-lg border border-border bg-ground-raised p-5 xl:col-span-3">
                     <VideoPlayer
                         ref="videoPlayerRef"
                         :video-url="videoUrl"
@@ -81,7 +81,7 @@
                     </div>
                 </section>
 
-                <section class="rounded-lg border border-border bg-ground-raised p-5">
+                <section class="flex flex-col rounded-lg border border-border bg-ground-raised p-5 xl:col-span-2">
                     <TranscriptionViewer
                         ref="transcriptionViewerRef"
                         :transcriptions="meeting.transcriptions"
@@ -205,7 +205,7 @@ const pendingSeekTime = ref<number | null>(null);
 
 const isLargeScreen = computed(() => {
     if (typeof window === 'undefined') return true;
-    return window.innerWidth >= 1024;
+    return window.innerWidth >= 1280;
 });
 
 let statusInterval: ReturnType<typeof setInterval> | null = null;
