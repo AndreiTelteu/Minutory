@@ -139,7 +139,7 @@ def main():
 
     import onnxruntime as ort
 
-    print("Loading INT8 Parakeet TDT 0.6B v3 model via ONNX-ASR...")
+    print("Loading Parakeet TDT 0.6B v3 model via ONNX-ASR...")
 
     from onnx_asr import load_model, load_vad
 
@@ -153,7 +153,6 @@ def main():
     model = (
         load_model(
             "nemo-parakeet-tdt-0.6b-v3",
-            quantization="int8",
             sess_options=sess_options,
             providers=["CPUExecutionProvider"],
         )
@@ -214,7 +213,6 @@ def main():
 
         simple_model = load_model(
             "nemo-parakeet-tdt-0.6b-v3",
-            quantization="int8",
             sess_options=sess_options,
             providers=["CPUExecutionProvider"],
         ).with_timestamps()
