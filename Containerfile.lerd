@@ -1,0 +1,24 @@
+# Minutory custom PHP-FPM image.
+# ffmpeg converts uploaded meetings to WAV; uv manages the isolated Python runtime
+# used by TranscribeMeetingJob. Application source is bind-mounted by Lerd at runtime.
+FROM lerd-php84-fpm:local
+
+ENV UV_NO_PROGRESS=1 \
+    UV_LINK_MODE=copy \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apk add --no-cache \
+      ffmpeg \
+      python3 \
+      py3-numpy \
+      py3-onnxruntime \
+      uv \
+      libstdc++
+
+COPY transcribe-microservice/requirements.txt /tmp/minutory-requirements.txt
+
+RUN uv venv --system-site-packages --python python3 /opt/minutory-venv \
+ && uv pip install --python /opt/minutory-venv/bin/python -r /tmp/minutory-requirements.txt \
+ && rm -f /tmp/minutory-requirements.txt

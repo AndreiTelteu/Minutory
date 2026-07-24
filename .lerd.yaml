@@ -1,0 +1,15 @@
+domains:
+  - minutory.dn.onlinedigital.ro
+php_version: "8.4"
+node_version: "22"
+framework: laravel
+framework_version: "12"
+services:
+  - mysql
+  - redis
+workers:
+  - queue
+  - schedule
+container:
+  port: 0
+  containerfile: Containerfile.lerd

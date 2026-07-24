@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Meeting;
 use App\Models\Transcription;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -13,11 +13,18 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
 
-class TranscribeMeetingJob implements ShouldQueue
+class TranscribeMeetingJob implements ShouldBeUnique
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
+    public function uniqueId(): string
+    {
+        return (string) $this->meeting->getKey();
+    }
+
     public $timeout = 3600; // 1 hour timeout
+
+    public $failOnTimeout = true;
 
     public $tries = 3; // Allow 3 attempts
 
@@ -34,8 +41,9 @@ class TranscribeMeetingJob implements ShouldQueue
     public function __construct(
         public Meeting $meeting
     ) {
-        // Use uv virtual environment Python
-        $this->pythonPath = base_path('transcribe-microservice/.venv/bin/python');
+        // Managed by uv in the custom FPM image. Keep it outside the Lerd
+        // bind-mounted project directory so image rebuilds own the runtime.
+        $this->pythonPath = '/opt/minutory-venv/bin/python';
         $this->transcribeScript = base_path('transcribe-microservice/transcribe.py');
     }
 
