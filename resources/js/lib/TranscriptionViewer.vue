@@ -1,65 +1,58 @@
 <template>
     <div class="transcription-viewer">
-        <div class="mb-4 flex items-center justify-between">
-            <h3 class="text-lg font-semibold text-gray-900">Transcription</h3>
-            <div class="text-sm text-gray-500">{{ transcriptions.length }} segments</div>
+        <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-[13px] font-semibold">Transcript</h3>
+            <span class="tnum text-[12px] text-ink-tertiary">{{ transcriptions.length }} segments</span>
         </div>
 
-        <!-- Search functionality -->
-        <div class="mb-4">
-            <div class="relative">
-                <input
-                    v-model="searchQuery"
-                    type="text"
-                    placeholder="Search transcription..."
-                    class="w-full rounded-lg border border-gray-300 py-2 pr-4 pl-10 focus:border-transparent focus:ring-2 focus:ring-blue-500"
-                />
-                <svg class="absolute top-2.5 left-3 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-            </div>
+        <!-- Search -->
+        <div class="relative mb-3">
+            <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Search transcript…"
+                class="w-full rounded-md border border-border-strong bg-ground-raised py-1.5 pr-3 pl-8 text-[13px] text-ink placeholder:text-ink-tertiary focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+            />
+            <svg class="absolute top-2 left-2.5 h-4 w-4 text-ink-tertiary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
         </div>
 
-        <!-- Transcription content -->
-        <div ref="transcriptionContainer" class="max-h-96 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50">
-            <div v-if="filteredTranscriptions.length === 0" class="p-6 text-center text-gray-500">
-                <div v-if="searchQuery">No transcription segments match your search.</div>
-                <div v-else>No transcription available.</div>
+        <!-- Segments -->
+        <div ref="transcriptionContainer" class="max-h-[32rem] overflow-y-auto rounded-lg border border-border bg-ground-subtle">
+            <div v-if="filteredTranscriptions.length === 0" class="p-8 text-center text-[13px] text-ink-secondary">
+                {{ searchQuery ? 'No segments match your search.' : 'No transcription available.' }}
             </div>
 
-            <div v-else class="space-y-1 p-4">
+            <div v-else class="space-y-1 p-2">
                 <div
                     v-for="transcription in filteredTranscriptions"
                     :key="transcription.id"
                     :ref="(el) => setTranscriptionRef(transcription.id, el)"
                     :class="[
-                        'transcription-segment cursor-pointer rounded-lg p-3 transition-all duration-200',
-                        {
-                            'border-l-4 border-blue-500 bg-blue-100 shadow-sm': isCurrentSegment(transcription),
-                            'border-l-4 border-transparent bg-white hover:bg-gray-100': !isCurrentSegment(transcription),
-                            'ring-2 ring-yellow-300': isSearchHighlighted(transcription),
-                        },
+                        'transcription-segment cursor-pointer rounded-md p-2.5 transition-colors duration-150',
+                        isCurrentSegment(transcription) ? 'bg-accent-subtle' : 'hover:bg-ground-raised',
                     ]"
                     @click="onTimestampClick(transcription.start_time)"
                 >
-                    <div class="mb-2 flex items-start justify-between">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm font-medium text-gray-900">
+                    <div class="mb-1 flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[12px] font-semibold" :class="isCurrentSegment(transcription) ? 'text-accent' : 'text-ink'">
                                 {{ transcription.speaker || 'Unknown Speaker' }}
                             </span>
                             <span
-                                class="rounded-full bg-gray-200 px-2 py-1 text-xs text-gray-600 transition-colors hover:bg-blue-200"
-                                :title="`Click to jump to ${formatTime(transcription.start_time)}`"
+                                class="tnum rounded bg-ground-raised px-1.5 py-0.5 text-[11px] text-ink-secondary"
+                                :class="{ 'bg-ground': isCurrentSegment(transcription) }"
+                                :title="`Jump to ${formatTime(transcription.start_time)}`"
                             >
                                 {{ formatTime(transcription.start_time) }}
                             </span>
                         </div>
-                        <div class="text-xs text-gray-500">
+                        <span class="tnum text-[11px] text-ink-tertiary">
                             {{ formatDuration(transcription.end_time - transcription.start_time) }}
-                        </div>
+                        </span>
                     </div>
-
-                    <p class="leading-relaxed text-gray-700" v-html="highlightSearchTerm(transcription.text)"></p>
+                    <p class="text-[13px] leading-relaxed text-ink-secondary" :class="{ 'text-ink': isCurrentSegment(transcription) }" v-html="highlightSearchTerm(transcription.text)"></p>
                 </div>
             </div>
         </div>
@@ -95,38 +88,25 @@ const transcriptionRefs = ref<Map<number, HTMLElement>>(new Map());
 const searchQuery = ref('');
 const currentSegmentIndex = ref(-1);
 
-// Filter transcriptions based on search query
 const filteredTranscriptions = computed(() => {
     if (!searchQuery.value.trim()) {
         return props.transcriptions;
     }
-
     const query = searchQuery.value.toLowerCase();
     return props.transcriptions.filter((t) => t.text.toLowerCase().includes(query) || t.speaker.toLowerCase().includes(query));
 });
 
-// Find current segment based on video time
 const currentSegment = computed(() => {
     return props.transcriptions.find((t) => props.currentTime >= t.start_time && props.currentTime <= t.end_time);
 });
 
-// Check if a transcription segment is currently active
 const isCurrentSegment = (transcription: Transcription): boolean => {
     return currentSegment.value?.id === transcription.id;
 };
 
-// Check if a transcription segment matches search
-const isSearchHighlighted = (transcription: Transcription): boolean => {
-    if (!searchQuery.value.trim()) return false;
-    const query = searchQuery.value.toLowerCase();
-    return transcription.text.toLowerCase().includes(query) || transcription.speaker.toLowerCase().includes(query);
-};
-
-// Navigation helpers
 const hasPrevious = computed(() => currentSegmentIndex.value > 0);
 const hasNext = computed(() => currentSegmentIndex.value < filteredTranscriptions.value.length - 1);
 
-// Set transcription element ref
 const setTranscriptionRef = (id: number, el: any) => {
     if (el) {
         transcriptionRefs.value.set(id, el);
@@ -135,27 +115,19 @@ const setTranscriptionRef = (id: number, el: any) => {
     }
 };
 
-// Handle timestamp click
 const onTimestampClick = (time: number) => {
     emit('timestampClick', time);
 };
 
-// Scroll to current segment
 const scrollToCurrentSegment = async () => {
     if (!currentSegment.value || !transcriptionContainer.value) return;
-
     await nextTick();
-
     const element = transcriptionRefs.value.get(currentSegment.value.id);
     if (element) {
-        element.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-        });
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 };
 
-// Navigation functions
 const scrollToPrevious = () => {
     if (hasPrevious.value) {
         currentSegmentIndex.value--;
@@ -172,19 +144,16 @@ const scrollToNext = () => {
     }
 };
 
-// Format time display
 const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = Math.floor(seconds % 60);
-
     if (hours > 0) {
         return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-// Format duration
 const formatDuration = (seconds: number): string => {
     if (seconds < 60) {
         return `${Math.round(seconds)}s`;
@@ -194,16 +163,13 @@ const formatDuration = (seconds: number): string => {
     return `${minutes}m ${remainingSeconds}s`;
 };
 
-// Highlight search terms in text
 const highlightSearchTerm = (text: string): string => {
     if (!searchQuery.value.trim()) return text;
-
-    const query = searchQuery.value.trim();
+    const query = searchQuery.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${query})`, 'gi');
-    return text.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>');
+    return text.replace(regex, '<mark>$1</mark>');
 };
 
-// Watch for current segment changes and update index
 watch(currentSegment, (newSegment) => {
     if (newSegment) {
         const index = filteredTranscriptions.value.findIndex((t) => t.id === newSegment.id);
@@ -212,12 +178,10 @@ watch(currentSegment, (newSegment) => {
     }
 });
 
-// Watch for search query changes and reset index
 watch(searchQuery, () => {
     currentSegmentIndex.value = -1;
 });
 
-// Expose methods and state for parent component
 defineExpose({
     scrollToPrevious,
     scrollToNext,
@@ -235,7 +199,13 @@ defineExpose({
 
 :deep(mark) {
     background-color: rgb(254 240 138);
-    padding: 0.125rem 0.25rem;
+    color: #18181b;
+    padding: 0 0.125rem;
     border-radius: 0.25rem;
+}
+
+.dark :deep(mark) {
+    background-color: rgb(133 77 14);
+    color: #ededec;
 }
 </style>

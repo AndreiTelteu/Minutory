@@ -1,105 +1,109 @@
 <template>
     <AppLayout>
-        <div class="mx-auto max-w-4xl px-4 py-8">
-            <div class="overflow-hidden rounded-lg bg-white shadow-lg">
-                <!-- Header -->
-                <div class="bg-blue-600 p-6 text-white">
-                    <h1 class="text-2xl font-bold">AI Meeting Assistant</h1>
-                    <p class="mt-2 text-blue-100">
-                        Ask me anything about your meetings. I can search through transcriptions and help you find specific information.
+        <div class="mx-auto flex h-[calc(100vh-3.5rem)] max-w-3xl flex-col px-6 lg:h-screen lg:px-10">
+            <!-- Header -->
+            <div class="shrink-0 pt-8 pb-4">
+                <h1 class="text-[20px] font-semibold tracking-tight">AI Assistant</h1>
+                <p class="mt-0.5 text-[13px] text-ink-secondary">Ask anything across all your meeting transcripts.</p>
+            </div>
+
+            <!-- Messages -->
+            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto py-4" ref="messagesContainer">
+                <div v-if="messages.length === 0" class="flex h-full flex-col items-center justify-center text-center">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-subtle">
+                        <svg class="h-5 w-5 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+                            />
+                        </svg>
+                    </div>
+                    <p class="mt-4 text-[14px] font-medium">Ask about your meetings</p>
+                    <p class="mt-1 max-w-sm text-[13px] text-ink-secondary">
+                        I search across every transcript in your archive and cite the exact moment.
                     </p>
-                </div>
-
-                <!-- Chat Messages -->
-                <div class="h-96 space-y-4 overflow-y-auto p-6" ref="messagesContainer">
-                    <div v-if="messages.length === 0" class="py-8 text-center text-gray-500">
-                        <div class="mb-4 text-4xl">🤖</div>
-                        <p>Hi! I'm your AI meeting assistant. Ask me to search through your meeting transcriptions.</p>
-                        <div class="mt-4 text-sm">
-                            <p class="mb-2 font-medium">Try asking:</p>
-                            <ul class="space-y-1">
-                                <li>"Find mentions of budget in recent meetings"</li>
-                                <li>"What did John say about the project timeline?"</li>
-                                <li>"Search for discussions about marketing strategy"</li>
-                            </ul>
-                        </div>
-                    </div>
-
-                    <div
-                        v-for="(message, index) in messages"
-                        :key="index"
-                        class="flex"
-                        :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
-                    >
-                        <div
-                            class="max-w-xs rounded-lg px-4 py-2 lg:max-w-md"
-                            :class="message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'"
-                        >
-                            <div class="whitespace-pre-wrap">{{ message.content }}</div>
-
-                            <!-- Search Results -->
-                            <div v-if="message.searchResults && message.searchResults.length > 0" class="mt-3 space-y-2">
-                                <div class="border-t pt-2 text-sm font-medium">Found {{ message.searchResults.length }} results:</div>
-                                <div
-                                    v-for="result in message.searchResults"
-                                    :key="`${result.meeting_id}-${result.timestamp}`"
-                                    class="rounded border bg-white p-3 text-sm"
-                                >
-                                    <div class="mb-2 flex items-start justify-between">
-                                        <div>
-                                            <div class="font-medium text-blue-600">{{ result.meeting_title }}</div>
-                                            <div class="text-gray-600">{{ result.client_name }} • {{ result.speaker }}</div>
-                                        </div>
-                                        <div class="text-xs text-gray-500">{{ result.formatted_timestamp }}</div>
-                                    </div>
-                                    <div class="text-gray-800" v-html="formatSearchResult(result.text)"></div>
-                                    <div class="mt-2">
-                                        <a
-                                            :href="`/meetings/${result.meeting_id}?t=${result.timestamp}`"
-                                            class="text-xs font-medium text-blue-600 hover:text-blue-800"
-                                            target="_blank"
-                                        >
-                                            View in meeting →
-                                        </a>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div v-if="message.timestamp" class="mt-2 text-xs opacity-75">
-                                {{ formatTime(message.timestamp) }}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div v-if="isLoading" class="flex justify-start">
-                        <div class="max-w-xs rounded-lg bg-gray-200 px-4 py-2 text-gray-800 lg:max-w-md">
-                            <div class="flex items-center space-x-2">
-                                <div class="h-4 w-4 animate-spin rounded-full border-b-2 border-blue-600"></div>
-                                <span>Thinking...</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Input Form -->
-                <div class="border-t p-6">
-                    <form @submit.prevent="sendMessage" class="flex space-x-4">
-                        <input
-                            v-model="currentMessage"
-                            type="text"
-                            placeholder="Ask me about your meetings..."
-                            class="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            :disabled="isLoading"
-                        />
+                    <div class="mt-5 flex flex-wrap justify-center gap-2">
                         <button
-                            type="submit"
-                            :disabled="!currentMessage.trim() || isLoading"
-                            class="rounded-lg bg-blue-600 px-6 py-2 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                            v-for="suggestion in suggestions"
+                            :key="suggestion"
+                            @click="currentMessage = suggestion"
+                            class="rounded-md border border-border-strong px-3 py-1.5 text-[12px] text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink"
                         >
-                            Send
+                            {{ suggestion }}
                         </button>
-                    </form>
+                    </div>
                 </div>
+
+                <div v-for="(message, index) in messages" :key="index" class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+                    <div
+                        :class="[
+                            'max-w-[85%] rounded-lg px-3.5 py-2.5 text-[13px] leading-relaxed',
+                            message.role === 'user' ? 'bg-accent-solid text-white' : 'border border-border bg-ground-raised text-ink',
+                        ]"
+                    >
+                        <div class="whitespace-pre-wrap">{{ message.content }}</div>
+
+                        <!-- Search results -->
+                        <div v-if="message.searchResults && message.searchResults.length > 0" class="mt-3 space-y-2">
+                            <div class="border-t pt-2 text-[12px] font-medium" :class="message.role === 'user' ? 'border-white/20' : 'border-border'">
+                                {{ message.searchResults.length }} result{{ message.searchResults.length === 1 ? '' : 's' }}
+                            </div>
+                            <div
+                                v-for="result in message.searchResults"
+                                :key="`${result.meeting_id}-${result.timestamp}`"
+                                class="rounded-md border border-border bg-ground p-3 text-[12px]"
+                            >
+                                <div class="mb-1.5 flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <div class="truncate font-medium text-accent">{{ result.meeting_title }}</div>
+                                        <div class="text-ink-secondary">{{ result.client_name }} · {{ result.speaker }}</div>
+                                    </div>
+                                    <span class="tnum shrink-0 text-[11px] text-ink-tertiary">{{ result.formatted_timestamp }}</span>
+                                </div>
+                                <div class="leading-relaxed text-ink-secondary" v-html="formatSearchResult(result.text)"></div>
+                                <a
+                                    :href="`/meetings/${result.meeting_id}?t=${result.timestamp}`"
+                                    class="mt-2 inline-block text-[11px] font-medium text-accent hover:text-accent-hover"
+                                    target="_blank"
+                                >
+                                    View in meeting →
+                                </a>
+                            </div>
+                        </div>
+
+                        <div v-if="message.timestamp" class="tnum mt-1.5 text-[11px]" :class="message.role === 'user' ? 'text-white/60' : 'text-ink-tertiary'">
+                            {{ formatTime(message.timestamp) }}
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="isLoading" class="flex justify-start">
+                    <div class="flex items-center gap-2 rounded-lg border border-border bg-ground-raised px-3.5 py-2.5 text-[13px] text-ink-secondary">
+                        <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+                        Thinking…
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input -->
+            <div class="shrink-0 border-t border-border py-4">
+                <form @submit.prevent="sendMessage" class="flex gap-2">
+                    <input
+                        v-model="currentMessage"
+                        type="text"
+                        placeholder="Ask about your meetings…"
+                        :disabled="isLoading"
+                        class="flex-1 rounded-md border border-border-strong bg-ground-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-tertiary focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none disabled:opacity-50"
+                    />
+                    <button
+                        type="submit"
+                        :disabled="!currentMessage.trim() || isLoading"
+                        class="rounded-md bg-accent-solid px-4 py-2 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Send
+                    </button>
+                </form>
             </div>
         </div>
     </AppLayout>
@@ -129,6 +133,8 @@ interface SearchResult {
     meeting_url: string;
 }
 
+const suggestions = ['Find mentions of budget', 'What was said about the timeline?', 'Search for marketing discussions'];
+
 const messages = ref<Message[]>([]);
 const currentMessage = ref('');
 const isLoading = ref(false);
@@ -156,13 +162,12 @@ const sendMessage = async () => {
 
     const attemptSend = async (): Promise<void> => {
         try {
-            // Check network connectivity
             if (!navigator.onLine) {
                 throw new Error('No internet connection');
             }
 
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
 
             const response = await fetch('/ai/chat', {
                 method: 'POST',
@@ -206,7 +211,6 @@ const sendMessage = async () => {
                     timestamp: new Date(),
                 };
 
-                // Check if there are search results from tool calls
                 if (data.tool_calls && data.tool_calls.length > 0) {
                     const searchToolCall = data.tool_calls.find((call: any) => call.name === 'search_meetings');
                     if (searchToolCall && searchToolCall.result && searchToolCall.result.results) {
@@ -221,7 +225,6 @@ const sendMessage = async () => {
         } catch (error: any) {
             console.error('Chat error:', error);
 
-            // Handle specific error types
             if (error.name === 'AbortError') {
                 throw new Error('Request timed out. Please try again.');
             }
@@ -230,18 +233,15 @@ const sendMessage = async () => {
                 throw new Error('No internet connection. Please check your network and try again.');
             }
 
-            // Retry logic for network errors
             if (
                 retryCount < maxRetries &&
                 (error.name === 'NetworkError' || error.message.includes('fetch') || error.message.includes('Server error'))
             ) {
                 retryCount++;
-                console.log(`Retrying request (attempt ${retryCount}/${maxRetries})`);
-                await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+                await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount));
                 return attemptSend();
             }
 
-            // Add error message to chat
             const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.';
 
             messages.value.push({
@@ -250,16 +250,14 @@ const sendMessage = async () => {
                 timestamp: new Date(),
             });
 
-            // Show toast notification for better UX
             if (window.toast) {
-                window.toast.error('Chat Error', errorMessage, {
+                window.toast.error('Chat error', errorMessage, {
                     actions:
                         retryCount < maxRetries
                             ? [
                                   {
                                       label: 'Retry',
                                       handler: () => {
-                                          // Remove the error message and retry
                                           messages.value.pop();
                                           currentMessage.value = messageToSend;
                                           sendMessage();
@@ -293,7 +291,20 @@ const formatTime = (date: Date) => {
 };
 
 const formatSearchResult = (text: string) => {
-    // Convert markdown-style bold to HTML
-    return text.replace(/\*\*(.*?)\*\*/g, '<strong class="bg-yellow-200">$1</strong>');
+    return text.replace(/\*\*(.*?)\*\*/g, '<mark>$1</mark>');
 };
 </script>
+
+<style scoped>
+:deep(mark) {
+    background-color: rgb(254 240 138);
+    color: #18181b;
+    padding: 0 0.125rem;
+    border-radius: 0.25rem;
+}
+
+.dark :deep(mark) {
+    background-color: rgb(133 77 14);
+    color: #ededec;
+}
+</style>

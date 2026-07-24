@@ -1,116 +1,87 @@
 <template>
-    <div v-if="!meeting" class="flex items-center space-x-2">
-        <!-- Loading State -->
-        <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
-            <svg class="mr-1.5 -ml-1 h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-            </svg>
-            Loading...
+    <div v-if="!meeting" class="flex items-center">
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-ground-subtle px-2 py-0.5 text-[12px] font-medium text-ink-secondary">
+            <span class="h-3 w-3 animate-spin rounded-full border-2 border-border-strong border-t-ink-secondary" />
+            Loading…
         </span>
     </div>
 
-    <div v-else class="flex items-center space-x-2">
-        <!-- Status Badge -->
-        <span :class="['inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', statusClasses]">
-            <svg v-if="showSpinner" class="mr-1.5 -ml-1 h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-            </svg>
-
-            <svg v-else-if="statusIcon" class="mr-1.5 -ml-0.5 h-3 w-3" :class="iconClasses" fill="currentColor" viewBox="0 0 20 20">
-                <path :d="statusIcon" />
-            </svg>
-
+    <div v-else class="flex items-center gap-1.5">
+        <span :class="['inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium', statusClasses]">
+            <span v-if="showSpinner" class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent opacity-70" />
+            <span v-else class="h-1.5 w-1.5 rounded-full bg-current" />
             {{ statusText }}
         </span>
 
-        <!-- Error Details Button -->
         <button
-            v-if="meeting && meeting.status === 'failed' && meeting.error_message"
-            @click="showErrorDetails = !showErrorDetails"
-            class="text-red-600 transition-colors hover:text-red-800"
+            v-if="meeting.status === 'failed' && meeting.error_message"
+            @click.stop="showErrorDetails = !showErrorDetails"
+            class="rounded p-0.5 text-red-600 transition-colors hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
             title="Show error details"
         >
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-        </button>
-
-        <!-- Retry Button -->
-        <button
-            v-if="meeting && meeting.status === 'failed' && canRetry"
-            @click="$emit('retry')"
-            :disabled="isRetrying"
-            class="text-blue-600 transition-colors hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Retry processing"
-        >
-            <svg class="h-4 w-4" :class="{ 'animate-spin': isRetrying }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                 <path
                     stroke-linecap="round"
                     stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+                />
+            </svg>
+        </button>
+
+        <button
+            v-if="meeting.status === 'failed' && canRetry"
+            @click.stop="$emit('retry')"
+            :disabled="isRetrying"
+            class="rounded p-0.5 text-accent transition-colors hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            title="Retry processing"
+        >
+            <svg class="h-3.5 w-3.5" :class="{ 'animate-spin': isRetrying }" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
                 />
             </svg>
         </button>
     </div>
 
-    <!-- Error Details Modal/Dropdown -->
     <Transition
-        name="slide-down"
         enter-active-class="transition-all duration-200 ease-out"
-        enter-from-class="opacity-0 -translate-y-2"
+        enter-from-class="opacity-0 -translate-y-1"
         enter-to-class="opacity-100 translate-y-0"
         leave-active-class="transition-all duration-150 ease-in"
         leave-from-class="opacity-100 translate-y-0"
-        leave-to-class="opacity-0 -translate-y-2"
+        leave-to-class="opacity-0 -translate-y-1"
     >
-        <div v-if="showErrorDetails && meeting && meeting.status === 'failed'" class="mt-3 rounded-md border border-red-200 bg-red-50 p-4">
-            <div class="flex items-start">
-                <svg class="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                        fill-rule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                        clip-rule="evenodd"
-                    />
-                </svg>
-                <div class="ml-3 flex-1">
-                    <h4 class="text-sm font-medium text-red-800">Processing Failed</h4>
-                    <p class="mt-1 text-sm text-red-700">{{ meeting.error_message }}</p>
+        <div
+            v-if="showErrorDetails && meeting && meeting.status === 'failed'"
+            class="mt-2 rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/30"
+        >
+            <p class="text-[13px] font-medium text-red-700 dark:text-red-300">Processing failed</p>
+            <p class="mt-0.5 text-[12px] text-red-600 dark:text-red-400">{{ meeting.error_message }}</p>
 
-                    <div class="mt-3 flex space-x-3">
-                        <button
-                            v-if="canRetry"
-                            @click="$emit('retry')"
-                            :disabled="isRetrying"
-                            class="rounded-md bg-red-100 px-3 py-1 text-sm text-red-800 transition-colors hover:bg-red-200 disabled:opacity-50"
-                        >
-                            {{ isRetrying ? 'Retrying...' : 'Try Again' }}
-                        </button>
-
-                        <button
-                            @click="showTechnicalDetails = !showTechnicalDetails"
-                            class="text-sm text-red-600 transition-colors hover:text-red-800"
-                        >
-                            {{ showTechnicalDetails ? 'Hide' : 'Show' }} Technical Details
-                        </button>
-                    </div>
-
-                    <details v-if="showTechnicalDetails && meeting.technical_error" class="mt-3">
-                        <summary class="cursor-pointer text-sm text-red-600 hover:text-red-800">Technical Error Details</summary>
-                        <pre class="mt-2 max-h-32 overflow-auto rounded bg-red-100 p-3 text-xs text-red-800">{{ meeting.technical_error }}</pre>
-                    </details>
-                </div>
+            <div class="mt-2 flex gap-2">
+                <button
+                    v-if="canRetry"
+                    @click="$emit('retry')"
+                    :disabled="isRetrying"
+                    class="rounded-md border border-red-300 px-2.5 py-1 text-[12px] font-medium text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/50"
+                >
+                    {{ isRetrying ? 'Retrying…' : 'Try again' }}
+                </button>
+                <button
+                    v-if="meeting.technical_error"
+                    @click="showTechnicalDetails = !showTechnicalDetails"
+                    class="px-2.5 py-1 text-[12px] font-medium text-red-600 hover:text-red-700 dark:text-red-400"
+                >
+                    {{ showTechnicalDetails ? 'Hide' : 'Show' }} technical details
+                </button>
             </div>
+
+            <pre
+                v-if="showTechnicalDetails && meeting.technical_error"
+                class="mt-2 max-h-32 overflow-auto rounded bg-red-100 p-2.5 text-[11px] text-red-800 dark:bg-red-950/50 dark:text-red-300"
+            >{{ meeting.technical_error }}</pre>
         </div>
     </Transition>
 </template>
@@ -136,67 +107,30 @@ interface Props {
     isRetrying?: boolean;
 }
 
-interface Emits {
-    (e: 'retry'): void;
-}
-
 const props = withDefaults(defineProps<Props>(), {
     showProgress: true,
     canRetry: true,
     isRetrying: false,
 });
 
-defineEmits<Emits>();
+defineEmits<{ (e: 'retry'): void }>();
 
 const showErrorDetails = ref(false);
 const showTechnicalDetails = ref(false);
 
 const statusClasses = computed(() => {
-    if (!props.meeting) return 'bg-gray-100 text-gray-800';
-
+    if (!props.meeting) return 'bg-ground-subtle text-ink-secondary';
     switch (props.meeting.status) {
         case 'pending':
-            return 'bg-yellow-100 text-yellow-800';
+            return 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400';
         case 'processing':
-            return 'bg-blue-100 text-blue-800';
+            return 'bg-amber-500/10 text-amber-700 dark:text-amber-400';
         case 'completed':
-            return 'bg-green-100 text-green-800';
+            return 'bg-green-500/10 text-green-700 dark:text-green-400';
         case 'failed':
-            return 'bg-red-100 text-red-800';
+            return 'bg-red-500/10 text-red-700 dark:text-red-400';
         default:
-            return 'bg-gray-100 text-gray-800';
-    }
-});
-
-const iconClasses = computed(() => {
-    if (!props.meeting) return 'text-gray-600';
-
-    switch (props.meeting.status) {
-        case 'pending':
-            return 'text-yellow-600';
-        case 'processing':
-            return 'text-blue-600';
-        case 'completed':
-            return 'text-green-600';
-        case 'failed':
-            return 'text-red-600';
-        default:
-            return 'text-gray-600';
-    }
-});
-
-const statusIcon = computed(() => {
-    if (!props.meeting) return null;
-
-    switch (props.meeting.status) {
-        case 'pending':
-            return 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'; // Clock icon
-        case 'completed':
-            return 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'; // Check circle
-        case 'failed':
-            return 'M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z'; // X circle
-        default:
-            return null;
+            return 'bg-ground-subtle text-ink-secondary';
     }
 });
 
@@ -206,8 +140,7 @@ const showSpinner = computed(() => {
 });
 
 const statusText = computed(() => {
-    if (!props.meeting) return 'Loading...';
-
+    if (!props.meeting) return 'Loading…';
     switch (props.meeting.status) {
         case 'pending':
             return 'Pending';

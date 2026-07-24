@@ -1,53 +1,52 @@
 <template>
     <AppLayout>
-        <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-            <!-- Processing Status -->
-            <div v-if="meeting.status === 'pending'" class="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h3 class="text-lg font-semibold text-blue-900">Meeting Queued for Processing</h3>
-                        <p class="text-sm text-blue-700">
-                            Estimated processing time: {{ meeting.formatted_estimated_processing_time || 'Calculating...' }}
-                        </p>
-                    </div>
-                    <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"></div>
+        <div class="mx-auto max-w-7xl px-6 py-8 lg:px-10">
+            <!-- Header -->
+            <div class="mb-6">
+                <Link
+                    :href="route('meetings.index')"
+                    class="inline-flex items-center gap-1 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:text-ink"
+                >
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                    </svg>
+                    Meetings
+                </Link>
+                <div class="mt-2 flex flex-wrap items-center gap-3">
+                    <h1 class="text-[20px] font-semibold tracking-tight">{{ meeting.title }}</h1>
+                    <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                 </div>
+                <p class="mt-1 text-[13px] text-ink-secondary">{{ meeting.client.name }}</p>
             </div>
 
-            <div v-else-if="meeting.status === 'processing'" class="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h3 class="text-lg font-semibold text-yellow-900">Processing Meeting</h3>
-                        <p class="text-sm text-yellow-700">
-                            Elapsed: {{ meeting.formatted_elapsed_time || '0:00' }} | Remaining:
-                            {{ meeting.formatted_estimated_remaining_time || 'Calculating...' }}
-                        </p>
-                    </div>
-                    <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-yellow-600"></div>
+            <!-- Processing status -->
+            <div
+                v-if="meeting.status === 'pending' || meeting.status === 'processing'"
+                class="mb-6 flex items-center justify-between rounded-lg border border-border bg-ground-raised px-5 py-4"
+            >
+                <div>
+                    <h3 class="text-[13px] font-semibold">
+                        {{ meeting.status === 'pending' ? 'Queued for processing' : 'Processing meeting' }}
+                    </h3>
+                    <p class="tnum mt-0.5 text-[12px] text-ink-secondary">
+                        <template v-if="meeting.status === 'pending'">
+                            Estimated time: {{ meeting.formatted_estimated_processing_time || 'Calculating…' }}
+                        </template>
+                        <template v-else>
+                            Elapsed {{ meeting.formatted_elapsed_time || '0:00' }} · Remaining
+                            {{ meeting.formatted_estimated_remaining_time || 'Calculating…' }}
+                        </template>
+                    </p>
                 </div>
+                <div class="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
             </div>
 
-            <!-- Video Player and Transcription Layout -->
+            <!-- Video + transcript -->
             <div
                 v-if="meeting.status === 'completed' && videoUrl && meeting.transcriptions && meeting.transcriptions.length > 0"
                 class="grid grid-cols-1 gap-6 lg:grid-cols-2"
             >
-                <!-- Video Player Section -->
-                <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                    <!-- Header inside video section -->
-                    <div class="mb-6">
-                        <Link :href="route('meetings.index')" class="text-sm font-medium text-blue-600 hover:text-blue-700">
-                            ← Back to Meetings
-                        </Link>
-                        <div class="mt-3">
-                            <h1 class="text-2xl font-bold text-gray-900">{{ meeting.title }}</h1>
-                            <div class="mt-2 flex items-center space-x-4">
-                                <p class="text-sm text-gray-600">Client: {{ meeting.client.name }}</p>
-                                <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
-                            </div>
-                        </div>
-                    </div>
-
+                <section class="rounded-lg border border-border bg-ground-raised p-5">
                     <VideoPlayer
                         ref="videoPlayerRef"
                         :video-url="videoUrl"
@@ -59,76 +58,52 @@
                         @error="onVideoError"
                     />
 
-                    <!-- Navigation controls -->
-                    <div class="mt-4 flex items-center justify-between text-sm text-gray-600">
-                        <div>
+                    <div class="mt-4 flex items-center justify-between">
+                        <div class="flex gap-1.5">
                             <button
                                 @click="goToPrevious"
                                 :disabled="!transcriptionViewerRef?.hasPrevious"
-                                class="rounded bg-gray-200 px-3 py-1 text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                                ← Previous
+                                ← Prev
                             </button>
                             <button
                                 @click="goToNext"
                                 :disabled="!transcriptionViewerRef?.hasNext"
-                                class="ml-2 rounded bg-gray-200 px-3 py-1 text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                             >
                                 Next →
                             </button>
                         </div>
-
-                        <div v-if="transcriptionViewerRef && transcriptionViewerRef.currentSegmentIndex >= 0">
-                            {{ transcriptionViewerRef.currentSegmentIndex + 1 }} of {{ transcriptionViewerRef.filteredTranscriptions.length }}
-                        </div>
+                        <span v-if="transcriptionViewerRef && transcriptionViewerRef.currentSegmentIndex >= 0" class="tnum text-[12px] text-ink-tertiary">
+                            {{ transcriptionViewerRef.currentSegmentIndex + 1 }} / {{ transcriptionViewerRef.filteredTranscriptions.length }}
+                        </span>
                     </div>
-                </div>
+                </section>
 
-                <!-- Transcription Section -->
-                <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+                <section class="rounded-lg border border-border bg-ground-raised p-5">
                     <TranscriptionViewer
                         ref="transcriptionViewerRef"
                         :transcriptions="meeting.transcriptions"
                         :current-time="videoCurrentTime"
                         @timestamp-click="onTranscriptionTimestampClick"
                     />
-                </div>
+                </section>
             </div>
 
-            <!-- Single Column Layout for Non-Completed Meetings -->
-            <div v-else class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                <!-- Header inside video section -->
-                <div class="mb-6">
-                    <Link :href="route('meetings.index')" class="text-sm font-medium text-blue-600 hover:text-blue-700"> ← Back to Meetings </Link>
-                    <div class="mt-3">
-                        <h1 class="text-2xl font-bold text-gray-900">{{ meeting.title }}</h1>
-                        <div class="mt-2 flex items-center space-x-4">
-                            <p class="text-sm text-gray-600">Client: {{ meeting.client.name }}</p>
-                            <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
-                        </div>
-                    </div>
-                </div>
-
-                <div v-if="meeting.status === 'pending'" class="py-12 text-center">
-                    <div class="mb-4 text-gray-400">
-                        <svg class="mx-auto h-16 w-16" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                                d="M2 6a2 2 0 012-2h6l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM5 8a1 1 0 011-1h1a1 1 0 010 2H6a1 1 0 01-1-1zm6 1a1 1 0 100 2h3a1 1 0 100-2H11z"
-                            />
-                        </svg>
-                    </div>
-                    <p class="text-gray-600">Video will be available after processing completes</p>
-                </div>
-
-                <div v-else-if="meeting.status === 'processing'" class="py-12 text-center">
-                    <div class="mb-4 text-gray-400">
-                        <svg class="mx-auto h-16 w-16 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                                d="M2 6a2 2 0 012-2h6l2 2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM5 8a1 1 0 011-1h1a1 1 0 010 2H6a1 1 0 01-1-1zm6 1a1 1 0 100 2h3a1 1 0 100-2H11z"
-                            />
-                        </svg>
-                    </div>
-                    <p class="text-gray-600">Processing video...</p>
+            <!-- Non-completed states -->
+            <div v-else class="rounded-lg border border-border bg-ground-raised p-5">
+                <div v-if="meeting.status === 'pending' || meeting.status === 'processing'" class="py-16 text-center">
+                    <svg class="mx-auto h-10 w-10 text-ink-tertiary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z"
+                        />
+                    </svg>
+                    <p class="mt-3 text-[13px] text-ink-secondary">
+                        {{ meeting.status === 'pending' ? 'Video will be available after processing completes' : 'Processing video…' }}
+                    </p>
                 </div>
 
                 <div v-else-if="meeting.status === 'completed' && videoUrl" class="space-y-4">
@@ -142,58 +117,27 @@
                         @pause="onVideoPause"
                         @error="onVideoError"
                     />
-
-                    <!-- Navigation controls for single column layout -->
-                    <div
-                        v-if="meeting.transcriptions && meeting.transcriptions.length > 0"
-                        class="flex items-center justify-between text-sm text-gray-600"
-                    >
-                        <div>
-                            <button
-                                @click="goToPrevious"
-                                :disabled="!transcriptionViewerRef?.hasPrevious"
-                                class="rounded bg-gray-200 px-3 py-1 text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                ← Previous
-                            </button>
-                            <button
-                                @click="goToNext"
-                                :disabled="!transcriptionViewerRef?.hasNext"
-                                class="ml-2 rounded bg-gray-200 px-3 py-1 text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                Next →
-                            </button>
-                        </div>
-
-                        <div v-if="transcriptionViewerRef && transcriptionViewerRef.currentSegmentIndex >= 0">
-                            {{ transcriptionViewerRef.currentSegmentIndex + 1 }} of {{ transcriptionViewerRef.filteredTranscriptions.length }}
-                        </div>
-                    </div>
-
-                    <!-- Show message if no transcriptions -->
-                    <div v-if="!meeting.transcriptions || meeting.transcriptions.length === 0" class="py-8 text-center text-gray-500">
-                        <p>No transcription available for this meeting.</p>
+                    <div v-if="!meeting.transcriptions || meeting.transcriptions.length === 0" class="py-8 text-center text-[13px] text-ink-secondary">
+                        No transcription available for this meeting.
                     </div>
                 </div>
 
-                <div v-else class="py-12 text-center">
-                    <div class="mb-4 text-red-400">
-                        <svg class="mx-auto h-16 w-16" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                                fill-rule="evenodd"
-                                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                    </div>
-                    <p class="text-gray-600">Video not available</p>
+                <div v-else class="py-16 text-center">
+                    <svg class="mx-auto h-10 w-10 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                        />
+                    </svg>
+                    <p class="mt-3 text-[13px] text-ink-secondary">Video not available</p>
                 </div>
             </div>
 
-            <!-- Full-width Transcription for Single Column Layout -->
+            <!-- Full-width transcript for small screens / no video -->
             <div
                 v-if="meeting.status === 'completed' && meeting.transcriptions && meeting.transcriptions.length > 0 && (!videoUrl || !isLargeScreen)"
-                class="mt-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+                class="mt-6 rounded-lg border border-border bg-ground-raised p-5"
             >
                 <TranscriptionViewer
                     ref="transcriptionViewerRef"
@@ -251,30 +195,31 @@ interface Props {
 
 const props = defineProps<Props>();
 
-// Video player ref for controlling playback
 const videoPlayerRef = ref<InstanceType<typeof VideoPlayer> | null>(null);
 const transcriptionViewerRef = ref<InstanceType<typeof TranscriptionViewer> | null>(null);
 
-// Video synchronization state
 const videoCurrentTime = ref(0);
 const videoDuration = ref(0);
 const isVideoPlaying = ref(false);
+const pendingSeekTime = ref<number | null>(null);
 
-// Screen size detection for layout
 const isLargeScreen = computed(() => {
     if (typeof window === 'undefined') return true;
-    return window.innerWidth >= 1024; // lg breakpoint
+    return window.innerWidth >= 1024;
 });
 
 let statusInterval: ReturnType<typeof setInterval> | null = null;
 
-// Video event handlers
 const onVideoTimeUpdate = (time: number) => {
     videoCurrentTime.value = time;
 };
 
 const onVideoDurationChange = (duration: number) => {
     videoDuration.value = duration;
+    if (pendingSeekTime.value !== null) {
+        onTranscriptionTimestampClick(pendingSeekTime.value);
+        pendingSeekTime.value = null;
+    }
 };
 
 const onVideoPlay = () => {
@@ -289,7 +234,6 @@ const onVideoError = (error: Event) => {
     console.error('Video playback error:', error);
 };
 
-// Transcription event handlers
 const onTranscriptionTimestampClick = (time: number) => {
     videoCurrentTime.value = time;
     if (videoPlayerRef.value) {
@@ -297,7 +241,6 @@ const onTranscriptionTimestampClick = (time: number) => {
     }
 };
 
-// Navigation functions for transcription
 const goToPrevious = () => {
     if (transcriptionViewerRef.value) {
         transcriptionViewerRef.value.scrollToPrevious();
@@ -310,16 +253,12 @@ const goToNext = () => {
     }
 };
 
-// Poll for status updates when meeting is pending or processing
 const pollStatus = async () => {
     if (props.meeting.status === 'pending' || props.meeting.status === 'processing') {
         try {
             const response = await fetch(`/meetings/${props.meeting.id}/status`);
             const data = await response.json();
-
-            // Reload page if status changed to completed or failed
             if (data.data.status !== props.meeting.status) {
-                console.log('Meeting status changed:', data.data.status, props.meeting.status);
                 window.location.reload();
             }
         } catch (error) {
@@ -328,12 +267,29 @@ const pollStatus = async () => {
     }
 };
 
+const applyDeepLinkTimestamp = () => {
+    try {
+        const t = new URLSearchParams(window.location.search).get('t');
+        if (t !== null) {
+            const seconds = parseFloat(t);
+            if (Number.isFinite(seconds) && seconds >= 0) {
+                pendingSeekTime.value = seconds;
+                onTranscriptionTimestampClick(seconds);
+            }
+        }
+    } catch {
+        // ignore
+    }
+};
+
 onMounted(() => {
-    // Start polling for status updates every 2 seconds
     if (props.meeting.status === 'pending' || props.meeting.status === 'processing') {
         statusInterval = setInterval(pollStatus, 2000);
-        // Initial poll
         pollStatus();
+    }
+
+    if (props.meeting.status === 'completed') {
+        applyDeepLinkTimestamp();
     }
 });
 

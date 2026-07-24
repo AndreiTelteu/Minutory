@@ -27,16 +27,16 @@
             <!-- Error overlay -->
             <div v-if="hasError" class="bg-opacity-75 absolute inset-0 flex items-center justify-center bg-black">
                 <div class="text-center text-white">
-                    <svg class="mx-auto mb-4 h-12 w-12 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <svg class="mx-auto mb-3 h-10 w-10 text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                         <path
-                            fill-rule="evenodd"
-                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                            clip-rule="evenodd"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
                         />
                     </svg>
-                    <p class="mb-2 text-lg font-medium">Video Error</p>
-                    <p class="text-sm text-gray-300">Unable to load video. Please try refreshing the page.</p>
-                    <button @click="retryLoad" class="mt-4 rounded bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700">
+                    <p class="mb-1 text-[14px] font-medium">Video error</p>
+                    <p class="text-[13px] text-gray-300">Unable to load video. Please try refreshing the page.</p>
+                    <button @click="retryLoad" class="mt-4 rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent-solid-hover">
                         Retry
                     </button>
                 </div>
@@ -44,10 +44,10 @@
         </div>
 
         <!-- Video controls info -->
-        <div v-if="duration > 0" class="mt-2 flex justify-between text-sm text-gray-600">
+        <div v-if="duration > 0" class="tnum mt-2 flex justify-between text-[12px] text-ink-secondary">
             <span>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-            <span v-if="isPlaying" class="text-green-600">Playing</span>
-            <span v-else class="text-gray-500">Paused</span>
+            <span v-if="isPlaying" class="text-green-600 dark:text-green-400">Playing</span>
+            <span v-else class="text-ink-tertiary">Paused</span>
         </div>
     </div>
 </template>

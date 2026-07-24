@@ -1,130 +1,102 @@
 <template>
     <AppLayout>
-        <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-6xl px-6 py-8 lg:px-10">
             <!-- Header -->
-            <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div class="mb-8 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
-                    <p class="mt-1 text-gray-600">Overview of your clients and meetings activity.</p>
+                    <h1 class="text-[20px] font-semibold tracking-tight">Dashboard</h1>
+                    <p class="mt-0.5 text-[13px] text-ink-secondary">Overview of your archive.</p>
                 </div>
-                <div class="flex gap-2">
-                    <Link
-                        :href="route('meetings.create')"
-                        class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
-                    >
-                        Upload Meeting
-                    </Link>
-                    <Link
-                        :href="route('clients.index')"
-                        class="inline-flex items-center rounded-lg bg-gray-100 px-4 py-2 font-medium text-gray-800 transition-colors hover:bg-gray-200"
-                    >
-                        Manage Clients
-                    </Link>
+                <div class="flex items-center gap-2">
                     <Link
                         :href="route('ai.chat')"
-                        class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white transition-colors hover:bg-indigo-700"
+                        class="rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-ground-subtle"
                     >
-                        Open AI Assistant
+                        Ask AI
+                    </Link>
+                    <Link
+                        :href="route('meetings.create')"
+                        class="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-solid-hover"
+                    >
+                        Upload meeting
                     </Link>
                 </div>
             </div>
 
-            <!-- Stats -->
-            <div class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                    <div class="text-sm text-gray-500">Total Clients</div>
-                    <div class="mt-1 text-2xl font-semibold text-gray-900">{{ stats.total_clients }}</div>
-                </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                    <div class="text-sm text-gray-500">Total Meetings</div>
-                    <div class="mt-1 text-2xl font-semibold text-gray-900">{{ stats.total_meetings }}</div>
-                </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                    <div class="text-sm text-gray-500">Completed</div>
-                    <div class="mt-1 text-2xl font-semibold text-green-700">{{ stats.completed_meetings }}</div>
-                </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                    <div class="text-sm text-gray-500">Processing</div>
-                    <div class="mt-1 text-2xl font-semibold text-blue-700">{{ stats.processing_meetings }}</div>
-                </div>
-                <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                    <div class="text-sm text-gray-500">Pending/Failed</div>
-                    <div class="mt-1 text-2xl font-semibold text-yellow-700">
-                        {{ stats.pending_meetings + stats.failed_meetings }}
-                    </div>
+            <!-- Stats strip -->
+            <div class="mb-8 flex flex-wrap items-center gap-x-8 gap-y-3 border-y border-border py-4">
+                <div v-for="stat in statItems" :key="stat.label" class="flex items-baseline gap-2">
+                    <span class="tnum text-[20px] font-semibold tracking-tight" :class="stat.colorClass">{{ stat.value }}</span>
+                    <span class="text-[13px] text-ink-secondary">{{ stat.label }}</span>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                <!-- Recent Meetings -->
-                <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm lg:col-span-2">
-                    <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-                        <h2 class="text-lg font-semibold text-gray-900">Recent Meetings</h2>
-                        <Link :href="route('meetings.index')" class="text-sm font-medium text-blue-600 hover:text-blue-700"> View all → </Link>
-                    </div>
+                <!-- Recent meetings -->
+                <section class="overflow-hidden rounded-lg border border-border bg-ground-raised lg:col-span-2">
+                    <header class="flex items-center justify-between border-b border-border px-5 py-3">
+                        <h2 class="text-[13px] font-semibold">Recent meetings</h2>
+                        <Link :href="route('meetings.index')" class="text-[13px] font-medium text-accent hover:text-accent-hover">
+                            View all
+                        </Link>
+                    </header>
 
-                    <div v-if="recentMeetings.length === 0" class="p-8 text-center text-gray-500">
-                        <p class="text-lg">No meetings yet.</p>
-                        <p class="mt-2">
-                            <Link :href="route('meetings.create')" class="font-medium text-blue-600 hover:text-blue-700">
-                                Upload your first meeting
-                            </Link>
-                        </p>
+                    <div v-if="recentMeetings.length === 0" class="px-5 py-12 text-center">
+                        <p class="text-[13px] text-ink-secondary">No meetings yet.</p>
+                        <Link :href="route('meetings.create')" class="mt-1 inline-block text-[13px] font-medium text-accent hover:text-accent-hover">
+                            Upload your first meeting
+                        </Link>
                     </div>
 
                     <div v-else class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">Title</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">Client</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">Status</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">Uploaded</th>
-                                    <th class="px-6 py-3" />
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-200 bg-white">
-                                <tr v-for="m in recentMeetings" :key="m.id" class="hover:bg-gray-50">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900">{{ m.title }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900">{{ m.client.name }}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <MeetingStatusBadge :status="m.status" :meeting="m" />
-                                    </td>
-                                    <td class="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
-                                        {{ formatDate(m.created_at || m.uploaded_at) }}
-                                    </td>
-                                    <td class="px-6 py-4 text-right text-sm whitespace-nowrap">
-                                        <Link :href="route('meetings.show', m.id)" class="text-blue-600 hover:text-blue-900"> Open </Link>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <table class="w-full min-w-[540px]">
+                        <thead>
+                            <tr class="border-b border-border bg-ground-subtle text-left">
+                                <th class="px-5 py-2 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Title</th>
+                                <th class="px-5 py-2 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Client</th>
+                                <th class="px-5 py-2 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Status</th>
+                                <th class="px-5 py-2 text-right text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Uploaded</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="m in recentMeetings"
+                                :key="m.id"
+                                class="cursor-pointer border-b border-border transition-colors duration-150 last:border-0 hover:bg-ground-subtle"
+                                @click="router.visit(route('meetings.show', m.id))"
+                            >
+                                <td class="px-5 py-2.5 text-[13px] font-medium">{{ m.title }}</td>
+                                <td class="px-5 py-2.5 text-[13px] text-ink-secondary">{{ m.client.name }}</td>
+                                <td class="px-5 py-2.5"><MeetingStatusBadge :status="m.status" :meeting="m" /></td>
+                                <td class="tnum px-5 py-2.5 text-right text-[13px] text-ink-secondary">
+                                    {{ formatDate(m.created_at || m.uploaded_at) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                     </div>
-                </div>
+                </section>
 
-                <!-- Top Clients -->
-                <div class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <div class="border-b border-gray-200 px-6 py-4">
-                        <h2 class="text-lg font-semibold text-gray-900">Top Clients</h2>
-                        <p class="text-sm text-gray-500">By number of meetings</p>
-                    </div>
+                <!-- Top clients -->
+                <section class="overflow-hidden rounded-lg border border-border bg-ground-raised">
+                    <header class="border-b border-border px-5 py-3">
+                        <h2 class="text-[13px] font-semibold">Top clients</h2>
+                    </header>
 
-                    <div v-if="topClients.length === 0" class="p-8 text-center text-gray-500">No clients yet.</div>
+                    <div v-if="topClients.length === 0" class="px-5 py-12 text-center text-[13px] text-ink-secondary">No clients yet.</div>
 
-                    <ul v-else class="divide-y divide-gray-200">
-                        <li v-for="c in topClients" :key="c.id" class="flex items-center justify-between px-6 py-4">
-                            <div>
-                                <div class="font-medium text-gray-900">{{ c.name }}</div>
-                                <div class="text-sm text-gray-500">{{ c.meetings_count }} meetings</div>
-                            </div>
-                            <Link :href="route('clients.show', c.id)" class="text-sm font-medium text-blue-600 hover:text-blue-800"> View </Link>
+                    <ul v-else>
+                        <li v-for="c in topClients" :key="c.id">
+                            <Link
+                                :href="route('clients.show', c.id)"
+                                class="flex items-center justify-between border-b border-border px-5 py-2.5 transition-colors duration-150 last:border-0 hover:bg-ground-subtle"
+                            >
+                                <span class="text-[13px] font-medium">{{ c.name }}</span>
+                                <span class="tnum text-[13px] text-ink-secondary">{{ c.meetings_count }} meetings</span>
+                            </Link>
                         </li>
                     </ul>
-                </div>
+                </section>
             </div>
         </div>
     </AppLayout>
@@ -133,7 +105,8 @@
 <script setup lang="ts">
 import AppLayout from '@/lib/AppLayout.vue';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 interface ClientLite {
     id: number;
@@ -183,10 +156,21 @@ const stats = props.stats || {
 };
 const topClients = props.topClients || [];
 
+const statItems = computed(() => [
+    { label: 'clients', value: stats.total_clients, colorClass: '' },
+    { label: 'meetings', value: stats.total_meetings, colorClass: '' },
+    { label: 'completed', value: stats.completed_meetings, colorClass: 'text-green-600 dark:text-green-400' },
+    { label: 'processing', value: stats.processing_meetings, colorClass: 'text-amber-600 dark:text-amber-400' },
+    {
+        label: 'pending / failed',
+        value: stats.pending_meetings + stats.failed_meetings,
+        colorClass: 'text-ink-secondary',
+    },
+]);
+
 const formatDate = (dateString: string) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',

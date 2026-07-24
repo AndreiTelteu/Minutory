@@ -1,117 +1,52 @@
 <template>
     <Teleport to="body">
-        <div class="fixed top-4 right-4 z-50 space-y-2">
+        <div class="fixed inset-x-4 top-4 z-50 sm:left-auto sm:right-4">
             <TransitionGroup name="toast" tag="div" class="space-y-2">
                 <div
                     v-for="toast in toasts"
                     :key="toast.id"
-                    :class="[
-                        'ring-opacity-5 pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black',
-                        toast.type === 'success' && 'border-l-4 border-green-400',
-                        toast.type === 'error' && 'border-l-4 border-red-400',
-                        toast.type === 'warning' && 'border-l-4 border-yellow-400',
-                        toast.type === 'info' && 'border-l-4 border-blue-400',
-                    ]"
+                    class="pointer-events-auto w-full max-w-sm rounded-lg border border-border bg-ground-raised shadow-[0_4px_12px_rgb(0_0_0/0.08)] dark:shadow-[0_4px_12px_rgb(0_0_0/0.24)]"
                 >
-                    <div class="p-4">
-                        <div class="flex items-start">
-                            <div class="flex-shrink-0">
-                                <!-- Success Icon -->
-                                <svg v-if="toast.type === 'success'" class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
+                    <div class="flex items-start gap-2.5 p-3.5">
+                        <svg v-if="toast.type === 'success'" class="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <svg v-else-if="toast.type === 'error'" class="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                        </svg>
+                        <svg v-else-if="toast.type === 'warning'" class="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                        <svg v-else class="mt-0.5 h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                        </svg>
 
-                                <!-- Error Icon -->
-                                <svg v-else-if="toast.type === 'error'" class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[13px] font-medium text-ink">{{ toast.title }}</p>
+                            <p v-if="toast.message" class="mt-0.5 text-[12px] text-ink-secondary">{{ toast.message }}</p>
 
-                                <!-- Warning Icon -->
-                                <svg v-else-if="toast.type === 'warning'" class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
-
-                                <!-- Info Icon -->
-                                <svg v-else class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path
-                                        fill-rule="evenodd"
-                                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                                        clip-rule="evenodd"
-                                    />
-                                </svg>
-                            </div>
-
-                            <div class="ml-3 w-0 flex-1">
-                                <p
-                                    :class="[
-                                        'text-sm font-medium',
-                                        toast.type === 'success' && 'text-green-800',
-                                        toast.type === 'error' && 'text-red-800',
-                                        toast.type === 'warning' && 'text-yellow-800',
-                                        toast.type === 'info' && 'text-blue-800',
-                                    ]"
-                                >
-                                    {{ toast.title }}
-                                </p>
-                                <p
-                                    v-if="toast.message"
-                                    :class="[
-                                        'mt-1 text-sm',
-                                        toast.type === 'success' && 'text-green-700',
-                                        toast.type === 'error' && 'text-red-700',
-                                        toast.type === 'warning' && 'text-yellow-700',
-                                        toast.type === 'info' && 'text-blue-700',
-                                    ]"
-                                >
-                                    {{ toast.message }}
-                                </p>
-
-                                <!-- Action buttons -->
-                                <div v-if="toast.actions && toast.actions.length > 0" class="mt-3 flex space-x-2">
-                                    <button
-                                        v-for="action in toast.actions"
-                                        :key="action.label"
-                                        @click="action.handler"
-                                        :class="[
-                                            'rounded-md px-3 py-1 text-sm font-medium transition-colors',
-                                            action.primary
-                                                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-                                        ]"
-                                    >
-                                        {{ action.label }}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="ml-4 flex flex-shrink-0">
+                            <div v-if="toast.actions && toast.actions.length > 0" class="mt-2.5 flex gap-2">
                                 <button
-                                    @click="removeToast(toast.id)"
-                                    class="inline-flex rounded-md bg-white text-gray-400 hover:text-gray-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
+                                    v-for="action in toast.actions"
+                                    :key="action.label"
+                                    @click="action.handler"
+                                    :class="[
+                                        'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors duration-150',
+                                        action.primary
+                                            ? 'bg-accent-solid text-white hover:bg-accent-solid-hover'
+                                            : 'border border-border-strong text-ink hover:bg-ground-subtle',
+                                    ]"
                                 >
-                                    <span class="sr-only">Close</span>
-                                    <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path
-                                            fill-rule="evenodd"
-                                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                                            clip-rule="evenodd"
-                                        />
-                                    </svg>
+                                    {{ action.label }}
                                 </button>
                             </div>
                         </div>
+
+                        <button @click="removeToast(toast.id)" class="shrink-0 rounded p-0.5 text-ink-tertiary transition-colors hover:text-ink" aria-label="Close">
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
                     </div>
                 </div>
             </TransitionGroup>
@@ -145,7 +80,6 @@ const addToast = (toast: Omit<Toast, 'id'>) => {
 
     toasts.value.push(newToast);
 
-    // Auto remove after duration
     if (toast.duration !== 0) {
         setTimeout(() => {
             removeToast(id);
@@ -166,7 +100,6 @@ const clearAll = () => {
     toasts.value = [];
 };
 
-// Global toast methods
 const showSuccess = (title: string, message?: string, options?: Partial<Toast>) => {
     return addToast({ type: 'success', title, message, ...options });
 };
@@ -183,7 +116,6 @@ const showInfo = (title: string, message?: string, options?: Partial<Toast>) => 
     return addToast({ type: 'info', title, message, ...options });
 };
 
-// Expose methods globally
 onMounted(() => {
     window.toast = {
         success: showSuccess,
@@ -209,20 +141,20 @@ defineExpose({
 <style scoped>
 .toast-enter-active,
 .toast-leave-active {
-    transition: all 0.3s ease;
+    transition: all 0.25s ease-out;
 }
 
 .toast-enter-from {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(1rem);
 }
 
 .toast-leave-to {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(1rem);
 }
 
 .toast-move {
-    transition: transform 0.3s ease;
+    transition: transform 0.25s ease-out;
 }
 </style>

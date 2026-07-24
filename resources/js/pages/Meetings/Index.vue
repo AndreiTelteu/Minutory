@@ -1,182 +1,114 @@
 <template>
     <AppLayout>
-        <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-            <div class="mb-8 flex items-center justify-between">
-                <div class="flex items-center space-x-4">
-                    <h1 class="text-3xl font-bold text-gray-900">Meetings</h1>
-                    <div class="flex items-center space-x-2 text-sm text-gray-500">
-                        <div class="h-2 w-2 animate-pulse rounded-full bg-green-400"></div>
-                        <span>Live updates active</span>
-                    </div>
+        <div class="mx-auto max-w-6xl px-6 py-8 lg:px-10">
+            <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <h1 class="text-[20px] font-semibold tracking-tight">Meetings</h1>
+                    <span class="flex items-center gap-1.5 text-[12px] text-ink-tertiary">
+                        <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                        Live
+                    </span>
                 </div>
                 <Link
                     :href="route('meetings.create')"
-                    class="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
+                    class="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-solid-hover"
                 >
-                    Upload Meeting
+                    Upload meeting
                 </Link>
             </div>
 
-            <!-- Filters -->
-            <div class="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 class="mb-4 text-lg font-semibold text-gray-900">Filters</h2>
-                <form @submit.prevent="applyFilters" class="grid grid-cols-1 gap-4 md:grid-cols-5">
-                    <div>
-                        <label for="client_id" class="mb-1 block text-sm font-medium text-gray-700"> Client </label>
-                        <select
-                            id="client_id"
-                            v-model="filterForm.client_id"
-                            data-testid="client-filter"
-                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        >
-                            <option value="">All Clients</option>
-                            <option v-for="client in clients" :key="client.id" :value="client.id">
-                                {{ client.name }}
-                            </option>
-                        </select>
-                    </div>
+            <!-- Filter toolbar -->
+            <form @submit.prevent="applyFilters" class="mb-4 flex flex-wrap items-end gap-2">
+                <select
+                    v-model="filterForm.client_id"
+                    data-testid="client-filter"
+                    aria-label="Filter by client"
+                    class="rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] text-ink focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                    @change="applyFilters"
+                >
+                    <option value="">All clients</option>
+                    <option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option>
+                </select>
 
-                    <div>
-                        <label for="status" class="mb-1 block text-sm font-medium text-gray-700"> Status </label>
-                        <select
-                            id="status"
-                            v-model="filterForm.status"
-                            data-testid="status-filter"
-                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        >
-                            <option value="">All Statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="processing">Processing</option>
-                            <option value="completed">Completed</option>
-                            <option value="failed">Failed</option>
-                        </select>
-                    </div>
+                <select
+                    v-model="filterForm.status"
+                    data-testid="status-filter"
+                    aria-label="Filter by status"
+                    class="rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] text-ink focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                    @change="applyFilters"
+                >
+                    <option value="">All statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="processing">Processing</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                </select>
 
-                    <div>
-                        <label for="date_from" class="mb-1 block text-sm font-medium text-gray-700"> From Date </label>
-                        <input
-                            id="date_from"
-                            v-model="filterForm.date_from"
-                            type="date"
-                            data-testid="date-from"
-                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        />
-                    </div>
+                <input
+                    v-model="filterForm.date_from"
+                    type="date"
+                    data-testid="date-from"
+                    aria-label="From date"
+                    class="rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] text-ink focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                    @change="applyFilters"
+                />
+                <input
+                    v-model="filterForm.date_to"
+                    type="date"
+                    data-testid="date-to"
+                    aria-label="To date"
+                    class="rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] text-ink focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                    @change="applyFilters"
+                />
 
-                    <div>
-                        <label for="date_to" class="mb-1 block text-sm font-medium text-gray-700"> To Date </label>
-                        <input
-                            id="date_to"
-                            v-model="filterForm.date_to"
-                            type="date"
-                            data-testid="date-to"
-                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        />
-                    </div>
+                <button
+                    v-if="hasActiveFilters"
+                    type="button"
+                    @click="clearFilters"
+                    class="rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink"
+                >
+                    Clear
+                </button>
+            </form>
 
-                    <div>
-                        <label for="sort" class="mb-1 block text-sm font-medium text-gray-700"> Sort By </label>
-                        <div class="flex gap-2">
-                            <select
-                                id="sort"
-                                v-model="filterForm.sort"
-                                class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            >
-                                <option value="uploaded_at">Uploaded Date</option>
-                                <option value="title">Title</option>
-                                <option value="client">Client</option>
-                                <option value="status">Status</option>
-                                <option value="duration">Duration</option>
-                            </select>
-                            <button
-                                type="button"
-                                @click="toggleDirection"
-                                :title="`Toggle direction (currently ${filterForm.direction.toUpperCase()})`"
-                                class="rounded-md border px-3 py-2 text-sm"
-                                :class="filterForm.direction === 'asc' ? 'border-gray-300 text-gray-700' : 'border-gray-800 text-gray-900'"
-                            >
-                                <span v-if="filterForm.direction === 'asc'">↑</span>
-                                <span v-else>↓</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-2 md:col-span-5">
-                        <button type="submit" class="rounded-md bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700">
-                            Apply Filters
-                        </button>
-                        <button
-                            type="button"
-                            @click="clearFilters"
-                            class="rounded-md bg-gray-600 px-4 py-2 font-medium text-white transition-colors hover:bg-gray-700"
-                        >
-                            Clear
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Meetings List -->
-            <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                <div v-if="realtimeMeetings.length === 0" class="p-8 text-center text-gray-500">
-                    <p class="text-lg">No meetings found.</p>
-                    <p class="mt-2">
-                        <Link :href="route('meetings.create')" class="font-medium text-blue-600 hover:text-blue-700">
-                            Upload your first meeting
-                        </Link>
-                    </p>
+            <!-- Meetings table -->
+            <div class="overflow-hidden rounded-lg border border-border bg-ground-raised">
+                <div v-if="realtimeMeetings.length === 0" class="px-5 py-16 text-center">
+                    <p class="text-[13px] text-ink-secondary">No meetings found.</p>
+                    <Link :href="route('meetings.create')" class="mt-1 inline-block text-[13px] font-medium text-accent hover:text-accent-hover">
+                        Upload your first meeting
+                    </Link>
                 </div>
 
-                <div v-else class="overflow-hidden">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                                    <button @click="setSort('title')" class="inline-flex items-center gap-1 hover:text-gray-700">
-                                        Meeting
-                                        <span :class="['text-xs', filterForm.sort === 'title' ? 'text-gray-900' : 'text-gray-400']">
-                                            {{ filterForm.sort === 'title' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
-                                        </span>
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="border-b border-border bg-ground-subtle text-left">
+                                <th v-for="col in columns" :key="col.key" class="px-5 py-2" :class="col.headerClass">
+                                    <button
+                                        v-if="col.sortable"
+                                        @click="setSort(col.key)"
+                                        class="inline-flex items-center gap-1 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase transition-colors hover:text-ink"
+                                    >
+                                        {{ col.label }}
+                                        <span v-if="filterForm.sort === col.key" class="text-ink">{{ filterForm.direction === 'asc' ? '↑' : '↓' }}</span>
                                     </button>
+                                    <span v-else class="text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">{{ col.label }}</span>
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                                    <button @click="setSort('client')" class="inline-flex items-center gap-1 hover:text-gray-700">
-                                        Client
-                                        <span :class="['text-xs', filterForm.sort === 'client' ? 'text-gray-900' : 'text-gray-400']">
-                                            {{ filterForm.sort === 'client' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
-                                        </span>
-                                    </button>
-                                </th>
-                                <th class="w-64 px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">Status & Progress</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                                    <button @click="setSort('uploaded_at')" class="inline-flex items-center gap-1 hover:text-gray-700">
-                                        Uploaded
-                                        <span :class="['text-xs', filterForm.sort === 'uploaded_at' ? 'text-gray-900' : 'text-gray-400']">
-                                            {{ filterForm.sort === 'uploaded_at' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
-                                        </span>
-                                    </button>
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                                    <button @click="setSort('duration')" class="inline-flex items-center gap-1 hover:text-gray-700">
-                                        Duration
-                                        <span :class="['text-xs', filterForm.sort === 'duration' ? 'text-gray-900' : 'text-gray-400']">
-                                            {{ filterForm.sort === 'duration' ? (filterForm.direction === 'asc' ? '↑' : '↓') : '↕' }}
-                                        </span>
-                                    </button>
-                                </th>
-                                <th class="px-6 py-3 text-right text-xs font-medium tracking-wider text-gray-500 uppercase">Actions</th>
+                                <th class="px-5 py-2" />
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-200 bg-white">
-                            <tr v-for="meeting in realtimeMeetings" :key="meeting.id" class="hover:bg-gray-50">
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">{{ meeting.title }}</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">{{ meeting.client.name }}</div>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="space-y-2">
+                        <tbody>
+                            <tr
+                                v-for="meeting in realtimeMeetings"
+                                :key="meeting.id"
+                                class="cursor-pointer border-b border-border transition-colors duration-150 last:border-0 hover:bg-ground-subtle"
+                                @click="router.visit(route('meetings.show', meeting.id))"
+                            >
+                                <td class="px-5 py-2.5 text-[13px] font-medium">{{ meeting.title }}</td>
+                                <td class="px-5 py-2.5 text-[13px] text-ink-secondary">{{ meeting.client.name }}</td>
+                                <td class="w-56 px-5 py-2.5">
+                                    <div class="space-y-1.5">
                                         <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                                         <MeetingProgressIndicator
                                             v-if="meeting.status === 'pending' || meeting.status === 'processing' || meeting.status === 'failed'"
@@ -184,15 +116,22 @@
                                         />
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
-                                    {{ formatDate(meeting.uploaded_at) }}
-                                </td>
-                                <td class="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
-                                    {{ formatDuration(meeting.duration) }}
-                                </td>
-                                <td class="px-6 py-4 text-right text-sm font-medium whitespace-nowrap">
-                                    <Link :href="route('meetings.show', meeting.id)" class="mr-3 text-blue-600 hover:text-blue-900"> View </Link>
-                                    <button @click="deleteMeeting(meeting)" class="text-red-600 hover:text-red-900">Delete</button>
+                                <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary">{{ formatDate(meeting.uploaded_at) }}</td>
+                                <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary">{{ formatDuration(meeting.duration) }}</td>
+                                <td class="px-5 py-2.5 text-right">
+                                    <button
+                                        @click.stop="deleteMeeting(meeting)"
+                                        class="rounded p-1 text-ink-tertiary transition-colors duration-150 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                                        aria-label="Delete meeting"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                                            />
+                                        </svg>
+                                    </button>
                                 </td>
                             </tr>
                         </tbody>
@@ -200,25 +139,23 @@
                 </div>
 
                 <!-- Pagination -->
-                <div v-if="meetings.links.length > 3" class="border-t border-gray-200 px-6 py-3">
-                    <div class="flex items-center justify-between">
-                        <div class="text-sm text-gray-700">Showing {{ meetings.from }} to {{ meetings.to }} of {{ meetings.total }} results</div>
-                        <div class="flex space-x-1">
-                            <Link
-                                v-for="link in meetings.links"
-                                :key="link.label"
-                                :href="link.url || '#'"
-                                :class="[
-                                    'rounded-md px-3 py-2 text-sm',
-                                    link.active
-                                        ? 'bg-blue-600 text-white'
-                                        : link.url
-                                          ? 'text-gray-700 hover:bg-gray-100'
-                                          : 'cursor-not-allowed text-gray-400',
-                                ]"
-                                v-html="link.label"
-                            />
-                        </div>
+                <div v-if="meetings.links.length > 3" class="flex items-center justify-between border-t border-border px-5 py-2.5">
+                    <span class="tnum text-[12px] text-ink-tertiary">{{ meetings.from }}–{{ meetings.to }} of {{ meetings.total }}</span>
+                    <div class="flex gap-0.5">
+                        <Link
+                            v-for="link in meetings.links"
+                            :key="link.label"
+                            :href="link.url || '#'"
+                            :class="[
+                                'rounded-md px-2 py-1 text-[12px] font-medium transition-colors duration-150',
+                                link.active
+                                    ? 'bg-accent-subtle text-accent'
+                                    : link.url
+                                      ? 'text-ink-secondary hover:bg-ground-subtle hover:text-ink'
+                                      : 'pointer-events-none text-ink-tertiary opacity-50',
+                            ]"
+                            v-html="link.label"
+                        />
                     </div>
                 </div>
             </div>
@@ -232,7 +169,7 @@ import MeetingProgressIndicator from '@/lib/MeetingProgressIndicator.vue';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
 import { useRealTimeUpdates } from '@/lib/useRealTimeUpdates';
 import { Link, router } from '@inertiajs/vue3';
-import { reactive, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 
 interface Client {
     id: number;
@@ -281,14 +218,11 @@ interface Props {
 
 const props = defineProps<Props>();
 
-// Use real-time updates for meetings
 const { meetings: realtimeMeetings } = useRealTimeUpdates(props.meetings.data);
 
-// Keep real-time list in sync when Inertia updates props (e.g., after applying filters/sorting)
 watch(
     () => props.meetings.data,
     (newMeetings) => {
-        // Replace array to respect new server-sorted/filtered results
         realtimeMeetings.value = [...newMeetings];
     },
 );
@@ -302,6 +236,18 @@ const filterForm = reactive({
     direction: (props.filters.direction as 'asc' | 'desc') || 'desc',
 });
 
+const columns = [
+    { key: 'title', label: 'Meeting', sortable: true, headerClass: '' },
+    { key: 'client', label: 'Client', sortable: true, headerClass: '' },
+    { key: 'status', label: 'Status', sortable: false, headerClass: '' },
+    { key: 'uploaded_at', label: 'Uploaded', sortable: true, headerClass: '' },
+    { key: 'duration', label: 'Duration', sortable: true, headerClass: '' },
+];
+
+const hasActiveFilters = computed(
+    () => filterForm.client_id !== '' || filterForm.status !== '' || filterForm.date_from !== '' || filterForm.date_to !== '',
+);
+
 const applyFilters = () => {
     router.get(route('meetings.index'), filterForm, {
         preserveState: true,
@@ -314,8 +260,6 @@ const clearFilters = () => {
     filterForm.status = '';
     filterForm.date_from = '';
     filterForm.date_to = '';
-    filterForm.sort = 'uploaded_at';
-    filterForm.direction = 'desc';
     applyFilters();
 };
 
@@ -329,7 +273,6 @@ const deleteMeeting = (meeting: Meeting) => {
 
 const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -347,24 +290,13 @@ const setSort = (column: string) => {
     applyFilters();
 };
 
-const toggleDirection = () => {
-    filterForm.direction = filterForm.direction === 'asc' ? 'desc' : 'asc';
-    applyFilters();
-};
-
 const formatDuration = (duration: number | null) => {
-    if (!duration) return 'Unknown';
-
+    if (!duration) return '—';
     const hours = Math.floor(duration / 3600);
     const minutes = Math.floor((duration % 3600) / 60);
     const seconds = duration % 60;
-
-    if (hours > 0) {
-        return `${hours}h ${minutes}m ${seconds}s`;
-    } else if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-    } else {
-        return `${seconds}s`;
-    }
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
 };
 </script>

@@ -1,95 +1,88 @@
 <template>
     <AppLayout>
-        <div class="mx-auto max-w-2xl px-4 py-8 sm:px-6 lg:px-8">
-            <div class="mb-8">
-                <Link :href="route('clients.index')" class="font-medium text-blue-600 hover:text-blue-700"> ← Back to Clients </Link>
-                <h1 class="mt-4 text-3xl font-bold text-gray-900">Edit Client</h1>
-                <p class="mt-2 text-gray-600">Update client information and contact details.</p>
+        <div class="mx-auto max-w-2xl px-6 py-8 lg:px-10">
+            <div class="mb-6">
+                <Link
+                    :href="route('clients.index')"
+                    class="inline-flex items-center gap-1 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:text-ink"
+                >
+                    <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                    </svg>
+                    Clients
+                </Link>
+                <h1 class="mt-2 text-[20px] font-semibold tracking-tight">Edit client</h1>
+                <p class="mt-0.5 text-[13px] text-ink-secondary">Update contact details.</p>
             </div>
 
-            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                <form @submit.prevent="submit">
-                    <div class="grid grid-cols-1 gap-y-6 sm:grid-cols-2 sm:gap-x-6">
-                        <!-- Name -->
-                        <div class="sm:col-span-2">
-                            <label for="name" class="mb-1 block text-sm font-medium text-gray-700"> Name <span class="text-red-500">*</span> </label>
-                            <input
-                                id="name"
-                                v-model="form.name"
-                                type="text"
-                                required
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                :class="{ 'border-red-300': form.errors.name }"
-                            />
-                            <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
-                                {{ form.errors.name }}
-                            </p>
-                        </div>
-
-                        <!-- Email -->
-                        <div class="sm:col-span-2">
-                            <label for="email" class="mb-1 block text-sm font-medium text-gray-700"> Email </label>
-                            <input
-                                id="email"
-                                v-model="form.email"
-                                type="email"
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                :class="{ 'border-red-300': form.errors.email }"
-                            />
-                            <p v-if="form.errors.email" class="mt-1 text-sm text-red-600">
-                                {{ form.errors.email }}
-                            </p>
-                        </div>
-
-                        <!-- Company -->
-                        <div>
-                            <label for="company" class="mb-1 block text-sm font-medium text-gray-700"> Company </label>
-                            <input
-                                id="company"
-                                v-model="form.company"
-                                type="text"
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                :class="{ 'border-red-300': form.errors.company }"
-                            />
-                            <p v-if="form.errors.company" class="mt-1 text-sm text-red-600">
-                                {{ form.errors.company }}
-                            </p>
-                        </div>
-
-                        <!-- Phone -->
-                        <div>
-                            <label for="phone" class="mb-1 block text-sm font-medium text-gray-700"> Phone </label>
-                            <input
-                                id="phone"
-                                v-model="form.phone"
-                                type="tel"
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                :class="{ 'border-red-300': form.errors.phone }"
-                            />
-                            <p v-if="form.errors.phone" class="mt-1 text-sm text-red-600">
-                                {{ form.errors.phone }}
-                            </p>
-                        </div>
+            <form @submit.prevent="submit" class="space-y-5 rounded-lg border border-border bg-ground-raised p-6">
+                <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <div class="sm:col-span-2">
+                        <label for="name" class="mb-1.5 block text-[13px] font-medium">Name</label>
+                        <input
+                            id="name"
+                            v-model="form.name"
+                            type="text"
+                            required
+                            class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-tertiary focus:ring-2 focus:outline-none"
+                            :class="form.errors.name ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'"
+                        />
+                        <p v-if="form.errors.name" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ form.errors.name }}</p>
                     </div>
 
-                    <div class="mt-8 flex justify-end gap-3">
-                        <Link
-                            :href="route('clients.index')"
-                            class="rounded-md bg-gray-100 px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-200"
-                        >
-                            Cancel
-                        </Link>
-                        <button
-                            type="submit"
-                            :disabled="form.processing"
-                            class="rounded-md bg-blue-600 px-6 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-                        >
-                            <span v-if="form.processing">Updating...</span>
-                            <span v-else>Update Client</span>
-                        </button>
+                    <div class="sm:col-span-2">
+                        <label for="email" class="mb-1.5 block text-[13px] font-medium">Email</label>
+                        <input
+                            id="email"
+                            v-model="form.email"
+                            type="email"
+                            class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-tertiary focus:ring-2 focus:outline-none"
+                            :class="form.errors.email ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'"
+                        />
+                        <p v-if="form.errors.email" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ form.errors.email }}</p>
                     </div>
-                </form>
-            </div>
+
+                    <div>
+                        <label for="company" class="mb-1.5 block text-[13px] font-medium">Company</label>
+                        <input
+                            id="company"
+                            v-model="form.company"
+                            type="text"
+                            class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-tertiary focus:ring-2 focus:outline-none"
+                            :class="form.errors.company ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'"
+                        />
+                        <p v-if="form.errors.company" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ form.errors.company }}</p>
+                    </div>
+
+                    <div>
+                        <label for="phone" class="mb-1.5 block text-[13px] font-medium">Phone</label>
+                        <input
+                            id="phone"
+                            v-model="form.phone"
+                            type="tel"
+                            class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-tertiary focus:ring-2 focus:outline-none"
+                            :class="form.errors.phone ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'"
+                        />
+                        <p v-if="form.errors.phone" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ form.errors.phone }}</p>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 border-t border-border pt-5">
+                    <Link
+                        :href="route('clients.index')"
+                        class="rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-ground-subtle"
+                    >
+                        Cancel
+                    </Link>
+                    <button
+                        type="submit"
+                        :disabled="form.processing"
+                        class="rounded-md bg-accent-solid px-4 py-1.5 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        {{ form.processing ? 'Saving…' : 'Save changes' }}
+                    </button>
+                </div>
+            </form>
         </div>
     </AppLayout>
 </template>
