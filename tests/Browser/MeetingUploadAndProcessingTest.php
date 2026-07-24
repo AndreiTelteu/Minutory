@@ -32,9 +32,6 @@ it('can complete the full meeting upload workflow', function () {
         'video' => $videoFile,
     ]);
 
-    $response->assertRedirect(route('meetings.index'));
-    $response->assertSessionHas('success', 'Meeting uploaded successfully and is being processed.');
-
     // Verify meeting was created
     $this->assertDatabaseHas('meetings', [
         'title' => 'Quarterly Review Meeting',
@@ -43,6 +40,9 @@ it('can complete the full meeting upload workflow', function () {
     ]);
 
     $meeting = Meeting::where('title', 'Quarterly Review Meeting')->first();
+
+    $response->assertRedirect(route('meetings.show', $meeting));
+    $response->assertSessionHas('success', 'Meeting uploaded successfully and is being processed.');
     expect($meeting->video_path)->toContain("meetings/{$client->id}/{$meeting->id}/video.mp4");
 
     // Verify file was stored

@@ -3,9 +3,11 @@
 use App\Models\Client;
 use App\Models\Meeting;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
+    Bus::fake();
     Storage::fake('public');
 });
 
@@ -32,9 +34,6 @@ it('can upload a meeting video successfully', function () {
         'video' => $videoFile,
     ]);
 
-    $response->assertRedirect(route('meetings.index'))
-        ->assertSessionHas('success', 'Meeting uploaded successfully and is being processed.');
-
     $this->assertDatabaseHas('meetings', [
         'title' => 'Test Meeting',
         'client_id' => $client->id,
@@ -42,6 +41,9 @@ it('can upload a meeting video successfully', function () {
     ]);
 
     $meeting = Meeting::where('title', 'Test Meeting')->first();
+
+    $response->assertRedirect(route('meetings.show', $meeting))
+        ->assertSessionHas('success', 'Meeting uploaded successfully and is being processed.');
     expect($meeting->video_path)->toContain("meetings/{$client->id}/{$meeting->id}/video.mp4");
 
     Storage::disk('public')->assertExists($meeting->video_path);

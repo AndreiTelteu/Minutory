@@ -153,10 +153,28 @@ class MeetingController extends Controller
                 'estimated_processing_time' => (int) $estimatedProcessingTime,
             ]);
 
-            // Dispatch transcription job
-            TranscribeMeetingJob::dispatch($meeting);
+            // Dispatching may execute synchronously in local/test environments.
+            // A processing failure must never roll back an already-uploaded meeting.
+            try {
+                TranscribeMeetingJob::dispatch($meeting);
+            } catch (\Throwable $e) {
+                \Log::error('Meeting transcription could not be started', [
+                    'meeting_id' => $meeting->id,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return redirect()->route('meetings.index')
+                $meeting->fresh()->update([
+                    'status' => 'failed',
+                    'processing_completed_at' => now(),
+                    'error_message' => 'Meeting uploaded, but transcription could not be processed.',
+                    'technical_error' => $e->getMessage(),
+                ]);
+
+                return redirect()->route('meetings.show', $meeting)
+                    ->with('error', 'Meeting uploaded, but transcription could not be processed.');
+            }
+
+            return redirect()->route('meetings.show', $meeting)
                 ->with('success', 'Meeting uploaded successfully and is being processed.');
 
         } catch (\Illuminate\Validation\ValidationException $e) {

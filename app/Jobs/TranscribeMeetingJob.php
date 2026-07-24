@@ -170,7 +170,8 @@ class TranscribeMeetingJob implements ShouldBeUnique
                 'text' => $segment['text'] ?? '',
                 'start_time' => $segment['start'] ?? 0,
                 'end_time' => $segment['end'] ?? 0,
-                'confidence' => $segment['avg_logprob'] ?? null,
+                // Parakeet's output does not expose a per-segment confidence score.
+                // Let the database default (1.00) represent an unavailable score.
             ]);
         }
 
