@@ -50,4 +50,46 @@ return [
         'compute_type' => env('TRANSCRIBING_COMPUTE_TYPE', 'auto'),
     ],
 
+    'worker' => [
+        'token' => env('WORKER_API_TOKEN'),
+        'throttle_per_minute' => (int) env('WORKER_API_THROTTLE_PER_MINUTE', 60),
+        'artifacts' => [
+            'video' => [
+                'max_bytes' => (int) env('WORKER_VIDEO_MAX_BYTES', 5_368_709_120),
+                'mime_types' => [
+                    'video/mp4',
+                    'video/quicktime',
+                    'video/x-msvideo',
+                    'video/webm',
+                ],
+                'extensions' => [
+                    'video/mp4' => 'mp4',
+                    'video/quicktime' => 'mov',
+                    'video/x-msvideo' => 'avi',
+                    'video/webm' => 'webm',
+                ],
+            ],
+            'audio' => [
+                'max_bytes' => (int) env('WORKER_AUDIO_MAX_BYTES', 1_073_741_824),
+                'mime_types' => [
+                    'audio/wav',
+                    'audio/x-wav',
+                    'audio/wave',
+                    'audio/vnd.wave',
+                ],
+            ],
+            'transcript' => [
+                'max_bytes' => (int) env('WORKER_TRANSCRIPT_MAX_BYTES', 52_428_800),
+                'mime_types' => [
+                    'application/json',
+                    'text/json',
+                    'text/plain',
+                ],
+                'max_segments' => (int) env('WORKER_TRANSCRIPT_MAX_SEGMENTS', 100_000),
+                'max_text_length' => (int) env('WORKER_TRANSCRIPT_MAX_TEXT_LENGTH', 10_000),
+                'max_speaker_length' => (int) env('WORKER_TRANSCRIPT_MAX_SPEAKER_LENGTH', 255),
+            ],
+        ],
+    ],
+
 ];

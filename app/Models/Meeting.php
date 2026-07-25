@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Meeting extends Model
 {
@@ -17,6 +18,7 @@ class Meeting extends Model
         'video_path',
         'status',
         'duration',
+        'meeting_at',
         'estimated_processing_time',
         'uploaded_at',
         'processing_started_at',
@@ -27,6 +29,7 @@ class Meeting extends Model
 
     protected $casts = [
         'uploaded_at' => 'datetime',
+        'meeting_at' => 'datetime',
         'processing_started_at' => 'datetime',
         'processing_completed_at' => 'datetime',
         'duration' => 'integer',
@@ -51,6 +54,11 @@ class Meeting extends Model
     public function transcriptions(): HasMany
     {
         return $this->hasMany(Transcription::class);
+    }
+
+    public function workerIngestion(): HasOne
+    {
+        return $this->hasOne(WorkerIngestion::class);
     }
 
     public function isProcessing(): bool

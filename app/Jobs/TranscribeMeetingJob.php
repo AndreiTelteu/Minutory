@@ -4,12 +4,12 @@ namespace App\Jobs;
 
 use App\Models\Meeting;
 use App\Models\Transcription;
+use App\Services\TranscriptImporter;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -53,8 +53,10 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(?TranscriptImporter $transcriptImporter = null): void
     {
+        $transcriptImporter ??= app(TranscriptImporter::class);
+
         try {
             Log::info("Starting transcription for meeting {$this->meeting->id}");
 
@@ -136,7 +138,8 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
             $this->runShell($transcribeCmd, $this->timeout - 120);
 
             // 3) Parse and save transcription segments
-            $this->saveTranscriptionSegments($transcriptPath);
+            $segmentCount = $transcriptImporter->import($this->meeting, $transcriptPath);
+            Log::info("Saved {$segmentCount} transcription segments for meeting {$this->meeting->id}");
 
             // Update meeting status to completed
             $this->meeting->update([
@@ -156,44 +159,6 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
 
             throw $e;
         }
-    }
-
-    /**
-     * Save transcription segments to database
-     */
-    private function saveTranscriptionSegments(string $transcriptPath): void
-    {
-        if (! File::exists($transcriptPath)) {
-            Log::warning("Transcript file not found at: {$transcriptPath}");
-
-            return;
-        }
-
-        $content = File::get($transcriptPath);
-        $transcript = json_decode($content, true);
-
-        if (! $transcript || ! isset($transcript['segments']) || ! is_array($transcript['segments'])) {
-            throw new \RuntimeException("Invalid transcript format at: {$transcriptPath}");
-        }
-
-        DB::transaction(function () use ($transcript): void {
-            // Replace the old transcript only after the new JSON is valid.
-            Transcription::where('meeting_id', $this->meeting->id)->delete();
-
-            foreach ($transcript['segments'] as $segment) {
-                Transcription::create([
-                    'meeting_id' => $this->meeting->id,
-                    'speaker' => $segment['speaker'] ?? 'Unknown',
-                    'text' => $segment['text'] ?? '',
-                    'start_time' => $segment['start'] ?? 0,
-                    'end_time' => $segment['end'] ?? 0,
-                    // Not every driver exposes a comparable confidence value.
-                    // Let the database default represent an unavailable score.
-                ]);
-            }
-        });
-
-        Log::info('Saved '.count($transcript['segments'])." transcription segments for meeting {$this->meeting->id}");
     }
 
     private function processPathForLocalTesting(string $path): string
