@@ -2,6 +2,7 @@
 .venv/
 libs/
 models/
+manifests/runtime-assets.local.json
 cache/
 work/
 state/

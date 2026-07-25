@@ -44,10 +44,10 @@ def parse_meeting_filename(path: str) -> FilenameSuggestion:
     local_datetime: str | None = None
     timestamp = LEADING_TIMESTAMP.match(title)
     if timestamp:
-        parts = tuple(int(value) for value in timestamp.groups())
+        year, month, day, hour, minute, second = (int(value) for value in timestamp.groups())
         try:
-            candidate = datetime(*parts)
-            if 1000 <= parts[0] <= 9999:
+            candidate = datetime(year, month, day, hour, minute, second)
+            if 1000 <= year <= 9999:
                 local_datetime = candidate.isoformat(timespec="seconds")
                 title = title[timestamp.end() :]
         except ValueError:

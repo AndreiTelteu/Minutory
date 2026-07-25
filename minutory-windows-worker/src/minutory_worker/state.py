@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, BinaryIO, cast
 
 from .domain import (
     COMPRESSION_PRESETS,
@@ -20,7 +21,7 @@ from .domain import (
     dependent_stages,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class StateError(RuntimeError):
@@ -34,7 +35,7 @@ class StateOwnershipError(StateError):
 class _ProcessLock:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._stream = None
+        self._stream: BinaryIO | None = None
 
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,7 +48,8 @@ class _ProcessLock:
                     stream.write(b"\0")
                     stream.flush()
                 stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                windows_locking = cast(Any, msvcrt)
+                windows_locking.locking(stream.fileno(), windows_locking.LK_NBLCK, 1)
             else:
                 import fcntl
 
@@ -68,7 +70,8 @@ class _ProcessLock:
                 import msvcrt
 
                 stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                windows_locking = cast(Any, msvcrt)
+                windows_locking.locking(stream.fileno(), windows_locking.LK_UNLCK, 1)
             else:
                 import fcntl
 
@@ -159,6 +162,10 @@ class StateStore:
                         client_id INTEGER,
                         compression_preset TEXT NOT NULL,
                         duration_seconds INTEGER,
+                        probe_width INTEGER,
+                        probe_height INTEGER,
+                        probe_fps REAL,
+                        probe_bitrate INTEGER,
                         selected_video_path TEXT,
                         wav_path TEXT,
                         transcript_path TEXT,
@@ -193,8 +200,12 @@ class StateStore:
             version = SCHEMA_VERSION
         if version == 1:
             with self.transaction() as connection:
+                existing_columns = {
+                    str(row["name"]) for row in connection.execute("PRAGMA table_info(items)")
+                }
                 for column in ("selected_video_bytes", "audio_bytes", "transcript_bytes"):
-                    connection.execute(f"ALTER TABLE items ADD COLUMN {column} INTEGER")
+                    if column not in existing_columns:
+                        connection.execute(f"ALTER TABLE items ADD COLUMN {column} INTEGER")
                 connection.execute(
                     """
                     INSERT OR IGNORE INTO stages (item_id, stage, status)
@@ -203,6 +214,21 @@ class StateStore:
                     (Stage.FINAL_RECONCILE.value, StageStatus.PENDING.value),
                 )
                 connection.execute("PRAGMA user_version = 2")
+            version = 2
+        if version == 2:
+            with self.transaction() as connection:
+                existing_columns = {
+                    str(row["name"]) for row in connection.execute("PRAGMA table_info(items)")
+                }
+                for column, kind in (
+                    ("probe_width", "INTEGER"),
+                    ("probe_height", "INTEGER"),
+                    ("probe_fps", "REAL"),
+                    ("probe_bitrate", "INTEGER"),
+                ):
+                    if column not in existing_columns:
+                        connection.execute(f"ALTER TABLE items ADD COLUMN {column} {kind}")
+                connection.execute("PRAGMA user_version = 3")
 
     def add_item(self, item: WorkerItem) -> None:
         with self.transaction() as connection:
@@ -244,6 +270,10 @@ class StateStore:
             "client_id",
             "compression_preset",
             "duration_seconds",
+            "probe_width",
+            "probe_height",
+            "probe_fps",
+            "probe_bitrate",
             "selected_video_path",
             "wav_path",
             "transcript_path",
@@ -272,44 +302,112 @@ class StateStore:
             )
 
     def get_item(self, item_id: str) -> WorkerItem:
-        row = self.connection.execute("SELECT * FROM items WHERE item_id = ?", (item_id,)).fetchone()
-        if row is None:
-            raise StateError(f"Unknown item {item_id}.")
-        return WorkerItem(
-            item_id=row["item_id"],
-            source=SourceIdentity(
-                row["source_path"], row["source_size"], row["source_mtime_ns"], row["source_sha256"]
-            ),
-            title=row["title"],
-            title_manually_edited=bool(row["title_manually_edited"]),
-            meeting_at=row["meeting_at"],
-            meeting_at_manually_edited=bool(row["meeting_at_manually_edited"]),
-            client_id=row["client_id"],
-            compression_preset=row["compression_preset"],
-            duration_seconds=row["duration_seconds"],
-            selected_video_path=row["selected_video_path"],
-            wav_path=row["wav_path"],
-            transcript_path=row["transcript_path"],
-            selected_video_sha256=row["selected_video_sha256"],
-            audio_sha256=row["audio_sha256"],
-            transcript_sha256=row["transcript_sha256"],
-            selected_video_bytes=row["selected_video_bytes"],
-            audio_bytes=row["audio_bytes"],
-            transcript_bytes=row["transcript_bytes"],
-            server_meeting_id=row["server_meeting_id"],
-        )
+        with self._lock:
+            row = self.connection.execute("SELECT * FROM items WHERE item_id = ?", (item_id,)).fetchone()
+            if row is None:
+                raise StateError(f"Unknown item {item_id}.")
+            return _item_from_row(row)
 
     def list_items(self) -> list[WorkerItem]:
-        rows = self.connection.execute("SELECT item_id FROM items ORDER BY created_at, item_id").fetchall()
-        return [self.get_item(row["item_id"]) for row in rows]
+        with self._lock:
+            rows = self.connection.execute("SELECT * FROM items ORDER BY rowid").fetchall()
+            return [_item_from_row(row) for row in rows]
 
     def stage(self, item_id: str, stage: Stage) -> dict[str, object]:
-        row = self.connection.execute(
-            "SELECT * FROM stages WHERE item_id = ? AND stage = ?", (item_id, stage.value)
-        ).fetchone()
-        if row is None:
-            raise StateError(f"Unknown stage {stage.value} for {item_id}.")
-        return dict(row)
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM stages WHERE item_id = ? AND stage = ?", (item_id, stage.value)
+            ).fetchone()
+            if row is None:
+                raise StateError(f"Unknown stage {stage.value} for {item_id}.")
+            return dict(row)
+
+    def stages(self, item_id: str) -> list[dict[str, object]]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT * FROM stages WHERE item_id = ? ORDER BY rowid", (item_id,)
+            ).fetchall()
+            if not rows:
+                raise StateError(f"Unknown item {item_id}.")
+            return [dict(row) for row in rows]
+
+    def find_item_by_source_path(self, source_path: str) -> WorkerItem | None:
+        canonical = str(Path(source_path).resolve())
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM items WHERE source_path = ? COLLATE NOCASE ORDER BY created_at LIMIT 1",
+                (canonical,),
+            ).fetchone()
+            return _item_from_row(row) if row is not None else None
+
+    def update_metadata(
+        self,
+        item_id: str,
+        *,
+        title: str,
+        meeting_at: str | None,
+        client_id: int | None,
+        title_manually_edited: bool = True,
+        meeting_at_manually_edited: bool = True,
+    ) -> WorkerItem:
+        normalized_title = title.strip()
+        if not normalized_title or len(normalized_title) > 255:
+            raise ValueError("Title must contain between 1 and 255 characters.")
+        if client_id is not None and client_id <= 0:
+            raise ValueError("Client ID must be positive.")
+        with self.transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT items.server_meeting_id, stages.attempts AS meeting_attempts
+                FROM items JOIN stages ON stages.item_id = items.item_id AND stages.stage = ?
+                WHERE items.item_id = ?
+                """,
+                (Stage.MEETING.value, item_id),
+            ).fetchone()
+            if row is None:
+                raise StateError(f"Unknown item {item_id}.")
+            if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
+                raise StateError(
+                    "Metadata cannot change after a server meeting attempt; create a new worker item."
+                )
+            connection.execute(
+                """
+                UPDATE items SET title = ?, title_manually_edited = ?, meeting_at = ?,
+                    meeting_at_manually_edited = ?, client_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE item_id = ?
+                """,
+                (
+                    normalized_title,
+                    title_manually_edited,
+                    meeting_at,
+                    meeting_at_manually_edited,
+                    client_id,
+                    item_id,
+                ),
+            )
+        return self.get_item(item_id)
+
+    def delete_pre_server_item(self, item_id: str) -> None:
+        with self.transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT items.server_meeting_id, stages.attempts AS meeting_attempts
+                FROM items JOIN stages ON stages.item_id = items.item_id AND stages.stage = ?
+                WHERE items.item_id = ?
+                """,
+                (Stage.MEETING.value, item_id),
+            ).fetchone()
+            if row is None:
+                raise StateError(f"Unknown item {item_id}.")
+            if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
+                raise StateError("Items with a server meeting attempt cannot be removed.")
+            running = connection.execute(
+                "SELECT 1 FROM stages WHERE item_id = ? AND status = ? LIMIT 1",
+                (item_id, StageStatus.RUNNING.value),
+            ).fetchone()
+            if running is not None:
+                raise StateError("A running item cannot be removed.")
+            connection.execute("DELETE FROM items WHERE item_id = ?", (item_id,))
 
     def start_stage(self, item_id: str, stage: Stage) -> None:
         with self.transaction() as connection:
@@ -402,16 +500,21 @@ class StateStore:
         stages = dependent_stages(Stage.SOURCE)
         with self.transaction() as connection:
             row = connection.execute(
-                "SELECT compression_preset, server_meeting_id FROM items WHERE item_id = ?",
-                (item_id,),
+                """
+                SELECT items.compression_preset, items.server_meeting_id,
+                    stages.attempts AS meeting_attempts
+                FROM items JOIN stages ON stages.item_id = items.item_id AND stages.stage = ?
+                WHERE items.item_id = ?
+                """,
+                (Stage.MEETING.value, item_id),
             ).fetchone()
             if row is None:
                 raise StateError(f"Unknown item {item_id}.")
             if row["compression_preset"] == preset:
                 return False
-            if row["server_meeting_id"] is not None:
+            if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
                 raise StateError(
-                    "Compression cannot change after server meeting creation; create a new worker item."
+                    "Compression cannot change after a server meeting attempt; create a new worker item."
                 )
             connection.execute(
                 """
@@ -471,10 +574,10 @@ class StateStore:
             return cursor.rowcount
 
     def snapshot(self, item_id: str) -> str:
-        stages = self.connection.execute(
-            "SELECT stage, status, attempts FROM stages WHERE item_id = ? ORDER BY rowid", (item_id,)
-        ).fetchall()
-        return json.dumps([dict(row) for row in stages], sort_keys=True)
+        return json.dumps(
+            [{key: row[key] for key in ("stage", "status", "attempts")} for row in self.stages(item_id)],
+            sort_keys=True,
+        )
 
 
 class StateReader:
@@ -508,7 +611,7 @@ class StateReader:
         return _item_from_row(row)
 
     def list_items(self) -> list[WorkerItem]:
-        rows = self._connection.execute("SELECT item_id FROM items ORDER BY created_at, item_id").fetchall()
+        rows = self._connection.execute("SELECT item_id FROM items ORDER BY rowid").fetchall()
         return [self.get_item(row["item_id"]) for row in rows]
 
     def stage(self, item_id: str, stage: Stage) -> dict[str, object]:
@@ -537,6 +640,10 @@ def _item_from_row(row: sqlite3.Row) -> WorkerItem:
         client_id=row["client_id"],
         compression_preset=row["compression_preset"],
         duration_seconds=row["duration_seconds"],
+        probe_width=row["probe_width"],
+        probe_height=row["probe_height"],
+        probe_fps=row["probe_fps"],
+        probe_bitrate=row["probe_bitrate"],
         selected_video_path=row["selected_video_path"],
         wav_path=row["wav_path"],
         transcript_path=row["transcript_path"],

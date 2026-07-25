@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from minutory_worker.cli import main as cli_main
-from minutory_worker.domain import Stage, StageStatus, dependent_stages
+from minutory_worker.domain import SourceIdentity, Stage, StageStatus, dependent_stages
 from minutory_worker.orchestrator import Orchestrator
 from minutory_worker.state import (
     SCHEMA_VERSION,
@@ -211,6 +211,23 @@ def test_preset_validation_and_post_server_refusal(store: StateStore, item) -> N
     assert store.get_item(item.item_id).compression_preset == "balanced"
 
 
+def test_metadata_and_preset_refuse_after_ambiguous_meeting_attempt(store: StateStore, item) -> None:
+    store.reconcile_success(item.item_id, Stage.PROBE)
+    store.start_stage(item.item_id, Stage.MEETING)
+    store.fail_stage(item.item_id, Stage.MEETING, "Connection lost", "response may have been committed")
+    with pytest.raises(StateError, match="meeting attempt"):
+        store.update_metadata(
+            item.item_id,
+            title="Unsafe replay",
+            meeting_at=item.meeting_at,
+            client_id=item.client_id,
+        )
+    with pytest.raises(StateError, match="meeting attempt"):
+        store.set_compression_preset(item.item_id, "compact")
+    with pytest.raises(StateError, match="meeting attempt"):
+        store.delete_pre_server_item(item.item_id)
+
+
 def test_worker_item_requires_canonical_uuid(item) -> None:
     with pytest.raises(ValueError, match="canonical"):
         type(item)(
@@ -218,3 +235,14 @@ def test_worker_item_requires_canonical_uuid(item) -> None:
             title="Uppercase UUID",
             item_id=item.item_id.upper(),
         )
+
+
+def test_queue_preserves_insertion_order_when_timestamps_match(
+    store: StateStore, item, tmp_path: Path
+) -> None:
+    second_source = tmp_path / "second.mp4"
+    second_source.write_bytes(b"second")
+    second = type(item)(source=SourceIdentity.from_path(second_source), title="Second")
+    store.add_item(second)
+
+    assert [stored.item_id for stored in store.list_items()] == [item.item_id, second.item_id]

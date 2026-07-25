@@ -206,12 +206,21 @@ Acceptance: 91 Linux-runnable non-GUI tests pass; Ruff format/check, compileall,
 
 ### Stage 4 — Windows GUI and bootstrap
 
-- [ ] Implement dark PySide6 multi-file drag/drop GUI.
-- [ ] Add editable per-item controls, progress, errors, retry actions.
-- [ ] Add runtime manifest, verified bootstrap, `start.bat`/PowerShell launchers.
-- [ ] Add packaging configuration and operator documentation.
+- [x] Implement dark PySide6 multi-file drag/drop GUI.
+- [x] Add editable per-item controls, progress, errors, retry actions.
+- [x] Add fail-closed runtime manifest, verified bootstrap framework, and
+  `start.bat`/PowerShell launchers.
+- [x] Add operator/architecture documentation; defer optional PyInstaller
+  packaging until the managed runtime passes Windows hardware acceptance.
 
-Acceptance: GUI modules import, headless Qt smoke test passes where possible, bootstrap dry-run/manifest tests pass, and Windows-only checks are explicitly documented.
+Acceptance status: 107 Stage 3+4 tests pass, including real PySide6 6.9.1
+construction with Qt's offscreen platform; an 1180x780 rendered queue was captured
+and inspected. Ruff format/check, mypy strict across all 18 source modules,
+compileall, manifest/launcher checks, and Git whitespace checks pass. Exact Windows
+asset hashes were not invented: the tracked manifest is deliberately unresolved
+and bootstrap fails closed until a release-approved ignored override is supplied.
+PowerShell execution, ROCm/HIP gfx1100, AMF, Large v3 FP16, and distributable
+packaging remain Windows-only acceptance work and are not claimed as verified.
 
 ### Stage 5 — Integration and Windows acceptance
 

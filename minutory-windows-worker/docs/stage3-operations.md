@@ -13,7 +13,7 @@
 
 No test contacts Laravel or a package/model host.
 
-## Windows-only work intentionally deferred
+## Windows-only work originally deferred
 
 Stage 4 must install and verify the CTranslate2 ROCm 4.8.1 wheel/runtime, FFmpeg,
 and Large v3 model; implement runtime manifests and checksums; add PySide6,
@@ -21,6 +21,12 @@ bootstrap and packaging; and supervise persistent-model shutdown. Stage 5 must
 validate Windows 11 with the RX 7900 XTX (`gfx1100`), benchmark batch sizes, test
 AMF availability/fallback, and run real artifact uploads against an explicitly
 configured test instance.
+
+Stage 4 now provides the GUI, serialized execution lane, fail-closed bootstrap,
+runtime verifier, launchers, and operator documentation. The tracked manifest
+remains intentionally unresolved because exact upstream hashes could not be
+proven offline; see `stage4-operations.md`. Windows hardware validation and final
+packaging remain Stage 5 acceptance work.
 
 Until those stages, the default AMF command is production-shaped but not claimed
 as hardware-verified. A failed AMF command is retried once with the explicitly

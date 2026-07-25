@@ -53,11 +53,13 @@ class FasterWhisperBackend:
         self,
         model_name: str = "large-v3",
         *,
+        model_path: Path | None = None,
         download_root: Path | None = None,
         device: str = "cuda",
         compute_type: str = "float16",
     ) -> None:
         self.model_name = model_name
+        self.model_path = model_path
         self.download_root = download_root
         self.device = device
         self.compute_type = compute_type
@@ -73,7 +75,7 @@ class FasterWhisperBackend:
                     "Stage 4 bootstrap must install the managed ROCm runtime."
                 ) from exception
             self._model = WhisperModel(
-                self.model_name,
+                str(self.model_path) if self.model_path is not None else self.model_name,
                 device=self.device,
                 compute_type=self.compute_type,
                 download_root=str(self.download_root) if self.download_root else None,

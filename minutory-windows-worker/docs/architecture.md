@@ -1,4 +1,4 @@
-# Stage 3 architecture
+# Windows worker architecture
 
 ## Pipeline and retry boundary
 
@@ -40,11 +40,20 @@ in read-only mode and never migrates or recovers state.
 
 The `items` row owns editable metadata and artifact paths/hashes/sizes; `stages`
 owns status, attempt count, user-facing error, and technical diagnostic.
+Stage 4 also persists probe width, height, FPS, and source bitrate. It stores only
+canonical source path identity—not a Qt file object—so the queue can be restored.
+
+The GUI and processing lane share exactly one `StateStore` connection.
+`check_same_thread=false` is paired with the store's reentrant lock; public reads,
+writes, metadata mutation, preset invalidation, and pre-server deletion all pass
+through that serialization boundary.
 
 Source identity contains resolved path, byte size, and nanosecond mtime, with an
 optional streamed SHA-256 policy. A changed source invalidates `probe` and its
-dependency closure before meeting creation. Source or compression-preset changes
-after server meeting creation are refused; the operator must create a new item.
+dependency closure before meeting creation. Source changes after server meeting
+creation are refused. Metadata, removal, and compression-preset changes are
+conservatively refused after the first meeting attempt because a lost response
+may hide a committed server row; the operator must create a new item.
 A preset change preserves probe metadata while transactionally invalidating
 `source` and its true dependency closure.
 
@@ -78,3 +87,38 @@ loopback development hosts (`localhost`, `127.0.0.0/8`, and `::1`).
 Europe/Bucharest filename datetimes reject DST gaps, select `fold=0`
 deterministically, and emit only `Z` or minute-resolution `±HH:MM` offsets.
 Historical LMT seconds are truncated to match Stage 2 browser semantics.
+
+## Stage 4 presentation and execution
+
+`presentation.py` owns the testable queue controller, immutable view snapshots,
+client validation, size estimates, and single-lane `ProcessingCoordinator`. The
+PySide6 classes only bind widgets, dialogs, drag/drop, and signals to that
+controller. Worker results cross into the Qt main thread through a signal; worker
+threads never mutate widgets.
+
+The coordinator has one persistent executor thread. It coalesces duplicate item
+starts and serializes all queued pipelines, which serializes FasterWhisper GPU use
+through one lazily loaded model instance. `Orchestrator.process_next_stage` also
+exposes a safe stage-sized integration seam, while normal GUI runs retain the
+Stage 3 resume loop.
+
+Compression and WAV extraction receive a cancellation event that terminates and,
+after a grace period, kills only the active child process. Atomic outputs preserve
+known-good artifacts and the running stage becomes failed/retryable. Transcription
+is deliberately non-cancellable. Closing is refused while it is active so the
+model is never torn down mid-call.
+
+## Bootstrap trust boundary
+
+The tracked runtime manifest is schema-validated and closed by default because
+its upstream URLs/hashes have not been proven in this offline environment. A
+release-approved ignored override unlocks installation. PowerShell accepts HTTPS
+only, verifies SHA-256 before use, extracts into a sibling temporary directory,
+atomically renames it, records a digest marker, and refuses an unexpected existing
+destination.
+
+The offline wheelhouse must exclude CTranslate2. Bootstrap explicitly installs
+the official ROCm 4.8.1 wheel first and resolves pinned runtime requirements only
+from the wheelhouse. Verification checks 64-bit Python 3.12, FFmpeg/FFprobe,
+CTranslate2 version and HIP DLL/device visibility, Windows GPU name, and required
+Large v3 files.

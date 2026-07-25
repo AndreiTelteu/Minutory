@@ -72,6 +72,10 @@ class WorkerItem:
     title_manually_edited: bool = False
     meeting_at_manually_edited: bool = False
     duration_seconds: int | None = None
+    probe_width: int | None = None
+    probe_height: int | None = None
+    probe_fps: float | None = None
+    probe_bitrate: int | None = None
     selected_video_path: str | None = None
     wav_path: str | None = None
     transcript_path: str | None = None

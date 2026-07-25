@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "generated_for": "Windows 11 x86-64 / Radeon RX 7900 XTX gfx1100",
+  "assets": [
+    {
+      "id": "python-runtime",
+      "version": "3.12.10",
+      "url": null,
+      "sha256": null,
+      "destination": "libs/python",
+      "archive": "zip",
+      "status": "unresolved",
+      "notes": "A redistributable x86-64 Python archive URL and publisher SHA-256 must be verified on a networked release workstation."
+    },
+    {
+      "id": "ffmpeg",
+      "version": "7.1.1",
+      "url": null,
+      "sha256": null,
+      "destination": "libs/ffmpeg",
+      "archive": "zip",
+      "status": "unresolved",
+      "notes": "Select one immutable Windows x86-64 FFmpeg build containing ffmpeg.exe and ffprobe.exe; record its upstream URL and SHA-256."
+    },
+    {
+      "id": "ctranslate2-rocm-wheel",
+      "version": "4.8.1",
+      "url": null,
+      "sha256": null,
+      "destination": "libs/wheels/ctranslate2_rocm-4.8.1-cp312-cp312-win_amd64.whl",
+      "archive": "file",
+      "status": "unresolved",
+      "notes": "Use only the official Windows ROCm/HIP CPython 3.12 wheel. A stock CUDA/PyPI CTranslate2 wheel is not acceptable."
+    },
+    {
+      "id": "runtime-wheelhouse",
+      "version": "2026.07",
+      "url": null,
+      "sha256": null,
+      "destination": "libs/wheelhouse",
+      "archive": "zip",
+      "status": "unresolved",
+      "notes": "Offline CPython 3.12 win_amd64 wheels matching requirements-runtime.txt, excluding every CTranslate2 wheel."
+    },
+    {
+      "id": "faster-whisper-large-v3",
+      "version": "large-v3",
+      "url": null,
+      "sha256": null,
+      "destination": "models/large-v3",
+      "archive": "zip",
+      "status": "unresolved",
+      "notes": "Create an immutable archive of the complete official Systran faster-whisper-large-v3 snapshot and record its verified digest."
+    }
+  ]
+}

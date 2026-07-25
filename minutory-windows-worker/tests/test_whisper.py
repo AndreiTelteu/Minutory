@@ -100,4 +100,5 @@ def test_faster_whisper_defaults_and_does_not_import_at_construction() -> None:
     assert backend.model_name == "large-v3"
     assert backend.device == "cuda"
     assert backend.compute_type == "float16"
+    assert backend.model_path is None
     assert backend._model is None

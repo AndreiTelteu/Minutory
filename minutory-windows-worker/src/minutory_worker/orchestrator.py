@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 import traceback
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -78,6 +80,10 @@ class Orchestrator:
             )
         item.source = current
         item.duration_seconds = None
+        item.probe_width = None
+        item.probe_height = None
+        item.probe_fps = None
+        item.probe_bitrate = None
         item.selected_video_path = None
         item.wav_path = None
         item.transcript_path = None
@@ -91,7 +97,13 @@ class Orchestrator:
         self.store.invalidate(item_id, dependent_stages(Stage.PROBE))
         return True
 
-    def process(self, item_id: str) -> WorkerItem:
+    def process(
+        self,
+        item_id: str,
+        *,
+        cancel: threading.Event | None = None,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+    ) -> WorkerItem:
         self.refresh_source(item_id)
         item = self.store.get_item(item_id)
         if item.server_meeting_id is not None:
@@ -103,16 +115,48 @@ class Orchestrator:
                 continue
             if status == StageStatus.RUNNING.value:
                 raise PipelineError(f"Stage {stage.value} is already running.")
-            self._run_stage(item_id, stage)
+            self._run_stage(item_id, stage, cancel=cancel, on_stage=on_stage)
         return self.store.get_item(item_id)
 
-    def _run_stage(self, item_id: str, stage: Stage) -> None:
+    def process_next_stage(
+        self,
+        item_id: str,
+        *,
+        cancel: threading.Event | None = None,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+    ) -> Stage | None:
+        self.refresh_source(item_id)
+        item = self.store.get_item(item_id)
+        if item.server_meeting_id is not None:
+            self._reconcile(item)
+        for stage in STAGE_ORDER:
+            status = str(self.store.stage(item_id, stage)["status"])
+            if status == StageStatus.SUCCEEDED.value:
+                continue
+            if status == StageStatus.RUNNING.value:
+                raise PipelineError(f"Stage {stage.value} is already running.")
+            self._run_stage(item_id, stage, cancel=cancel, on_stage=on_stage)
+            return stage
+        return None
+
+    def _run_stage(
+        self,
+        item_id: str,
+        stage: Stage,
+        *,
+        cancel: threading.Event | None = None,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+    ) -> None:
         self.store.start_stage(item_id, stage)
+        if on_stage is not None:
+            on_stage(stage, StageStatus.RUNNING)
         try:
             item = self.store.get_item(item_id)
-            self._execute(item, stage)
+            self._execute(item, stage, cancel=cancel)
             self.store.save_item(item)
             self.store.finish_stage(item_id, stage)
+            if on_stage is not None:
+                on_stage(stage, StageStatus.SUCCEEDED)
         except Exception as exception:
             if isinstance(exception, RemoteArtifactMissing):
                 raise
@@ -121,15 +165,21 @@ class Orchestrator:
             )
             user_error = self._user_error(exception)
             self.store.fail_stage(item_id, stage, user_error, diagnostic)
+            if on_stage is not None:
+                on_stage(stage, StageStatus.FAILED)
             raise
 
-    def _execute(self, item: WorkerItem, stage: Stage) -> None:
+    def _execute(self, item: WorkerItem, stage: Stage, *, cancel: threading.Event | None = None) -> None:
         item_dir = self.work_dir / item.item_id
         item_dir.mkdir(parents=True, exist_ok=True)
         source = Path(item.source.path)
         if stage is Stage.PROBE:
             probe = self.media.probe(source)
             item.duration_seconds = round(probe.duration)
+            item.probe_width = probe.width
+            item.probe_height = probe.height
+            item.probe_fps = probe.fps
+            item.probe_bitrate = probe.bitrate
         elif stage is Stage.SOURCE:
             extension = source.suffix.lower() or ".mp4"
             if item.compression_preset != "none":
@@ -141,13 +191,18 @@ class Orchestrator:
                 item.compression_preset,
                 codec=self.video_codec,
                 fallback_codec=self.fallback_video_codec,
+                cancel=cancel,
             )
             item.selected_video_path = str(selected)
             item.selected_video_sha256 = stream_sha256(selected)
             item.selected_video_bytes = selected.stat().st_size
         elif stage is Stage.WAV:
             wav = item_dir / "audio.wav"
-            self.media.extract_wav(Path(_required(item.selected_video_path, "selected video")), wav)
+            self.media.extract_wav(
+                Path(_required(item.selected_video_path, "selected video")),
+                wav,
+                cancel=cancel,
+            )
             item.wav_path = str(wav)
             item.audio_sha256 = stream_sha256(wav)
             item.audio_bytes = wav.stat().st_size

@@ -28,7 +28,10 @@ def atomic_output(destination: Path, writer: Callable[[Path], None]) -> None:
 
 
 def atomic_copy(source: Path, destination: Path) -> None:
-    atomic_output(destination, lambda temporary: shutil.copyfile(source, temporary))
+    def copy(temporary: Path) -> None:
+        shutil.copyfile(source, temporary)
+
+    atomic_output(destination, copy)
 
 
 def atomic_json(destination: Path, value: Any) -> None:

@@ -12,8 +12,13 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
     """Assemble production services without starting work or loading the ASR model."""
     store = StateStore(config.state_db)
     media = MediaService(config.ffprobe_path, config.ffmpeg_path, SubprocessRunner())
+    local_model = config.model_dir / config.whisper_model
     whisper = WhisperService(
-        FasterWhisperBackend(config.whisper_model, download_root=config.model_dir),
+        FasterWhisperBackend(
+            config.whisper_model,
+            model_path=local_model if local_model.is_dir() else None,
+            download_root=config.model_dir,
+        ),
         language=config.language,
         vad_filter=config.vad_filter,
         vad_min_silence_ms=config.vad_min_silence_ms,
