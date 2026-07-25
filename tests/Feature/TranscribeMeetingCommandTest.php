@@ -3,8 +3,15 @@
 use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Contracts\Cache\Repository as Cache;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+
+it('dispatches transcription work through the queue', function () {
+    expect(new TranscribeMeetingJob(Meeting::factory()->make()))->toBeInstanceOf(ShouldQueue::class);
+});
 
 it('queues a meeting for retranscription with the selected driver', function () {
     Bus::fake();
@@ -82,4 +89,22 @@ it('does not reset or dispatch a meeting with an active transcription job', func
 
     Bus::assertNothingDispatched();
     expect($meeting->fresh()->status)->toBe('processing');
+});
+
+it('clears a stale unique lock and dispatches the retranscription job', function () {
+    Bus::fake();
+    $meeting = Meeting::factory()->create(['status' => 'completed']);
+    $staleJob = new TranscribeMeetingJob($meeting, 'parakeet');
+    $uniqueLock = new UniqueLock(app(Cache::class));
+
+    expect($uniqueLock->acquire($staleJob))->toBeTrue();
+
+    $this->artisan("meeting:transcribe {$meeting->id} whisper")
+        ->expectsOutput("Queued meeting {$meeting->id} for retranscription with whisper.")
+        ->assertSuccessful();
+
+    Bus::assertDispatched(
+        TranscribeMeetingJob::class,
+        fn (TranscribeMeetingJob $job) => $job->meeting->is($meeting) && $job->driver === 'whisper'
+    );
 });

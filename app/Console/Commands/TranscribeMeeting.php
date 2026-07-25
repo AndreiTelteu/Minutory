@@ -4,7 +4,10 @@ namespace App\Console\Commands;
 
 use App\Jobs\TranscribeMeetingJob;
 use App\Models\Meeting;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Support\Facades\DB;
 
 class TranscribeMeeting extends Command
@@ -37,6 +40,27 @@ class TranscribeMeeting extends Command
             return self::FAILURE;
         }
 
+        $job = new TranscribeMeetingJob($meeting, $driver);
+        $uniqueLock = new UniqueLock(app(Cache::class));
+
+        // A worker/container killed during processing can leave Laravel's unique
+        // lock behind even though the database queue no longer contains the job.
+        $uniqueLock->release($job);
+
+        if (! $uniqueLock->acquire($job)) {
+            $this->error("Could not acquire the transcription lock for meeting {$meeting->id}.");
+
+            return self::FAILURE;
+        }
+
+        $previousState = $meeting->only([
+            'status',
+            'processing_started_at',
+            'processing_completed_at',
+            'error_message',
+            'technical_error',
+        ]);
+
         $meeting->update([
             'status' => 'pending',
             'processing_started_at' => null,
@@ -45,7 +69,15 @@ class TranscribeMeeting extends Command
             'technical_error' => null,
         ]);
 
-        TranscribeMeetingJob::dispatch($meeting, $driver);
+        try {
+            app(Dispatcher::class)->dispatch($job);
+        } catch (\Throwable $exception) {
+            $uniqueLock->release($job);
+            $meeting->update($previousState);
+            $this->error("Could not queue meeting {$meeting->id}: {$exception->getMessage()}");
+
+            return self::FAILURE;
+        }
 
         $this->info("Queued meeting {$meeting->id} for retranscription with {$driver}.");
         $this->line('The existing transcript remains available until the new transcript is generated successfully.');

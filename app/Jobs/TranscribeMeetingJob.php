@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Meeting;
 use App\Models\Transcription;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
 
-class TranscribeMeetingJob implements ShouldBeUnique
+class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
