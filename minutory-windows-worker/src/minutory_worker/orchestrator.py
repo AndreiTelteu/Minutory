@@ -27,6 +27,14 @@ class ArtifactConflict(PipelineError):
     pass
 
 
+class DataIntegrityError(PipelineError):
+    pass
+
+
+class RemoteArtifactMissing(PipelineError):
+    pass
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -76,6 +84,9 @@ class Orchestrator:
         item.selected_video_sha256 = None
         item.audio_sha256 = None
         item.transcript_sha256 = None
+        item.selected_video_bytes = None
+        item.audio_bytes = None
+        item.transcript_bytes = None
         self.store.save_item(item)
         self.store.invalidate(item_id, dependent_stages(Stage.PROBE))
         return True
@@ -103,6 +114,8 @@ class Orchestrator:
             self.store.save_item(item)
             self.store.finish_stage(item_id, stage)
         except Exception as exception:
+            if isinstance(exception, RemoteArtifactMissing):
+                raise
             diagnostic = "".join(
                 traceback.format_exception(type(exception), exception, exception.__traceback__)
             )
@@ -131,41 +144,47 @@ class Orchestrator:
             )
             item.selected_video_path = str(selected)
             item.selected_video_sha256 = stream_sha256(selected)
+            item.selected_video_bytes = selected.stat().st_size
         elif stage is Stage.WAV:
             wav = item_dir / "audio.wav"
             self.media.extract_wav(Path(_required(item.selected_video_path, "selected video")), wav)
             item.wav_path = str(wav)
             item.audio_sha256 = stream_sha256(wav)
+            item.audio_bytes = wav.stat().st_size
         elif stage is Stage.TRANSCRIBE:
             transcript = item_dir / "transcript.json"
             self.whisper.transcribe(Path(_required(item.wav_path, "WAV")), transcript)
             item.transcript_path = str(transcript)
             item.transcript_sha256 = stream_sha256(transcript)
+            item.transcript_bytes = transcript.stat().st_size
         elif stage is Stage.MEETING:
             meeting = self.api.create_meeting(item)
-            item.server_meeting_id = int(meeting["id"])
+            item.server_meeting_id = meeting.id
         elif stage is Stage.VIDEO_UPLOAD:
-            self.api.upload_artifact(
-                _required_int(item.server_meeting_id, "server meeting"),
-                "video",
-                Path(_required(item.selected_video_path, "selected video")),
-            )
+            self._upload(item, "video")
         elif stage is Stage.AUDIO_UPLOAD:
-            self.api.upload_artifact(
-                _required_int(item.server_meeting_id, "server meeting"),
-                "audio",
-                Path(_required(item.wav_path, "WAV")),
-            )
+            self._upload(item, "audio")
         elif stage is Stage.TRANSCRIPT_UPLOAD:
-            self.api.upload_artifact(
-                _required_int(item.server_meeting_id, "server meeting"),
-                "transcript",
-                Path(_required(item.transcript_path, "transcript")),
-            )
+            self._upload(item, "transcript")
+        elif stage is Stage.FINAL_RECONCILE:
+            self._reconcile(item, final_stage_running=True)
         else:  # pragma: no cover
             raise AssertionError(stage)
 
-    def _reconcile(self, item: WorkerItem) -> None:
+    def _upload(self, item: WorkerItem, artifact_name: str) -> None:
+        path, expected_hash, expected_bytes, _ = self._local_artifact(item, artifact_name)
+        actual_hash, actual_bytes = self._verify_local_artifact(path, expected_hash, expected_bytes)
+        result = self.api.upload_artifact(
+            _required_int(item.server_meeting_id, "server meeting"),
+            artifact_name,
+            path,
+        )
+        if result.sha256 != actual_hash or result.bytes != actual_bytes:
+            raise DataIntegrityError(
+                f"Server {artifact_name} upload response does not match the uploaded artifact."
+            )
+
+    def _reconcile(self, item: WorkerItem, *, final_stage_running: bool = False) -> None:
         remote = self.api.reconcile(_required_int(item.server_meeting_id, "server meeting"))
         if remote.worker_item_id.lower() != item.item_id.lower():
             raise PipelineError("Server meeting belongs to a different worker item.")
@@ -177,28 +196,84 @@ class Orchestrator:
             remote.meeting_at, item.meeting_at
         ):
             raise ArtifactConflict("Server meeting time or duration conflicts with local state.")
-        hashes = {
-            "video": (Stage.VIDEO_UPLOAD, item.selected_video_sha256),
-            "audio": (Stage.AUDIO_UPLOAD, item.audio_sha256),
-            "transcript": (Stage.TRANSCRIPT_UPLOAD, item.transcript_sha256),
-        }
-        for artifact_name, (stage, local_hash) in hashes.items():
+        all_uploaded = True
+        missing: list[tuple[str, Stage]] = []
+        for artifact_name in ("video", "audio", "transcript"):
+            _, local_hash, local_bytes, stage = self._local_artifact(item, artifact_name)
             artifact = remote.artifacts[artifact_name]
             if not artifact.uploaded:
+                all_uploaded = False
+                missing.append((artifact_name, stage))
+                self.store.reset_remote_missing(item.item_id, stage)
                 continue
-            if local_hash is None or artifact.sha256 != local_hash:
+            if (
+                local_hash is None
+                or local_bytes is None
+                or artifact.sha256 != local_hash
+                or artifact.bytes != local_bytes
+            ):
                 raise ArtifactConflict(
                     f"Server has a different {artifact_name} artifact; "
                     "replacement requires explicit operator action."
                 )
             self.store.reconcile_success(item.item_id, stage)
         self.store.reconcile_success(item.item_id, Stage.MEETING)
+        if all_uploaded:
+            if not final_stage_running:
+                self.store.reconcile_success(item.item_id, Stage.FINAL_RECONCILE)
+        elif final_stage_running:
+            names = ", ".join(name for name, _ in missing)
+            raise RemoteArtifactMissing(f"Server final reconciliation reports missing artifacts: {names}.")
+
+    @staticmethod
+    def _local_artifact(
+        item: WorkerItem,
+        artifact_name: str,
+    ) -> tuple[Path, str | None, int | None, Stage]:
+        values = {
+            "video": (
+                item.selected_video_path,
+                item.selected_video_sha256,
+                item.selected_video_bytes,
+                Stage.VIDEO_UPLOAD,
+            ),
+            "audio": (
+                item.wav_path,
+                item.audio_sha256,
+                item.audio_bytes,
+                Stage.AUDIO_UPLOAD,
+            ),
+            "transcript": (
+                item.transcript_path,
+                item.transcript_sha256,
+                item.transcript_bytes,
+                Stage.TRANSCRIPT_UPLOAD,
+            ),
+        }
+        path, digest, byte_count, stage = values[artifact_name]
+        return Path(_required(path, f"{artifact_name} artifact")), digest, byte_count, stage
+
+    @staticmethod
+    def _verify_local_artifact(
+        path: Path,
+        expected_hash: str | None,
+        expected_bytes: int | None,
+    ) -> tuple[str, int]:
+        if not path.is_file() or expected_hash is None or expected_bytes is None:
+            raise DataIntegrityError(f"Local artifact {path.name} is missing expected integrity data.")
+        actual_bytes = path.stat().st_size
+        actual_hash = stream_sha256(path)
+        if actual_hash != expected_hash or actual_bytes != expected_bytes:
+            raise DataIntegrityError(
+                f"Local artifact {path.name} changed after generation; regenerate it before upload."
+            )
+        return actual_hash, actual_bytes
 
     @staticmethod
     def _user_error(exception: Exception) -> str:
         if isinstance(exception, ApiError):
             return f"Server request failed ({exception.code}): {exception}"
-        if isinstance(exception, ArtifactConflict):
+        if isinstance(exception, (ArtifactConflict, DataIntegrityError, RemoteArtifactMissing)):
             return str(exception)
         return str(exception) or exception.__class__.__name__
 

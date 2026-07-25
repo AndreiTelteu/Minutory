@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol
 
-from .config import REDACTED, redact_text
+from .config import REDACTED, redact_text, validate_api_base_url
 from .domain import WorkerItem
 
 
@@ -46,11 +51,11 @@ class TransportFailure(RuntimeError):
 
 
 class HttpxTransport:
-    def __init__(self) -> None:
+    def __init__(self, client: Any | None = None) -> None:
         import httpx
 
         self._httpx = httpx
-        self._client = httpx.Client(follow_redirects=False)
+        self._client = client or httpx.Client(follow_redirects=False)
 
     def request(
         self,
@@ -122,6 +127,17 @@ class MeetingState:
     artifacts: Mapping[str, ArtifactState]
 
 
+@dataclass(frozen=True)
+class ArtifactUploadResult:
+    state: str
+    sha256: str
+    bytes: int
+
+
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+OFFSET_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$")
+
+
 class WorkerApiClient:
     def __init__(
         self,
@@ -137,7 +153,7 @@ class WorkerApiClient:
     ) -> None:
         if not token:
             raise ValueError("Bearer token is required.")
-        self._base_url = f"{base_url.rstrip('/')}/api/v1/worker"
+        self._base_url = f"{validate_api_base_url(base_url)}/api/v1/worker"
         self._token = token
         self._transport = transport
         self._connect_timeout = connect_timeout
@@ -158,7 +174,7 @@ class WorkerApiClient:
             )
         return result
 
-    def create_meeting(self, item: WorkerItem) -> dict[str, object]:
+    def create_meeting(self, item: WorkerItem) -> MeetingState:
         if item.client_id is None:
             raise ValueError("A client must be selected before meeting creation.")
         payload: dict[str, object] = {
@@ -170,60 +186,94 @@ class WorkerApiClient:
             "start_transcript_server": False,
         }
         response = self._request("POST", "/meetings", json_body=payload)
-        data = response.get("data")
-        if not isinstance(data, dict):
-            raise ApiError(
-                "invalid_response", "Server returned invalid meeting metadata.", None, transient=False
-            )
-        if data.get("start_transcript_server") is not False:
-            raise ApiError(
-                "unsafe_server_state",
-                "Server meeting is not configured for local transcription.",
-                None,
-                transient=False,
-            )
-        return data
+        meeting = self._parse_meeting(response, require_artifacts=False)
+        self._validate_created_meeting(meeting, item)
+        return meeting
 
     def reconcile(self, meeting_id: int) -> MeetingState:
         response = self._request("GET", f"/meetings/{meeting_id}")
+        meeting = self._parse_meeting(response, require_artifacts=True)
+        if meeting.id != meeting_id:
+            raise self._invalid_response("Server returned a different meeting ID.")
+        return meeting
+
+    def _parse_meeting(
+        self,
+        response: Mapping[str, object],
+        *,
+        require_artifacts: bool,
+    ) -> MeetingState:
         data = response.get("data")
-        if not isinstance(data, dict) or not isinstance(data.get("artifacts"), dict):
-            raise ApiError(
-                "invalid_response", "Server returned invalid reconciliation state.", None, transient=False
-            )
-        artifacts: dict[str, ArtifactState] = {}
-        for name in ("video", "audio", "transcript"):
-            artifact = data["artifacts"].get(name)
-            if not isinstance(artifact, dict):
-                raise ApiError("invalid_response", f"Server omitted {name} state.", None, transient=False)
-            artifacts[name] = ArtifactState(
-                uploaded=artifact.get("uploaded") is True,
-                sha256=artifact.get("sha256") if isinstance(artifact.get("sha256"), str) else None,
-                bytes=artifact.get("bytes") if isinstance(artifact.get("bytes"), int) else None,
-            )
+        if not isinstance(data, dict):
+            raise self._invalid_response("Server returned invalid meeting metadata.")
+        meeting_id = _positive_int(data.get("id"))
+        worker_item_id = _canonical_uuid4(data.get("worker_item_id"))
+        client_id = _positive_int(data.get("client_id"))
+        title = data.get("title")
+        if not isinstance(title, str) or not title or len(title) > 255:
+            raise self._invalid_response("Server returned invalid meeting title.")
         meeting_at = data.get("meeting_at")
+        if meeting_at is not None:
+            if not isinstance(meeting_at, str):
+                raise self._invalid_response("Server returned invalid meeting time.")
+            _parse_offset_datetime(meeting_at)
         duration_seconds = data.get("duration_seconds")
+        if duration_seconds is not None and (
+            isinstance(duration_seconds, bool)
+            or not isinstance(duration_seconds, int)
+            or duration_seconds < 0
+        ):
+            raise self._invalid_response("Server returned invalid meeting duration.")
         start_transcript_server = data.get("start_transcript_server")
-        if meeting_at is not None and not isinstance(meeting_at, str):
-            raise ApiError("invalid_response", "Server returned invalid meeting time.", None, transient=False)
-        if duration_seconds is not None and not isinstance(duration_seconds, int):
-            raise ApiError(
-                "invalid_response", "Server returned invalid meeting duration.", None, transient=False
-            )
         if not isinstance(start_transcript_server, bool):
-            raise ApiError(
-                "invalid_response", "Server omitted transcription ownership.", None, transient=False
-            )
+            raise self._invalid_response("Server omitted transcription ownership.")
+
+        artifacts: dict[str, ArtifactState] = {}
+        raw_artifacts = data.get("artifacts")
+        if require_artifacts and not isinstance(raw_artifacts, dict):
+            raise self._invalid_response("Server returned invalid reconciliation state.")
+        if isinstance(raw_artifacts, dict):
+            for name in ("video", "audio", "transcript"):
+                artifact = raw_artifacts.get(name)
+                if not isinstance(artifact, dict):
+                    raise self._invalid_response(f"Server omitted {name} state.")
+                uploaded = artifact.get("uploaded")
+                digest = artifact.get("sha256")
+                byte_count = artifact.get("bytes")
+                if not isinstance(uploaded, bool):
+                    raise self._invalid_response(f"Server returned invalid {name} upload state.")
+                if digest is not None and (not isinstance(digest, str) or SHA256.fullmatch(digest) is None):
+                    raise self._invalid_response(f"Server returned invalid {name} hash.")
+                if byte_count is not None and (
+                    isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count < 0
+                ):
+                    raise self._invalid_response(f"Server returned invalid {name} size.")
+                if uploaded and (digest is None or byte_count is None):
+                    raise self._invalid_response(f"Server returned incomplete {name} state.")
+                artifacts[name] = ArtifactState(uploaded, digest, byte_count)
         return MeetingState(
-            id=int(data["id"]),
-            worker_item_id=str(data["worker_item_id"]),
-            client_id=int(data["client_id"]),
-            title=str(data["title"]),
+            id=meeting_id,
+            worker_item_id=worker_item_id,
+            client_id=client_id,
+            title=title,
             meeting_at=meeting_at,
             duration_seconds=duration_seconds,
             start_transcript_server=start_transcript_server,
-            artifacts=artifacts,
+            artifacts=MappingProxyType(artifacts),
         )
+
+    def _validate_created_meeting(self, meeting: MeetingState, item: WorkerItem) -> None:
+        mismatched = (
+            meeting.worker_item_id != item.item_id
+            or meeting.client_id != item.client_id
+            or meeting.title != item.title
+            or meeting.duration_seconds != item.duration_seconds
+            or not _same_instant(meeting.meeting_at, item.meeting_at)
+        )
+        if mismatched:
+            raise self._invalid_response("Server meeting metadata does not match the requested item.")
+        if meeting.start_transcript_server:
+            raise self._invalid_response("Server meeting is not configured for local transcription.")
 
     def upload_artifact(
         self,
@@ -232,7 +282,7 @@ class WorkerApiClient:
         path: Path,
         *,
         replace: bool = False,
-    ) -> dict[str, object]:
+    ) -> ArtifactUploadResult:
         if artifact not in {"video", "audio", "transcript"}:
             raise ValueError(f"Unsupported artifact {artifact}.")
         media_types = {
@@ -261,10 +311,14 @@ class WorkerApiClient:
             )
         result = response.get("data")
         if not isinstance(result, dict) or result.get("state") not in {"uploaded", "already_uploaded"}:
-            raise ApiError(
-                "invalid_response", "Server returned invalid artifact state.", None, transient=False
-            )
-        return result
+            raise self._invalid_response("Server returned invalid artifact state.")
+        digest = result.get("sha256")
+        byte_count = result.get("bytes")
+        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+            raise self._invalid_response("Server returned an invalid artifact hash.")
+        if isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count < 0:
+            raise self._invalid_response("Server returned an invalid artifact size.")
+        return ArtifactUploadResult(str(result["state"]), digest, byte_count)
 
     def _request(
         self,
@@ -355,11 +409,82 @@ class WorkerApiClient:
             details=error.get("details") if isinstance(error, dict) else None,
         )
 
+    @staticmethod
+    def _invalid_response(message: str) -> ApiError:
+        return ApiError("invalid_response", message, None, transient=False)
 
-def _retry_after_seconds(value: str | None) -> float | None:
+
+def _retry_after_seconds(value: str | None, *, now: datetime | None = None) -> float | None:
     if value is None:
         return None
+    stripped = value.strip()
+    if stripped.isdigit():
+        return float(stripped)
     try:
-        return max(0.0, float(value))
-    except ValueError:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
         return None
+    if parsed.tzinfo is None:
+        return None
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    return max(0.0, (parsed.astimezone(UTC) - current.astimezone(UTC)).total_seconds())
+
+
+def _positive_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ApiError(
+            "invalid_response", "Server returned an invalid positive integer.", None, transient=False
+        )
+    return value
+
+
+def _canonical_uuid4(value: object) -> str:
+    if not isinstance(value, str):
+        raise ApiError(
+            "invalid_response", "Server returned an invalid worker item UUID.", None, transient=False
+        )
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError as exception:
+        raise ApiError(
+            "invalid_response",
+            "Server returned an invalid worker item UUID.",
+            None,
+            transient=False,
+        ) from exception
+    if parsed.version != 4 or value != str(parsed):
+        raise ApiError(
+            "invalid_response",
+            "Server returned a non-canonical worker item UUID.",
+            None,
+            transient=False,
+        )
+    return value
+
+
+def _parse_offset_datetime(value: str) -> datetime:
+    if OFFSET_ISO.fullmatch(value) is None:
+        raise ApiError(
+            "invalid_response",
+            "Server returned an invalid meeting time.",
+            None,
+            transient=False,
+        )
+    normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exception:
+        raise ApiError(
+            "invalid_response", "Server returned an invalid meeting time.", None, transient=False
+        ) from exception
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ApiError("invalid_response", "Server meeting time lacks an offset.", None, transient=False)
+    return parsed
+
+
+def _same_instant(left: str | None, right: str | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    return _parse_offset_datetime(left).astimezone(UTC) == _parse_offset_datetime(right).astimezone(UTC)

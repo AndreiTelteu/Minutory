@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .config import ConfigError, load_config
-from .state import StateStore
+from .state import StateReader
 
 
 def main() -> int:
@@ -17,7 +17,10 @@ def main() -> int:
     arguments = parser.parse_args()
 
     try:
-        config = load_config(arguments.env_file)
+        config = load_config(
+            arguments.env_file,
+            require_token=arguments.command != "list-state",
+        )
     except ConfigError as exception:
         parser.error(str(exception))
 
@@ -25,7 +28,7 @@ def main() -> int:
         print(json.dumps(config.safe_dict(), default=str, indent=2))
         return 0
 
-    store = StateStore(config.state_db)
+    store = StateReader(config.state_db)
     try:
         print(json.dumps([item.item_id for item in store.list_items()], indent=2))
     finally:

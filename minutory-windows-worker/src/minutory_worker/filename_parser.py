@@ -69,4 +69,14 @@ def local_datetime_to_offset_iso(value: str, timezone: str = "Europe/Bucharest")
     round_trip = aware.astimezone(UTC).astimezone(zone).replace(tzinfo=None)
     if round_trip != parsed:
         raise ValueError("Local datetime does not exist because of a DST transition.")
-    return aware.isoformat(timespec="seconds")
+    offset = aware.utcoffset()
+    if offset is None:
+        raise ValueError("Local datetime timezone has no UTC offset.")
+    # JavaScript Date#getTimezoneOffset exposes whole minutes. Truncating the
+    # historical Bucharest LMT seconds reproduces Stage 2's +01:44 output and
+    # keeps every emitted value inside Laravel's ±HH:MM validation contract.
+    offset_minutes = int(offset.total_seconds() / 60)
+    sign = "+" if offset_minutes >= 0 else "-"
+    absolute_minutes = abs(offset_minutes)
+    offset_text = f"{sign}{absolute_minutes // 60:02d}:{absolute_minutes % 60:02d}"
+    return f"{parsed.isoformat(timespec='seconds')}{offset_text}"

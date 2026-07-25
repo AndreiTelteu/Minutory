@@ -5,7 +5,8 @@
 - configuration parsing and token redaction;
 - filename suggestions and manual ownership;
 - SQLite migration, locking, crash recovery, invalidation, and resume;
-- FFprobe parsing and FFmpeg command construction through fakes;
+- concurrent read-only diagnostics while a writer owns state;
+- FFprobe parsing, FFmpeg command construction, and encoded-output validation;
 - WAV format validation, streamed hashing, and atomic rollback;
 - transcript normalization using an injected ASR backend;
 - the full pipeline using fake media, API, and ASR services.
@@ -31,10 +32,12 @@ neither works.
 - Keep `.env`, state, work, logs, models, runtimes, binaries, wheels, and caches
   under ignored worker-local directories.
 - Do not reuse a UUID for different canonical metadata.
+- Use HTTPS for every non-loopback API URL. Plain HTTP deliberately fails closed.
 - Treat artifact hash conflicts as an operator decision; do not automatically
   replace known-good server files.
-- A source change keeps the UUID and reconciles existing server state. If a
-  meeting already exists, review metadata and artifact conflicts before any
-  explicit replacement.
+- If the source or compression preset changes after meeting creation, create a
+  new worker item. Existing server history is never repurposed.
+- Completion means the final reconciliation stage confirmed video, audio, and
+  transcript hashes and sizes remotely; local upload flags alone are insufficient.
 - The Worker API token is mandatory at runtime. Documentation and screenshots
   must show `[REDACTED]`.

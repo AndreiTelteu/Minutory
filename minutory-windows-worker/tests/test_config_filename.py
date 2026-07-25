@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -43,8 +44,19 @@ def test_parser_matches_final_extension_edge_cases() -> None:
 
 
 def test_local_datetime_becomes_offset_bearing() -> None:
-    assert local_datetime_to_offset_iso("2026-07-10T13:03:47") == "2026-07-10T13:03:47+03:00"
-    assert local_datetime_to_offset_iso("2026-10-25T03:30:00") == "2026-10-25T03:30:00+03:00"
+    cases = {
+        "1000-01-02T03:04:05": "1000-01-02T03:04:05+01:44",
+        "1800-01-01T12:00:00": "1800-01-01T12:00:00+01:44",
+        "1891-01-01T12:00:00": "1891-01-01T12:00:00+01:44",
+        "2026-01-10T13:03:47": "2026-01-10T13:03:47+02:00",
+        "2026-07-10T13:03:47": "2026-07-10T13:03:47+03:00",
+        "2026-10-25T03:30:00": "2026-10-25T03:30:00+03:00",
+    }
+    laravel_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$")
+    for value, expected in cases.items():
+        emitted = local_datetime_to_offset_iso(value)
+        assert emitted == expected
+        assert laravel_pattern.fullmatch(emitted)
     with pytest.raises(ValueError):
         local_datetime_to_offset_iso("2026-02-30T13:03:47")
     with pytest.raises(ValueError, match="DST"):
@@ -77,6 +89,22 @@ def test_config_validates_url_timeouts_boolean_and_preset() -> None:
         {"MINUTORY_VAD_FILTER": "maybe"},
         {"MINUTORY_COMPRESSION_PRESET": "tiny"},
         {"MINUTORY_TIMEZONE": "Not/AZone"},
+        {"MINUTORY_API_BASE_URL": "http://minutory.example.test"},
     ):
         with pytest.raises(ConfigError):
             load_config(environ={**base, **override})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://127.99.4.2:8000",
+        "http://[::1]:8000",
+        "https://minutory.example.test",
+    ],
+)
+def test_config_accepts_https_and_http_loopback_only(url: str) -> None:
+    config = load_config(environ={"MINUTORY_API_TOKEN": "fake-test-token", "MINUTORY_API_BASE_URL": url})
+    assert config.api_base_url == url

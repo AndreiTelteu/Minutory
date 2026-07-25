@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -41,6 +42,31 @@ def _positive_int(value: str, name: str) -> int:
     if parsed <= 0:
         raise ConfigError(f"{name} must be greater than zero.")
     return parsed
+
+
+def validate_api_base_url(value: str) -> str:
+    base_url = value.rstrip("/")
+    parsed = urlparse(base_url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ConfigError("MINUTORY_API_BASE_URL must be an absolute HTTP(S) URL without credentials.")
+    if parsed.scheme == "http":
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+        loopback = hostname == "localhost"
+        if not loopback:
+            try:
+                loopback = ip_address(hostname).is_loopback
+            except ValueError:
+                loopback = False
+        if not loopback:
+            raise ConfigError("Plain HTTP is permitted only for loopback API hosts.")
+    return base_url
 
 
 @dataclass(frozen=True, repr=False)
@@ -101,10 +127,7 @@ def load_config(
             raise ConfigError(f"{name} is required.")
         return value.strip()
 
-    base_url = get("MINUTORY_API_BASE_URL", "http://localhost:8000").rstrip("/")
-    parsed_url = urlparse(base_url)
-    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
-        raise ConfigError("MINUTORY_API_BASE_URL must be an absolute HTTP(S) URL.")
+    base_url = validate_api_base_url(get("MINUTORY_API_BASE_URL", "http://localhost:8000"))
 
     token = get("MINUTORY_API_TOKEN", "")
     if require_token and (not token or token == REDACTED):

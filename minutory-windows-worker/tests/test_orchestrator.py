@@ -6,10 +6,20 @@ from pathlib import Path
 import pytest
 from conftest import pcm_wave
 
-from minutory_worker.api import ApiError, ArtifactState, MeetingState
+from minutory_worker.api import (
+    ApiError,
+    ArtifactState,
+    ArtifactUploadResult,
+    MeetingState,
+)
 from minutory_worker.domain import Stage, StageStatus, stream_sha256
 from minutory_worker.media import CommandResult, MediaService
-from minutory_worker.orchestrator import ArtifactConflict, Orchestrator
+from minutory_worker.orchestrator import (
+    ArtifactConflict,
+    DataIntegrityError,
+    Orchestrator,
+    RemoteArtifactMissing,
+)
 from minutory_worker.whisper import BackendResult, BackendSegment, WhisperService
 
 
@@ -35,7 +45,10 @@ class PipelineRunner:
                                 "avg_frame_rate": "30/1",
                             }
                         ],
-                        "format": {"duration": "10"},
+                        "format": {
+                            "duration": "10",
+                            "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+                        },
                     }
                 ),
                 "",
@@ -58,7 +71,13 @@ class PipelineBackend:
     def transcribe(self, audio_path, *, language, vad_filter, vad_parameters):
         self.calls += 1
         assert vad_parameters == {"min_silence_duration_ms": 500}
-        return BackendResult([BackendSegment(0, 1, "Salut")], "ro", 0.99, 1, {"device": "fake"})
+        return BackendResult(
+            [BackendSegment(0, 1, "Salut")],
+            "ro",
+            0.99,
+            1,
+            {"device": "fake"},
+        )
 
 
 class FakeApi:
@@ -68,14 +87,37 @@ class FakeApi:
         self.created = 0
         self.reconciled = 0
         self.uploads: list[str] = []
-        self.remote: dict[str, str | None] = {"video": None, "audio": None, "transcript": None}
+        self.remote: dict[str, tuple[str, int] | None] = {
+            "video": None,
+            "audio": None,
+            "transcript": None,
+        }
         self.fail_audio_once = False
+        self.response_mismatch: str | None = None
+        self.drop_after_upload: str | None = None
+        self.mutate_after_create: str | None = None
 
     def create_meeting(self, item):
         self.created += 1
         assert item.item_id == self.item.item_id
         self.item = item
-        return {"id": self.meeting_id, "start_transcript_server": False}
+        if self.mutate_after_create is not None:
+            path = {
+                "video": item.selected_video_path,
+                "audio": item.wav_path,
+                "transcript": item.transcript_path,
+            }[self.mutate_after_create]
+            Path(path).write_bytes(b"mutated-after-generation")
+        return MeetingState(
+            id=self.meeting_id,
+            worker_item_id=item.item_id,
+            client_id=item.client_id,
+            title=item.title,
+            meeting_at=item.meeting_at,
+            duration_seconds=item.duration_seconds,
+            start_transcript_server=False,
+            artifacts={},
+        )
 
     def upload_artifact(self, meeting_id, artifact, path, *, replace=False):
         assert meeting_id == self.meeting_id
@@ -84,8 +126,15 @@ class FakeApi:
         if artifact == "audio" and self.fail_audio_once:
             self.fail_audio_once = False
             raise ApiError("server_error", "temporary", 503, transient=True)
-        self.remote[artifact] = stream_sha256(path)
-        return {"state": "uploaded", "sha256": self.remote[artifact], "bytes": path.stat().st_size}
+        digest = stream_sha256(path)
+        byte_count = path.stat().st_size
+        self.remote[artifact] = (digest, byte_count)
+        if self.drop_after_upload == artifact:
+            self.remote[artifact] = None
+            self.drop_after_upload = None
+        if self.response_mismatch == artifact:
+            return ArtifactUploadResult("uploaded", "f" * 64, byte_count + 1)
+        return ArtifactUploadResult("uploaded", digest, byte_count)
 
     def reconcile(self, meeting_id):
         self.reconciled += 1
@@ -98,7 +147,12 @@ class FakeApi:
             duration_seconds=self.item.duration_seconds,
             start_transcript_server=False,
             artifacts={
-                name: ArtifactState(digest is not None, digest, None) for name, digest in self.remote.items()
+                name: ArtifactState(
+                    value is not None,
+                    value[0] if value is not None else None,
+                    value[1] if value is not None else None,
+                )
+                for name, value in self.remote.items()
             },
         )
 
@@ -121,14 +175,15 @@ def test_complete_pipeline_and_resume_does_not_repeat_work(store, item, tmp_path
     orchestrator, runner, backend, api = services(store, item, tmp_path)
     completed = orchestrator.process(item.item_id)
     assert completed.server_meeting_id == 500
-    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (1, 1, 1, 1)
-    assert api.created == 1
-    assert api.uploads == ["video", "audio", "transcript"]
-    orchestrator.process(item.item_id)
-    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (1, 1, 1, 1)
+    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     assert api.created == 1
     assert api.uploads == ["video", "audio", "transcript"]
     assert api.reconciled == 1
+    orchestrator.process(item.item_id)
+    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
+    assert api.created == 1
+    assert api.uploads == ["video", "audio", "transcript"]
+    assert api.reconciled == 2
     assert all(store.stage(item.item_id, stage)["status"] == StageStatus.SUCCEEDED for stage in Stage)
 
 
@@ -140,9 +195,9 @@ def test_failed_upload_resume_preserves_expensive_successes(store, item, tmp_pat
     assert store.stage(item.item_id, Stage.VIDEO_UPLOAD)["status"] == StageStatus.SUCCEEDED
     assert store.stage(item.item_id, Stage.AUDIO_UPLOAD)["status"] == StageStatus.FAILED
     assert store.stage(item.item_id, Stage.TRANSCRIPT_UPLOAD)["status"] == StageStatus.PENDING
-    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (1, 1, 1, 1)
+    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     orchestrator.process(item.item_id)
-    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (1, 1, 1, 1)
+    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     assert api.uploads == ["video", "audio", "audio", "transcript"]
     assert store.stage(item.item_id, Stage.AUDIO_UPLOAD)["attempts"] == 2
 
@@ -150,7 +205,7 @@ def test_failed_upload_resume_preserves_expensive_successes(store, item, tmp_pat
 def test_reconcile_surfaces_remote_hash_conflict_without_replacement(store, item, tmp_path) -> None:
     orchestrator, _, _, api = services(store, item, tmp_path)
     completed = orchestrator.process(item.item_id)
-    api.remote["video"] = "f" * 64
+    api.remote["video"] = ("f" * 64, 123)
     with pytest.raises(ArtifactConflict, match="replacement requires explicit"):
         orchestrator.process(completed.item_id)
     assert api.uploads == ["video", "audio", "transcript"]
@@ -189,3 +244,51 @@ def test_reconcile_rejects_server_transcription_ownership(store, item, tmp_path)
     api.reconcile = unsafe
     with pytest.raises(ArtifactConflict, match="owns transcription"):
         orchestrator.process(completed.item_id)
+
+
+def test_remote_deletion_resets_success_and_reuploads_without_expensive_work(store, item, tmp_path) -> None:
+    orchestrator, runner, backend, api = services(store, item, tmp_path)
+    orchestrator.process(item.item_id)
+    api.remote["video"] = None
+    orchestrator.process(item.item_id)
+    assert api.uploads == ["video", "audio", "transcript", "video"]
+    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
+    assert store.stage(item.item_id, Stage.VIDEO_UPLOAD)["attempts"] == 2
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
+
+
+def test_first_run_requires_remote_final_confirmation(store, item, tmp_path) -> None:
+    orchestrator, _, _, api = services(store, item, tmp_path)
+    api.drop_after_upload = "transcript"
+    with pytest.raises(RemoteArtifactMissing, match="transcript"):
+        orchestrator.process(item.item_id)
+    assert api.reconciled == 1
+    assert store.stage(item.item_id, Stage.TRANSCRIPT_UPLOAD)["status"] == StageStatus.PENDING
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.PENDING
+    orchestrator.process(item.item_id)
+    assert api.uploads == ["video", "audio", "transcript", "transcript"]
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
+
+
+@pytest.mark.parametrize("artifact", ["video", "audio", "transcript"])
+def test_upload_response_integrity_mismatch_fails_stage(store, item, tmp_path, artifact) -> None:
+    orchestrator, _, _, api = services(store, item, tmp_path)
+    api.response_mismatch = artifact
+    with pytest.raises(DataIntegrityError, match="response"):
+        orchestrator.process(item.item_id)
+    stage = {
+        "video": Stage.VIDEO_UPLOAD,
+        "audio": Stage.AUDIO_UPLOAD,
+        "transcript": Stage.TRANSCRIPT_UPLOAD,
+    }[artifact]
+    assert store.stage(item.item_id, stage)["status"] == StageStatus.FAILED
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.PENDING
+
+
+@pytest.mark.parametrize("artifact", ["video", "audio", "transcript"])
+def test_generated_file_mutation_is_detected_before_upload(store, item, tmp_path, artifact) -> None:
+    orchestrator, _, _, api = services(store, item, tmp_path)
+    api.mutate_after_create = artifact
+    with pytest.raises(DataIntegrityError, match="changed after generation"):
+        orchestrator.process(item.item_id)
+    assert artifact not in api.uploads

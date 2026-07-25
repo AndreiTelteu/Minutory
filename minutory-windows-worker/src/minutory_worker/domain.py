@@ -16,6 +16,7 @@ class Stage(StrEnum):
     VIDEO_UPLOAD = "video_upload"
     AUDIO_UPLOAD = "audio_upload"
     TRANSCRIPT_UPLOAD = "transcript_upload"
+    FINAL_RECONCILE = "final_reconcile"
 
 
 STAGE_ORDER = tuple(Stage)
@@ -28,7 +29,14 @@ STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     Stage.VIDEO_UPLOAD: (Stage.SOURCE, Stage.MEETING),
     Stage.AUDIO_UPLOAD: (Stage.WAV, Stage.MEETING),
     Stage.TRANSCRIPT_UPLOAD: (Stage.TRANSCRIBE, Stage.MEETING),
+    Stage.FINAL_RECONCILE: (
+        Stage.VIDEO_UPLOAD,
+        Stage.AUDIO_UPLOAD,
+        Stage.TRANSCRIPT_UPLOAD,
+    ),
 }
+
+COMPRESSION_PRESETS = frozenset({"none", "compact", "balanced", "quality"})
 
 
 class StageStatus(StrEnum):
@@ -70,14 +78,19 @@ class WorkerItem:
     selected_video_sha256: str | None = None
     audio_sha256: str | None = None
     transcript_sha256: str | None = None
+    selected_video_bytes: int | None = None
+    audio_bytes: int | None = None
+    transcript_bytes: int | None = None
     server_meeting_id: int | None = None
 
     def __post_init__(self) -> None:
         parsed = uuid.UUID(self.item_id)
-        if parsed.version != 4:
-            raise ValueError("item_id must be a UUID v4.")
+        if parsed.version != 4 or self.item_id != str(parsed):
+            raise ValueError("item_id must be a canonical lowercase UUID v4.")
         if self.client_id is not None and self.client_id <= 0:
             raise ValueError("client_id must be positive.")
+        if self.compression_preset not in COMPRESSION_PRESETS:
+            raise ValueError(f"Unsupported compression preset {self.compression_preset!r}.")
 
 
 def stream_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:

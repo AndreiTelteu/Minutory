@@ -32,7 +32,12 @@ uv run minutory-worker validate-config
 uv run minutory-worker list-state
 ```
 
-`validate-config` always renders the token as `[REDACTED]`.
+`validate-config` always renders the token as `[REDACTED]`. `list-state` is a
+read-only diagnostic: it does not require the API token, acquire writer
+ownership, migrate the database, or recover running stages.
+
+Non-loopback API URLs must use HTTPS. Plain HTTP is accepted only for
+`localhost`, `127.0.0.0/8`, and `::1` development endpoints.
 
 ## Runtime boundary
 

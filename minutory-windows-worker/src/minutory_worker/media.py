@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from fractions import Fraction
 from pathlib import Path
 from typing import Protocol
 
@@ -86,6 +87,7 @@ class Probe:
     video_codec: str
     audio_codec: str | None
     bitrate: int | None
+    format_name: str | None
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,10 @@ PRESETS: dict[str, CompressionPreset | None] = {
 
 
 def parse_rational(value: str) -> float:
+    return float(parse_rational_fraction(value))
+
+
+def parse_rational_fraction(value: str) -> Fraction:
     try:
         numerator_text, denominator_text = value.split("/", 1)
         numerator, denominator = int(numerator_text), int(denominator_text)
@@ -110,7 +116,7 @@ def parse_rational(value: str) -> float:
         raise MediaError(f"Invalid rational frame rate: {value!r}.") from exception
     if denominator == 0 or numerator < 0:
         raise MediaError(f"Invalid rational frame rate: {value!r}.")
-    return numerator / denominator
+    return Fraction(numerator, denominator)
 
 
 def parse_probe_json(content: str) -> Probe:
@@ -149,6 +155,9 @@ def parse_probe_json(content: str) -> Probe:
         if isinstance(audio, dict) and audio.get("codec_name")
         else None,
         bitrate=bitrate,
+        format_name=str(format_data["format_name"])
+        if isinstance(format_data.get("format_name"), str)
+        else None,
     )
 
 
@@ -197,6 +206,9 @@ class MediaService:
             if source.resolve() != destination.resolve():
                 atomic_copy(source, destination)
             return destination
+        if destination.suffix.lower() != ".mp4":
+            raise MediaError("Compressed video destination must use the .mp4 extension.")
+        source_probe = self.probe(source)
 
         def run(temporary: Path) -> None:
             command = self.compression_command(source, temporary, preset, codec)
@@ -204,17 +216,38 @@ class MediaService:
             if result.returncode and fallback_codec and fallback_codec != codec:
                 command = self.compression_command(source, temporary, preset, fallback_codec)
                 fallback_result = self.runner.run(command, cancel=cancel)
-                if not fallback_result.returncode:
-                    return
-                raise MediaError(
-                    "FFmpeg compression failed with both configured codecs: "
-                    f"{result.stderr.strip()[:1000]} / {fallback_result.stderr.strip()[:1000]}"
-                )
+                if fallback_result.returncode:
+                    raise MediaError(
+                        "FFmpeg compression failed with both configured codecs: "
+                        f"{result.stderr.strip()[:1000]} / {fallback_result.stderr.strip()[:1000]}"
+                    )
+                result = fallback_result
             if result.returncode:
                 raise MediaError(f"FFmpeg compression failed: {result.stderr.strip()[:2000]}")
+            output_probe = self.probe(temporary)
+            self._validate_encoded_output(source_probe, output_probe)
 
         atomic_output(destination, run)
         return destination
+
+    @staticmethod
+    def _validate_encoded_output(source: Probe, output: Probe) -> None:
+        formats = set((output.format_name or "").split(","))
+        if "mp4" not in formats:
+            raise MediaError("Encoded output is not an MP4 container.")
+        if output.duration <= 0:
+            raise MediaError("Encoded output has no positive duration.")
+        if (output.width, output.height) != (source.width, source.height):
+            raise MediaError("Encoded output resolution differs from the source.")
+        source_fps = parse_rational_fraction(source.fps_rational)
+        output_fps = parse_rational_fraction(output.fps_rational)
+        if source_fps != output_fps and not math.isclose(
+            float(source_fps),
+            float(output_fps),
+            rel_tol=1e-6,
+            abs_tol=1e-6,
+        ):
+            raise MediaError("Encoded output frame rate differs from the source.")
 
     def compression_command(
         self, source: Path, destination: Path, preset: CompressionPreset, codec: str
