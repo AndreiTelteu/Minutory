@@ -80,7 +80,10 @@ def test_metadata_ownership_nullable_datetime_and_post_meeting_refusal(
     assert changed.meeting_at is None
     assert changed.meeting_at_manually_edited
     changed.server_meeting_id = 91
-    store.save_item(changed)
+    store.reconcile_success(item.item_id, Stage.PROBE)
+    store.start_stage(item.item_id, Stage.MEETING)
+    store.persist_stage_output(changed, Stage.MEETING)
+    store.finish_stage(item.item_id, Stage.MEETING)
     with pytest.raises(StateError, match="cannot change"):
         queue.update_metadata(
             item.item_id,
@@ -119,7 +122,9 @@ def test_probe_render_and_transactional_preset_mutation(store: StateStore, item:
     loaded.probe_width = 1920
     loaded.probe_height = 1080
     loaded.probe_fps = 29.97
-    store.save_item(loaded)
+    store.start_stage(item.item_id, Stage.PROBE)
+    store.persist_stage_output(loaded, Stage.PROBE)
+    store.finish_stage(item.item_id, Stage.PROBE)
     view = controller(store).view(item.item_id)
     assert view.probe_summary == "1:00 · 1920x1080 · 29.97 FPS"
     assert view.estimated_size == "37.6 MB"
@@ -166,6 +171,20 @@ class SerialOrchestrator:
             raise RuntimeError("retry me")
         return item_id
 
+    def preflight(self, item_id, *, on_stage):
+        self.calls.append(f"preflight:{item_id}")
+        on_stage(Stage.PROBE, StageStatus.RUNNING)
+        self.started.set()
+        self.release.wait(2)
+        on_stage(Stage.PROBE, StageStatus.SUCCEEDED)
+        return item_id
+
+    def retry_artifact(self, item_id, artifact_name, *, on_stage):
+        self.calls.append(f"{artifact_name}:{item_id}")
+        on_stage(Stage.AUDIO_UPLOAD, StageStatus.RUNNING)
+        on_stage(Stage.AUDIO_UPLOAD, StageStatus.SUCCEEDED)
+        return item_id
+
 
 def wait_until(predicate, timeout: float = 2) -> None:
     deadline = time.monotonic() + timeout
@@ -197,6 +216,22 @@ def test_background_serialization_duplicate_start_retry_and_close_safety(item: W
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
     assert orchestrator.calls.count(item.item_id) == 3
+    assert coordinator.close()
+
+
+def test_preflight_and_artifact_dispatch_are_scheduled_and_deduplicated(item: WorkerItem) -> None:
+    orchestrator = SerialOrchestrator([item])
+    coordinator = ProcessingCoordinator(orchestrator)
+    assert coordinator.preflight(item.item_id)
+    assert orchestrator.started.wait(1)
+    assert coordinator.is_scheduled(item.item_id)
+    assert not coordinator.start(item.item_id)
+    orchestrator.release.set()
+    wait_until(lambda: not coordinator.busy)
+    assert orchestrator.calls == [f"preflight:{item.item_id}"]
+    assert coordinator.retry_artifact(item.item_id, "audio")
+    wait_until(lambda: not coordinator.busy)
+    assert orchestrator.calls[-1] == f"audio:{item.item_id}"
     assert coordinator.close()
 
 

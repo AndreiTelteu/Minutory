@@ -178,6 +178,18 @@ class ItemCard(QFrame):
         actions = QHBoxLayout()
         self.start = QPushButton("Start / resume")
         self.start.setObjectName("primary")
+        self.retry_video = QPushButton("Retry video")
+        self.retry_audio = QPushButton("Retry audio")
+        self.retry_transcript = QPushButton("Retry transcript")
+        retry_actions = QHBoxLayout()
+        self.retry_label = QLabel("Artifact recovery")
+        self.retry_label.setObjectName("muted")
+        retry_actions.addWidget(self.retry_label)
+        retry_actions.addWidget(self.retry_video)
+        retry_actions.addWidget(self.retry_audio)
+        retry_actions.addWidget(self.retry_transcript)
+        retry_actions.addStretch()
+        root.addLayout(retry_actions)
         self.remove = QPushButton("Remove")
         self.open_source = QPushButton("Open source")
         self.open_work = QPushButton("Open work folder")
@@ -205,6 +217,11 @@ class ItemCard(QFrame):
         self.client.currentIndexChanged.connect(self._save_metadata)
         self.preset.currentIndexChanged.connect(self._change_preset)
         self.start.clicked.connect(lambda: self._main_window.start_item(self.item_id))
+        self.retry_video.clicked.connect(lambda: self._main_window.retry_artifact(self.item_id, "video"))
+        self.retry_audio.clicked.connect(lambda: self._main_window.retry_artifact(self.item_id, "audio"))
+        self.retry_transcript.clicked.connect(
+            lambda: self._main_window.retry_artifact(self.item_id, "transcript")
+        )
         self.remove.clicked.connect(lambda: self._main_window.remove_item(self.item_id))
         self.open_source.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(view.item.source.path))
@@ -214,7 +231,7 @@ class ItemCard(QFrame):
         self.copy_details.clicked.connect(
             lambda: QApplication.clipboard().setText(self.details.toPlainText())
         )
-        self.apply_view(view)
+        self.apply_view(view, scheduled=main_window.coordinator.is_scheduled(self.item_id))
 
     def set_clients(self, clients: tuple[ClientChoice, ...], selected: int | None) -> None:
         self.client.blockSignals(True)
@@ -239,15 +256,43 @@ class ItemCard(QFrame):
     def _change_preset(self) -> None:
         self._main_window.change_preset(self.item_id, str(self.preset.currentData()))
 
-    def apply_view(self, view: ItemView) -> None:
-        self.status.setText(view.status)
+    def apply_view(
+        self,
+        view: ItemView,
+        *,
+        scheduled: bool = False,
+        force_fields: bool = False,
+    ) -> None:
+        local_datetime = offset_iso_to_local(
+            view.item.meeting_at,
+            self._main_window.controller.timezone,
+        )
+        for control, value in (
+            (self.title, view.item.title),
+            (self.datetime, local_datetime),
+        ):
+            if force_fields or not control.hasFocus():
+                control.blockSignals(True)
+                control.setText(value)
+                control.blockSignals(False)
+        if force_fields or not self.preset.hasFocus():
+            self.preset.blockSignals(True)
+            self.preset.setCurrentIndex(self.preset.findData(view.item.compression_preset))
+            self.preset.blockSignals(False)
+        if force_fields or not self.client.hasFocus():
+            selected = self.client.findData(view.item.client_id)
+            self.client.blockSignals(True)
+            self.client.setCurrentIndex(max(0, selected))
+            self.client.blockSignals(False)
+        rendered_status = "Scheduled" if scheduled and view.active_stage is None else view.status
+        self.status.setText(rendered_status)
         status_color = (
             "#4ade80"
-            if view.status == "Completed"
+            if rendered_status == "Completed"
             else "#f87171"
-            if view.status.startswith("Needs attention")
+            if rendered_status.startswith("Needs attention")
             else "#fbbf24"
-            if view.status.startswith("Processing")
+            if rendered_status.startswith(("Processing", "Scheduled"))
             else "#a1a1aa"
         )
         self.status.setStyleSheet(f"color: {status_color}; font-weight: 600;")
@@ -268,14 +313,25 @@ class ItemCard(QFrame):
         self.error.setText(failed.user_error if failed and failed.user_error else "")
         self.error.setVisible(failed is not None)
         self.details.setPlainText(diagnostic_text(view))
-        immutable = view.metadata_locked
-        for control in (self.client, self.title, self.datetime, self.preset):
-            control.setEnabled(not immutable)
-        self.remove.setEnabled(not immutable and view.active_stage is None)
+        immutable = view.metadata_locked or scheduled or view.active_stage is not None
+        for editable in (self.client, self.title, self.datetime, self.preset):
+            editable.setEnabled(not immutable)
+        self.remove.setEnabled(not immutable)
+        retry_buttons = {
+            "video": self.retry_video,
+            "audio": self.retry_audio,
+            "transcript": self.retry_transcript,
+        }
+        self.retry_label.setVisible(bool(view.retryable_artifacts))
+        for name, button in retry_buttons.items():
+            button.setVisible(name in view.retryable_artifacts)
+            button.setEnabled(not scheduled and view.active_stage is None)
         self.start.setText(
             f"Retry {failed.stage.value.replace('_', ' ')}" if failed is not None else "Start / resume"
         )
-        self.start.setEnabled(view.active_stage is None and view.completed_stages < len(STAGE_ORDER))
+        self.start.setEnabled(
+            not scheduled and view.active_stage is None and view.completed_stages < len(STAGE_ORDER)
+        )
 
 
 class MainWindow(QMainWindow):
@@ -291,7 +347,7 @@ class MainWindow(QMainWindow):
         self.coordinator = ProcessingCoordinator(orchestrator, self.bridge.pipeline_event.emit)
         self.setWindowTitle("Minutory Worker")
         self.resize(1180, 780)
-        self.setMinimumSize(780, 520)
+        self.setMinimumSize(1180, 650)
         self.setAcceptDrops(True)
         self.setStyleSheet(DARK_STYLE)
 
@@ -299,28 +355,36 @@ class MainWindow(QMainWindow):
         shell = QVBoxLayout(central)
         shell.setContentsMargins(24, 20, 24, 20)
         shell.setSpacing(14)
-        top = QHBoxLayout()
-        title_box = QVBoxLayout()
+        header = QVBoxLayout()
         title = QLabel("Windows ingestion queue")
         title.setObjectName("title")
         subtitle = QLabel("Local AMD transcription · artifacts upload only after local processing")
         subtitle.setObjectName("muted")
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-        top.addLayout(title_box)
-        top.addStretch()
+        subtitle.setWordWrap(True)
+        header.addWidget(title)
+        header.addWidget(subtitle)
+        shell.addLayout(header)
+
+        primary_actions = QHBoxLayout()
+        primary_actions.addStretch()
         self.refresh_button = QPushButton("Refresh clients && state")
+        self.preflight_button = QPushButton("Preflight unprobed")
         self.add_button = QPushButton("Add files")
         self.start_batch = QPushButton("Start pending")
         self.start_batch.setObjectName("primary")
         self.cancel_button = QPushButton("Cancel media command")
-        top.addWidget(self.refresh_button)
-        top.addWidget(self.cancel_button)
-        top.addWidget(self.add_button)
-        top.addWidget(self.start_batch)
-        shell.addLayout(top)
+        primary_actions.addWidget(self.refresh_button)
+        primary_actions.addWidget(self.preflight_button)
+        primary_actions.addWidget(self.add_button)
+        primary_actions.addWidget(self.start_batch)
+        shell.addLayout(primary_actions)
 
-        self.notice = QLabel("Drop MP4, MOV, AVI, WebM, MKV, or M4V files anywhere in this window.")
+        secondary_actions = QHBoxLayout()
+        secondary_actions.addStretch()
+        secondary_actions.addWidget(self.cancel_button)
+        shell.addLayout(secondary_actions)
+
+        self.notice = QLabel("Drop MP4, MOV, AVI, or WebM files anywhere in this window.")
         self.notice.setObjectName("muted")
         self.notice.setWordWrap(True)
         shell.addWidget(self.notice)
@@ -343,6 +407,7 @@ class MainWindow(QMainWindow):
 
         self.add_button.clicked.connect(self.choose_files)
         self.start_batch.clicked.connect(self.start_pending)
+        self.preflight_button.clicked.connect(self.preflight_unprobed)
         self.cancel_button.clicked.connect(self.cancel_media)
         self.refresh_button.clicked.connect(self.refresh_all)
         self.render_state()
@@ -359,7 +424,7 @@ class MainWindow(QMainWindow):
             self,
             "Add meeting videos",
             "",
-            "Video files (*.mp4 *.mov *.avi *.webm *.mkv *.m4v)",
+            "Video files (*.mp4 *.mov *.avi *.webm)",
         )
         self.add_paths(paths)
 
@@ -373,6 +438,8 @@ class MainWindow(QMainWindow):
 
     def add_paths(self, paths: list[str]) -> None:
         result = self.controller.add_paths(paths)
+        for item_id in result.added:
+            self.coordinator.preflight(item_id)
         messages = []
         if result.added:
             messages.append(f"Added {len(result.added)} video(s).")
@@ -420,7 +487,10 @@ class MainWindow(QMainWindow):
                 self.queue_layout.insertWidget(self.queue_layout.count() - 1, new_card)
                 new_card.set_clients(self.clients, view.item.client_id)
             else:
-                existing_card.apply_view(view)
+                existing_card.apply_view(
+                    view,
+                    scheduled=self.coordinator.is_scheduled(view.item.item_id),
+                )
         self.empty.setVisible(not views)
 
     def save_metadata(self, item_id: str, title: str, local_datetime: str, client_id: int | None) -> None:
@@ -434,7 +504,11 @@ class MainWindow(QMainWindow):
             self.show_notice("Metadata saved.")
         except Exception as exception:
             self.show_notice(str(exception), error=True)
-            self.render_state()
+            self.cards[item_id].apply_view(
+                self.controller.view(item_id),
+                scheduled=self.coordinator.is_scheduled(item_id),
+                force_fields=True,
+            )
 
     def change_preset(self, item_id: str, preset: str) -> None:
         try:
@@ -442,7 +516,11 @@ class MainWindow(QMainWindow):
             self.render_state()
         except Exception as exception:
             self.show_notice(str(exception), error=True)
-            self.render_state()
+            self.cards[item_id].apply_view(
+                self.controller.view(item_id),
+                scheduled=self.coordinator.is_scheduled(item_id),
+                force_fields=True,
+            )
 
     def start_item(self, item_id: str) -> None:
         view = self.controller.view(item_id)
@@ -465,6 +543,19 @@ class MainWindow(QMainWindow):
             return
         count = self.coordinator.start_pending()
         self.show_notice(f"Scheduled {count} item(s).")
+        self.render_state()
+
+    def preflight_unprobed(self) -> None:
+        count = self.coordinator.preflight_unprobed()
+        self.show_notice(f"Scheduled {count} media preflight(s).")
+        self.render_state()
+
+    def retry_artifact(self, item_id: str, artifact_name: str) -> None:
+        if self.coordinator.retry_artifact(item_id, artifact_name):
+            self.show_notice(f"{artifact_name.title()} retry scheduled.")
+            self.render_state()
+        else:
+            self.show_notice("That item is already scheduled.")
 
     def cancel_media(self) -> None:
         self.show_notice(
@@ -475,6 +566,8 @@ class MainWindow(QMainWindow):
 
     def remove_item(self, item_id: str) -> None:
         try:
+            if self.coordinator.is_scheduled(item_id):
+                raise RuntimeError("A scheduled item cannot be removed.")
             self.controller.remove(item_id)
             self.render_state()
         except Exception as exception:
@@ -492,6 +585,10 @@ class MainWindow(QMainWindow):
             self.show_notice(f"Item paused safely: {value}", error=True)
         elif kind == "completed":
             self.show_notice("Item completed and reconciled with the server.")
+        elif kind == "preflight_completed":
+            self.show_notice("Preflight complete. Review metadata and estimated output size.")
+        elif kind == "artifact_completed":
+            self.show_notice("Requested artifact retry completed.")
         elif kind == "stage":
             if not isinstance(value, tuple) or len(value) != 2:
                 return

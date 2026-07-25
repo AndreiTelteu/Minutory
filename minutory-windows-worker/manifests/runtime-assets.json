@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generated_for": "Windows 11 x86-64 / Radeon RX 7900 XTX gfx1100",
   "assets": [
     {
@@ -7,8 +7,17 @@
       "version": "3.12.10",
       "url": null,
       "sha256": null,
+      "installed_tree_sha256": null,
       "destination": "libs/python",
       "archive": "zip",
+      "source_subdir": "python",
+      "expected_files": [
+        "python.exe",
+        "pythonw.exe",
+        "Lib/venv/__init__.py",
+        "Lib/ensurepip/__init__.py"
+      ],
+      "distribution_contract": "full-portable-venv",
       "status": "unresolved",
       "notes": "A redistributable x86-64 Python archive URL and publisher SHA-256 must be verified on a networked release workstation."
     },
@@ -17,8 +26,14 @@
       "version": "7.1.1",
       "url": null,
       "sha256": null,
+      "installed_tree_sha256": null,
       "destination": "libs/ffmpeg",
       "archive": "zip",
+      "source_subdir": "ffmpeg",
+      "expected_files": [
+        "bin/ffmpeg.exe",
+        "bin/ffprobe.exe"
+      ],
       "status": "unresolved",
       "notes": "Select one immutable Windows x86-64 FFmpeg build containing ffmpeg.exe and ffprobe.exe; record its upstream URL and SHA-256."
     },
@@ -27,18 +42,33 @@
       "version": "4.8.1",
       "url": null,
       "sha256": null,
-      "destination": "libs/wheels/ctranslate2_rocm-4.8.1-cp312-cp312-win_amd64.whl",
-      "archive": "file",
+      "installed_tree_sha256": null,
+      "destination": "libs/wheels/ctranslate2-rocm-4.8.1",
+      "archive": "zip",
+      "source_subdir": "temp-windows",
+      "expected_files": [
+        "ctranslate2-4.8.1-cp312-cp312-win_amd64.whl"
+      ],
       "status": "unresolved",
-      "notes": "Use only the official Windows ROCm/HIP CPython 3.12 wheel. A stock CUDA/PyPI CTranslate2 wheel is not acceptable."
+      "notes": "Official upstream asset: https://github.com/OpenNMT/CTranslate2/releases/download/v4.8.1/rocm-python-wheels-Windows.zip (GitHub digest sha256:3a4936a4e76f27b9c0e4f32b06baf6378fe778d784adcb53cd3e159bd4d218b3). Keep unresolved until the installed-tree digest is independently approved."
     },
     {
       "id": "runtime-wheelhouse",
       "version": "2026.07",
       "url": null,
       "sha256": null,
+      "installed_tree_sha256": null,
       "destination": "libs/wheelhouse",
       "archive": "zip",
+      "source_subdir": "wheelhouse",
+      "expected_files": [
+        "requirements-runtime.txt",
+        "httpx-0.28.1-py3-none-any.whl",
+        "python_dotenv-1.1.1-py3-none-any.whl",
+        "tzdata-2025.2-py2.py3-none-any.whl",
+        "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
+        "faster_whisper-1.2.0-py3-none-any.whl"
+      ],
       "status": "unresolved",
       "notes": "Offline CPython 3.12 win_amd64 wheels matching requirements-runtime.txt, excluding every CTranslate2 wheel."
     },
@@ -47,8 +77,17 @@
       "version": "large-v3",
       "url": null,
       "sha256": null,
+      "installed_tree_sha256": null,
       "destination": "models/large-v3",
       "archive": "zip",
+      "source_subdir": "large-v3",
+      "expected_files": [
+        "model.bin",
+        "config.json",
+        "tokenizer.json",
+        "vocabulary.json",
+        "preprocessor_config.json"
+      ],
       "status": "unresolved",
       "notes": "Create an immutable archive of the complete official Systran faster-whisper-large-v3 snapshot and record its verified digest."
     }

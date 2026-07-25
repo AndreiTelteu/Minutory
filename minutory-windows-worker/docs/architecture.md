@@ -48,6 +48,14 @@ The GUI and processing lane share exactly one `StateStore` connection.
 writes, metadata mutation, preset invalidation, and pre-server deletion all pass
 through that serialization boundary.
 
+Long stages never write a whole item snapshot. Persistence ownership is explicit:
+`probe` owns duration/probe metadata; `source` owns selected-video path/hash/bytes;
+`wav` owns WAV path/hash/bytes; `transcribe` owns transcript path/hash/bytes; and
+`meeting` owns only the server meeting ID. Upload and final stages own no item
+columns. Each result is merged while its stage is still `running`, so it cannot
+overwrite operator metadata or another stage's output. Source refresh is likewise
+a targeted compare-and-replace plus invalidation transaction.
+
 Source identity contains resolved path, byte size, and nanosecond mtime, with an
 optional streamed SHA-256 policy. A changed source invalidates `probe` and its
 dependency closure before meeting creation. Source changes after server meeting
@@ -56,6 +64,10 @@ conservatively refused after the first meeting attempt because a lost response
 may hide a committed server row; the operator must create a new item.
 A preset change preserves probe metadata while transactionally invalidating
 `source` and its true dependency closure.
+Metadata and preset changes are also refused while any stage is running. The
+coordinator exposes scheduled state so Qt disables metadata, preset, and removal
+during executor queue time, then re-enables pre-server controls after probe-only
+preflight.
 
 ## Atomic artifacts
 
@@ -81,6 +93,8 @@ validation, authentication, and conflict errors are permanent. Delta-seconds and
 IMF-fixdate `Retry-After` values are honored.
 
 Configuration representations, diagnostics, and CLI output redact the token.
+The HTTP boundary discards raw transport exception text and its exception cause,
+so chained tracebacks cannot retain a header or bearer token.
 Tracked configuration uses `[REDACTED]` only. HTTPS is required except for
 loopback development hosts (`localhost`, `127.0.0.0/8`, and `::1`).
 
@@ -102,6 +116,11 @@ through one lazily loaded model instance. `Orchestrator.process_next_stage` also
 exposes a safe stage-sized integration seam, while normal GUI runs retain the
 Stage 3 resume loop.
 
+New items schedule only `probe`; this never flows into `source` without explicit
+operator start. Artifact retry commands validate the durable local prerequisite,
+reconcile remote state, and upload only the named missing artifact without
+replacement. If all upload stages are complete, final reconciliation runs.
+
 Compression and WAV extraction receive a cancellation event that terminates and,
 after a grace period, kills only the active child process. Atomic outputs preserve
 known-good artifacts and the running stage becomes failed/retryable. Transcription
@@ -113,12 +132,18 @@ model is never torn down mid-call.
 The tracked runtime manifest is schema-validated and closed by default because
 its upstream URLs/hashes have not been proven in this offline environment. A
 release-approved ignored override unlocks installation. PowerShell accepts HTTPS
-only, verifies SHA-256 before use, extracts into a sibling temporary directory,
-atomically renames it, records a digest marker, and refuses an unexpected existing
-destination.
+only, verifies SHA-256 before use, validates ZIP entries before manual extraction
+(no traversal, absolute paths, symlink/reparse entries, or case-insensitive
+collisions), normalizes the declared `source_subdir`, checks required files,
+records a deterministic installed-tree digest, and atomically promotes staging.
+Verification recomputes that digest rather than trusting a mutable archive marker.
 
 The offline wheelhouse must exclude CTranslate2. Bootstrap explicitly installs
 the official ROCm 4.8.1 wheel first and resolves pinned runtime requirements only
-from the wheelhouse. Verification checks 64-bit Python 3.12, FFmpeg/FFprobe,
-CTranslate2 version and HIP DLL/device visibility, Windows GPU name, and required
-Large v3 files.
+from the wheelhouse. The Python distribution must provide working `venv` and
+`ensurepip`; the official embeddable ZIP is rejected. A fresh venv is built and
+fully verified in staging, then atomically promoted with a readiness marker keyed
+to the effective manifest, requirements, and bootstrap schema. Verification
+checks 64-bit Python 3.12, FFmpeg/FFprobe, CTranslate2 version and HIP DLL/device
+visibility, Windows GPU name, and all declared Large v3 files. Production receives
+only the local model path and launchers enforce offline model resolution.

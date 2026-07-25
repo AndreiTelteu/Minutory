@@ -14,7 +14,7 @@ from .media import PRESETS, estimate_output_bytes
 from .orchestrator import Orchestrator
 from .state import StateStore
 
-SUPPORTED_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".avi", ".webm", ".mkv", ".m4v"})
+SUPPORTED_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".avi", ".webm"})
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,7 @@ class ItemView:
     probe_summary: str
     estimated_size: str
     metadata_locked: bool
+    retryable_artifacts: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -235,6 +236,26 @@ class QueueController:
                 item.server_meeting_id is not None
                 or next(stage for stage in stages if stage.stage is Stage.MEETING).attempts > 0
             ),
+            retryable_artifacts=tuple(
+                name
+                for name, local_stage, upload_stage in (
+                    ("video", Stage.SOURCE, Stage.VIDEO_UPLOAD),
+                    ("audio", Stage.WAV, Stage.AUDIO_UPLOAD),
+                    ("transcript", Stage.TRANSCRIBE, Stage.TRANSCRIPT_UPLOAD),
+                )
+                if item.server_meeting_id is not None
+                and next(stage for stage in stages if stage.stage is local_stage).status
+                is StageStatus.SUCCEEDED
+                and (
+                    next(stage for stage in stages if stage.stage is upload_stage).status
+                    is StageStatus.FAILED
+                    or (
+                        next(stage for stage in stages if stage.stage is upload_stage).status
+                        is StageStatus.PENDING
+                        and next(stage for stage in stages if stage.stage is upload_stage).attempts > 0
+                    )
+                )
+            ),
         )
 
 
@@ -249,21 +270,32 @@ class ProcessingCoordinator:
         self._event_sink = event_sink or (lambda _kind, _item_id, _value: None)
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-pipeline")
         self._lock = threading.RLock()
-        self._scheduled: set[str] = set()
+        self._scheduled: dict[str, str] = {}
         self._current_item: str | None = None
         self._current_stage: Stage | None = None
         self._cancel = threading.Event()
         self._closed = False
 
     def start(self, item_id: str) -> bool:
+        return self._submit(item_id, "pipeline")
+
+    def preflight(self, item_id: str) -> bool:
+        return self._submit(item_id, "preflight")
+
+    def retry_artifact(self, item_id: str, artifact_name: str) -> bool:
+        if artifact_name not in {"video", "audio", "transcript"}:
+            raise ValueError(f"Unsupported artifact {artifact_name!r}.")
+        return self._submit(item_id, f"artifact:{artifact_name}")
+
+    def _submit(self, item_id: str, operation: str) -> bool:
         with self._lock:
             if self._closed or item_id in self._scheduled:
                 return False
-            self._scheduled.add(item_id)
-            future = self._executor.submit(self._run, item_id)
+            self._scheduled[item_id] = operation
+            future = self._executor.submit(self._run, item_id, operation)
 
             def done_callback(result: Future[WorkerItem]) -> None:
-                self._done(item_id, result)
+                self._done(item_id, operation, result)
 
             future.add_done_callback(done_callback)
             return True
@@ -276,7 +308,17 @@ class ProcessingCoordinator:
                 count += int(self.start(item.item_id))
         return count
 
-    def _run(self, item_id: str) -> WorkerItem:
+    def preflight_unprobed(self) -> int:
+        count = 0
+        for item in self.orchestrator.store.list_items():
+            if (
+                self.orchestrator.store.stage(item.item_id, Stage.PROBE)["status"]
+                != StageStatus.SUCCEEDED.value
+            ):
+                count += int(self.preflight(item.item_id))
+        return count
+
+    def _run(self, item_id: str, operation: str) -> WorkerItem:
         with self._lock:
             self._current_item = item_id
             self._cancel = threading.Event()
@@ -287,17 +329,28 @@ class ProcessingCoordinator:
                 self._current_stage = stage if status is StageStatus.RUNNING else None
             self._event_sink("stage", item_id, (stage, status))
 
+        if operation == "preflight":
+            return self.orchestrator.preflight(item_id, on_stage=stage_changed)
+        if operation.startswith("artifact:"):
+            return self.orchestrator.retry_artifact(
+                item_id,
+                operation.removeprefix("artifact:"),
+                on_stage=stage_changed,
+            )
         return self.orchestrator.process(item_id, cancel=self._cancel, on_stage=stage_changed)
 
-    def _done(self, item_id: str, future: Future[WorkerItem]) -> None:
+    def _done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
         try:
             result: object | None = future.result()
-            kind = "completed"
+            kind = {
+                "preflight": "preflight_completed",
+                "pipeline": "completed",
+            }.get(operation, "artifact_completed")
         except Exception as exception:
             result = exception
             kind = "failed"
         with self._lock:
-            self._scheduled.discard(item_id)
+            self._scheduled.pop(item_id, None)
             if self._current_item == item_id:
                 self._current_item = None
                 self._current_stage = None
@@ -324,6 +377,10 @@ class ProcessingCoordinator:
     def busy(self) -> bool:
         with self._lock:
             return bool(self._scheduled)
+
+    def is_scheduled(self, item_id: str) -> bool:
+        with self._lock:
+            return item_id in self._scheduled
 
     def close(self) -> bool:
         with self._lock:

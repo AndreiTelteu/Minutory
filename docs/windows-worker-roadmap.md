@@ -153,7 +153,11 @@ Primary backend: `faster-whisper` with the official CTranslate2 ROCm Windows whe
 - Account for the open Windows/gfx1100 model-destruction deadlock by keeping the model loaded in a persistent worker process and supervising shutdown.
 - Benchmark batch sizes 1/8/16 on the real machine before choosing the production default.
 
-Tracked `manifests/runtime-assets.json` records URL, version, size, and SHA-256. Bootstrap downloads resumably over HTTPS and verifies checksums for:
+Tracked `manifests/runtime-assets.json` records exact destinations, archive
+layout, expected files, version, URL, archive SHA-256, and normalized installed-tree
+SHA-256. Bootstrap downloads over HTTPS,
+validates safe archive contents, verifies checksums, and recomputes installed-tree
+digests for:
 
 - FFmpeg/FFprobe;
 - managed Python/venv dependencies;
@@ -213,14 +217,21 @@ Acceptance: 91 Linux-runnable non-GUI tests pass; Ruff format/check, compileall,
 - [x] Add operator/architecture documentation; defer optional PyInstaller
   packaging until the managed runtime passes Windows hardware acceptance.
 
-Acceptance status: 107 Stage 3+4 tests pass, including real PySide6 6.9.1
-construction with Qt's offscreen platform; an 1180x780 rendered queue was captured
-and inspected. Ruff format/check, mypy strict across all 18 source modules,
-compileall, manifest/launcher checks, and Git whitespace checks pass. Exact Windows
-asset hashes were not invented: the tracked manifest is deliberately unresolved
-and bootstrap fails closed until a release-approved ignored override is supplied.
-PowerShell execution, ROCm/HIP gfx1100, AMF, Large v3 FP16, and distributable
-packaging remain Windows-only acceptance work and are not claimed as verified.
+Acceptance status after the single review feedback pass: 127 Linux-runnable
+Stage 3+4 tests pass, including real PySide6 6.9.1 offscreen construction plus
+add/edit/client/state/action coverage, deterministic stage-ownership races,
+preflight/artifact retry coordination, traceback redaction, and bootstrap
+integrity planning. The 1180x780 dark GUI was rendered and inspected after the
+feedback controls were added; its minimum window now matches the validated card
+layout. Ruff format/check, mypy strict across all 18 source modules, compileall,
+manifest/launcher checks, and Git whitespace checks pass. Exact Windows asset
+hashes were not invented: the tracked manifest is deliberately unresolved and
+bootstrap fails closed until a release-approved ignored override is supplied.
+The official CTranslate2 4.8.1 Windows ROCm ZIP name, internal CPython 3.12 wheel,
+and GitHub SHA-256 were independently confirmed, but its installed-tree digest
+remains unresolved. PowerShell execution, ROCm/HIP gfx1100, AMF, Large v3 FP16,
+and distributable packaging remain Windows-only acceptance work and are not
+claimed as verified.
 
 ### Stage 5 — Integration and Windows acceptance
 

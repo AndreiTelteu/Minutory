@@ -13,11 +13,10 @@ from .domain import (
     Stage,
     StageStatus,
     WorkerItem,
-    dependent_stages,
     stream_sha256,
 )
 from .media import MediaService
-from .state import StateStore
+from .state import StateError, StateStore
 from .whisper import WhisperService
 
 
@@ -35,6 +34,13 @@ class DataIntegrityError(PipelineError):
 
 class RemoteArtifactMissing(PipelineError):
     pass
+
+
+ARTIFACT_STAGES: dict[str, tuple[Stage, Stage]] = {
+    "video": (Stage.SOURCE, Stage.VIDEO_UPLOAD),
+    "audio": (Stage.WAV, Stage.AUDIO_UPLOAD),
+    "transcript": (Stage.TRANSCRIBE, Stage.TRANSCRIPT_UPLOAD),
+}
 
 
 class Orchestrator:
@@ -73,29 +79,66 @@ class Orchestrator:
         )
         if not changed:
             return False
-        if item.server_meeting_id is not None:
-            raise ArtifactConflict(
-                "Source file changed after the server meeting was created; "
-                "create a new worker item instead of mutating uploaded history."
+        try:
+            return self.store.replace_source_identity(
+                item_id,
+                expected=item.source,
+                replacement=current,
             )
-        item.source = current
-        item.duration_seconds = None
-        item.probe_width = None
-        item.probe_height = None
-        item.probe_fps = None
-        item.probe_bitrate = None
-        item.selected_video_path = None
-        item.wav_path = None
-        item.transcript_path = None
-        item.selected_video_sha256 = None
-        item.audio_sha256 = None
-        item.transcript_sha256 = None
-        item.selected_video_bytes = None
-        item.audio_bytes = None
-        item.transcript_bytes = None
-        self.store.save_item(item)
-        self.store.invalidate(item_id, dependent_stages(Stage.PROBE))
-        return True
+        except StateError as exception:
+            if "server meeting attempt" in str(exception):
+                raise ArtifactConflict(
+                    "Source file changed after the server meeting was created; "
+                    "create a new worker item instead of mutating uploaded history."
+                ) from exception
+            raise
+
+    def preflight(
+        self,
+        item_id: str,
+        *,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+    ) -> WorkerItem:
+        """Run only the media probe so the operator can review metadata and size."""
+        self.refresh_source(item_id)
+        status = str(self.store.stage(item_id, Stage.PROBE)["status"])
+        if status == StageStatus.SUCCEEDED.value:
+            return self.store.get_item(item_id)
+        if status == StageStatus.RUNNING.value:
+            raise PipelineError("Stage probe is already running.")
+        self._run_stage(item_id, Stage.PROBE, on_stage=on_stage)
+        return self.store.get_item(item_id)
+
+    def retry_artifact(
+        self,
+        item_id: str,
+        artifact_name: str,
+        *,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+    ) -> WorkerItem:
+        """Reconcile, then upload only the explicitly requested local artifact."""
+        if artifact_name not in ARTIFACT_STAGES:
+            raise ValueError(f"Unsupported artifact {artifact_name!r}.")
+        local_stage, upload_stage = ARTIFACT_STAGES[artifact_name]
+        if self.store.stage(item_id, local_stage)["status"] != StageStatus.SUCCEEDED.value:
+            raise PipelineError(
+                f"{artifact_name.title()} cannot be retried before {local_stage.value} succeeds."
+            )
+        item = self.store.get_item(item_id)
+        self._verify_local_artifact(*self._local_artifact(item, artifact_name)[:3])
+        if item.server_meeting_id is None:
+            raise PipelineError("Artifact upload requires an existing server meeting.")
+        self._reconcile(item)
+        if self.store.stage(item_id, upload_stage)["status"] != StageStatus.SUCCEEDED.value:
+            self._run_stage(item_id, upload_stage, on_stage=on_stage)
+        uploads = (Stage.VIDEO_UPLOAD, Stage.AUDIO_UPLOAD, Stage.TRANSCRIPT_UPLOAD)
+        if all(
+            self.store.stage(item_id, stage)["status"] == StageStatus.SUCCEEDED.value for stage in uploads
+        ):
+            final_status = self.store.stage(item_id, Stage.FINAL_RECONCILE)["status"]
+            if final_status != StageStatus.SUCCEEDED.value:
+                self._run_stage(item_id, Stage.FINAL_RECONCILE, on_stage=on_stage)
+        return self.store.get_item(item_id)
 
     def process(
         self,
@@ -153,13 +196,11 @@ class Orchestrator:
         try:
             item = self.store.get_item(item_id)
             self._execute(item, stage, cancel=cancel)
-            self.store.save_item(item)
+            self.store.persist_stage_output(item, stage)
             self.store.finish_stage(item_id, stage)
             if on_stage is not None:
                 on_stage(stage, StageStatus.SUCCEEDED)
         except Exception as exception:
-            if isinstance(exception, RemoteArtifactMissing):
-                raise
             diagnostic = "".join(
                 traceback.format_exception(type(exception), exception, exception.__traceback__)
             )

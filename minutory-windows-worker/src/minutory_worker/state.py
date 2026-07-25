@@ -6,7 +6,6 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 
@@ -22,6 +21,28 @@ from .domain import (
 )
 
 SCHEMA_VERSION = 3
+
+STAGE_OUTPUT_COLUMNS: dict[Stage, tuple[str, ...]] = {
+    Stage.PROBE: (
+        "duration_seconds",
+        "probe_width",
+        "probe_height",
+        "probe_fps",
+        "probe_bitrate",
+    ),
+    Stage.SOURCE: (
+        "selected_video_path",
+        "selected_video_sha256",
+        "selected_video_bytes",
+    ),
+    Stage.WAV: ("wav_path", "audio_sha256", "audio_bytes"),
+    Stage.TRANSCRIBE: ("transcript_path", "transcript_sha256", "transcript_bytes"),
+    Stage.MEETING: ("server_meeting_id",),
+    Stage.VIDEO_UPLOAD: (),
+    Stage.AUDIO_UPLOAD: (),
+    Stage.TRANSCRIPT_UPLOAD: (),
+    Stage.FINAL_RECONCILE: (),
+}
 
 
 class StateError(RuntimeError):
@@ -259,47 +280,87 @@ class StateStore:
                 [(item.item_id, stage.value, StageStatus.PENDING.value) for stage in STAGE_ORDER],
             )
 
-    def save_item(self, item: WorkerItem) -> None:
-        values = asdict(item)
-        source = values.pop("source")
-        columns = [
-            "title",
-            "title_manually_edited",
-            "meeting_at",
-            "meeting_at_manually_edited",
-            "client_id",
-            "compression_preset",
-            "duration_seconds",
-            "probe_width",
-            "probe_height",
-            "probe_fps",
-            "probe_bitrate",
-            "selected_video_path",
-            "wav_path",
-            "transcript_path",
-            "selected_video_sha256",
-            "audio_sha256",
-            "transcript_sha256",
-            "selected_video_bytes",
-            "audio_bytes",
-            "transcript_bytes",
-            "server_meeting_id",
-        ]
+    def persist_stage_output(self, item: WorkerItem, stage: Stage) -> None:
+        """Persist only columns owned by a currently running stage."""
+        columns = STAGE_OUTPUT_COLUMNS[stage]
         with self.transaction() as connection:
+            status = connection.execute(
+                "SELECT status FROM stages WHERE item_id = ? AND stage = ?",
+                (item.item_id, stage.value),
+            ).fetchone()
+            if status is None or status["status"] != StageStatus.RUNNING.value:
+                raise StateError(f"Stage {stage.value} is not running.")
+            if not columns:
+                return
             cursor = connection.execute(
                 f"UPDATE items SET {', '.join(f'{column} = ?' for column in columns)}, "
                 "updated_at = CURRENT_TIMESTAMP WHERE item_id = ?",
-                [values[column] for column in columns] + [item.item_id],
+                [getattr(item, column) for column in columns] + [item.item_id],
             )
             if cursor.rowcount != 1:
                 raise StateError(f"Unknown item {item.item_id}.")
+
+    def replace_source_identity(
+        self,
+        item_id: str,
+        *,
+        expected: SourceIdentity,
+        replacement: SourceIdentity,
+    ) -> bool:
+        """Replace changed source identity and invalidate every derived stage atomically."""
+        with self.transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT items.*, stages.attempts AS meeting_attempts
+                FROM items JOIN stages ON stages.item_id = items.item_id AND stages.stage = ?
+                WHERE items.item_id = ?
+                """,
+                (Stage.MEETING.value, item_id),
+            ).fetchone()
+            if row is None:
+                raise StateError(f"Unknown item {item_id}.")
+            stored = SourceIdentity(
+                path=str(row["source_path"]),
+                size=int(row["source_size"]),
+                mtime_ns=int(row["source_mtime_ns"]),
+                sha256=str(row["source_sha256"]) if row["source_sha256"] else None,
+            )
+            if stored != expected:
+                raise StateError("Source identity changed concurrently; refresh and try again.")
+            if stored == replacement:
+                return False
+            if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
+                raise StateError(
+                    "Source cannot change after a server meeting attempt; create a new worker item."
+                )
+            self._refuse_running(connection, item_id, "Source cannot change while processing.")
             connection.execute(
                 """
                 UPDATE items SET source_path = ?, source_size = ?, source_mtime_ns = ?,
-                    source_sha256 = ? WHERE item_id = ?
+                    source_sha256 = ?, duration_seconds = NULL, probe_width = NULL,
+                    probe_height = NULL, probe_fps = NULL, probe_bitrate = NULL,
+                    selected_video_path = NULL, selected_video_sha256 = NULL,
+                    selected_video_bytes = NULL, wav_path = NULL, audio_sha256 = NULL,
+                    audio_bytes = NULL, transcript_path = NULL, transcript_sha256 = NULL,
+                    transcript_bytes = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE item_id = ?
                 """,
-                (source["path"], source["size"], source["mtime_ns"], source["sha256"], item.item_id),
+                (
+                    replacement.path,
+                    replacement.size,
+                    replacement.mtime_ns,
+                    replacement.sha256,
+                    item_id,
+                ),
             )
+            connection.execute(
+                """
+                UPDATE stages SET status = ?, user_error = NULL, diagnostic = NULL,
+                    started_at = NULL, completed_at = NULL WHERE item_id = ?
+                """,
+                (StageStatus.PENDING.value, item_id),
+            )
+            return True
 
     def get_item(self, item_id: str) -> WorkerItem:
         with self._lock:
@@ -366,6 +427,7 @@ class StateStore:
             ).fetchone()
             if row is None:
                 raise StateError(f"Unknown item {item_id}.")
+            self._refuse_running(connection, item_id, "Metadata cannot change while processing.")
             if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
                 raise StateError(
                     "Metadata cannot change after a server meeting attempt; create a new worker item."
@@ -401,12 +463,7 @@ class StateStore:
                 raise StateError(f"Unknown item {item_id}.")
             if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
                 raise StateError("Items with a server meeting attempt cannot be removed.")
-            running = connection.execute(
-                "SELECT 1 FROM stages WHERE item_id = ? AND status = ? LIMIT 1",
-                (item_id, StageStatus.RUNNING.value),
-            ).fetchone()
-            if running is not None:
-                raise StateError("A running item cannot be removed.")
+            self._refuse_running(connection, item_id, "A running item cannot be removed.")
             connection.execute("DELETE FROM items WHERE item_id = ?", (item_id,))
 
     def start_stage(self, item_id: str, stage: Stage) -> None:
@@ -486,11 +543,21 @@ class StateStore:
                 """
                 UPDATE stages SET status = ?, user_error = NULL, diagnostic = NULL,
                     started_at = NULL, completed_at = NULL
-                WHERE item_id = ? AND stage = ?
+                WHERE item_id = ? AND stage = ? AND status != ?
                 """,
                 [
-                    (StageStatus.PENDING.value, item_id, upload_stage.value),
-                    (StageStatus.PENDING.value, item_id, Stage.FINAL_RECONCILE.value),
+                    (
+                        StageStatus.PENDING.value,
+                        item_id,
+                        upload_stage.value,
+                        StageStatus.RUNNING.value,
+                    ),
+                    (
+                        StageStatus.PENDING.value,
+                        item_id,
+                        Stage.FINAL_RECONCILE.value,
+                        StageStatus.RUNNING.value,
+                    ),
                 ],
             )
 
@@ -510,6 +577,7 @@ class StateStore:
             ).fetchone()
             if row is None:
                 raise StateError(f"Unknown item {item_id}.")
+            self._refuse_running(connection, item_id, "Compression cannot change while processing.")
             if row["compression_preset"] == preset:
                 return False
             if row["server_meeting_id"] is not None or row["meeting_attempts"] > 0:
@@ -536,6 +604,19 @@ class StateStore:
                 [(StageStatus.PENDING.value, item_id, stage.value) for stage in stages],
             )
             return True
+
+    @staticmethod
+    def _refuse_running(
+        connection: sqlite3.Connection,
+        item_id: str,
+        message: str,
+    ) -> None:
+        running = connection.execute(
+            "SELECT 1 FROM stages WHERE item_id = ? AND status = ? LIMIT 1",
+            (item_id, StageStatus.RUNNING.value),
+        ).fetchone()
+        if running is not None:
+            raise StateError(message)
 
     def reconcile_success(self, item_id: str, stage: Stage) -> None:
         """Record durable server success without pretending a local attempt ran."""

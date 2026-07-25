@@ -103,7 +103,13 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
     elif require_windows_gpu:
         checks.append(Check("RX 7900 XTX", False, "Hardware verification must run on Windows 11."))
     model = Path(__file__).resolve().parents[2] / "models/large-v3"
-    model_files = ("model.bin", "config.json", "tokenizer.json")
+    model_files = (
+        "model.bin",
+        "config.json",
+        "tokenizer.json",
+        "vocabulary.json",
+        "preprocessor_config.json",
+    )
     missing = [name for name in model_files if not (model / name).is_file()]
     checks.append(
         Check(

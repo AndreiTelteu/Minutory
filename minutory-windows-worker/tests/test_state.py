@@ -172,19 +172,37 @@ def test_list_state_cli_is_read_only_and_does_not_require_token(
 
 
 def test_compression_preset_mutation_is_transactional(store: StateStore, item) -> None:
-    for stage in Stage:
-        store.reconcile_success(item.item_id, stage)
     item = store.get_item(item.item_id)
+    item.duration_seconds = 10
+    store.start_stage(item.item_id, Stage.PROBE)
+    store.persist_stage_output(item, Stage.PROBE)
+    store.finish_stage(item.item_id, Stage.PROBE)
     item.selected_video_path = "video.mp4"
-    item.wav_path = "audio.wav"
-    item.transcript_path = "transcript.json"
     item.selected_video_sha256 = "a" * 64
-    item.audio_sha256 = "b" * 64
-    item.transcript_sha256 = "c" * 64
     item.selected_video_bytes = 10
+    store.start_stage(item.item_id, Stage.SOURCE)
+    store.persist_stage_output(item, Stage.SOURCE)
+    store.finish_stage(item.item_id, Stage.SOURCE)
+    item.wav_path = "audio.wav"
+    item.audio_sha256 = "b" * 64
     item.audio_bytes = 20
+    store.start_stage(item.item_id, Stage.WAV)
+    store.persist_stage_output(item, Stage.WAV)
+    store.finish_stage(item.item_id, Stage.WAV)
+    item.transcript_path = "transcript.json"
+    item.transcript_sha256 = "c" * 64
     item.transcript_bytes = 30
-    store.save_item(item)
+    store.start_stage(item.item_id, Stage.TRANSCRIBE)
+    store.persist_stage_output(item, Stage.TRANSCRIBE)
+    store.finish_stage(item.item_id, Stage.TRANSCRIBE)
+    for stage in (
+        Stage.MEETING,
+        Stage.VIDEO_UPLOAD,
+        Stage.AUDIO_UPLOAD,
+        Stage.TRANSCRIPT_UPLOAD,
+        Stage.FINAL_RECONCILE,
+    ):
+        store.reconcile_success(item.item_id, stage)
 
     assert store.set_compression_preset(item.item_id, "quality")
     changed = store.get_item(item.item_id)
@@ -205,10 +223,35 @@ def test_preset_validation_and_post_server_refusal(store: StateStore, item) -> N
     with pytest.raises(ValueError, match="Unsupported"):
         type(item)(source=item.source, title="Invalid", compression_preset="invalid")
     item.server_meeting_id = 91
-    store.save_item(item)
+    store.reconcile_success(item.item_id, Stage.PROBE)
+    store.start_stage(item.item_id, Stage.MEETING)
+    store.persist_stage_output(item, Stage.MEETING)
+    store.finish_stage(item.item_id, Stage.MEETING)
     with pytest.raises(StateError, match="new worker item"):
         store.set_compression_preset(item.item_id, "compact")
     assert store.get_item(item.item_id).compression_preset == "balanced"
+
+
+@pytest.mark.parametrize("stage", [Stage.SOURCE, Stage.WAV, Stage.TRANSCRIBE])
+def test_preset_refuses_while_generation_stage_is_running(store: StateStore, item, stage: Stage) -> None:
+    dependencies = {
+        Stage.SOURCE: (Stage.PROBE,),
+        Stage.WAV: (Stage.PROBE, Stage.SOURCE),
+        Stage.TRANSCRIBE: (Stage.PROBE, Stage.SOURCE, Stage.WAV),
+    }[stage]
+    for dependency in dependencies:
+        store.reconcile_success(item.item_id, dependency)
+    store.start_stage(item.item_id, stage)
+    with pytest.raises(StateError, match="while processing"):
+        store.set_compression_preset(item.item_id, "quality")
+    with pytest.raises(StateError, match="while processing"):
+        store.update_metadata(
+            item.item_id,
+            title="Concurrent edit",
+            meeting_at=item.meeting_at,
+            client_id=item.client_id,
+        )
+    store.fail_stage(item.item_id, stage, "Stopped", "test cleanup")
 
 
 def test_metadata_and_preset_refuse_after_ambiguous_meeting_attempt(store: StateStore, item) -> None:

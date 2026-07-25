@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import traceback
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,8 @@ from minutory_worker.api import (
     ArtifactState,
     ArtifactUploadResult,
     MeetingState,
+    TransportFailure,
+    WorkerApiClient,
 )
 from minutory_worker.domain import Stage, StageStatus, stream_sha256
 from minutory_worker.media import CommandResult, MediaService
@@ -20,6 +24,7 @@ from minutory_worker.orchestrator import (
     Orchestrator,
     RemoteArtifactMissing,
 )
+from minutory_worker.presentation import QueueController, diagnostic_text
 from minutory_worker.whisper import BackendResult, BackendSegment, WhisperService
 
 
@@ -264,10 +269,122 @@ def test_first_run_requires_remote_final_confirmation(store, item, tmp_path) -> 
         orchestrator.process(item.item_id)
     assert api.reconciled == 1
     assert store.stage(item.item_id, Stage.TRANSCRIPT_UPLOAD)["status"] == StageStatus.PENDING
-    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.PENDING
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.FAILED
     orchestrator.process(item.item_id)
     assert api.uploads == ["video", "audio", "transcript", "transcript"]
     assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
+
+
+def test_probe_preflight_stops_before_source(store, item, tmp_path) -> None:
+    orchestrator, runner, backend, api = services(store, item, tmp_path)
+    result = orchestrator.preflight(item.item_id)
+    assert result.duration_seconds == 10
+    assert store.stage(item.item_id, Stage.PROBE)["status"] == StageStatus.SUCCEEDED
+    assert store.stage(item.item_id, Stage.SOURCE)["status"] == StageStatus.PENDING
+    assert runner.compresses == 0
+    assert backend.calls == 0
+    assert api.created == 0
+
+
+def test_explicit_artifact_retry_uploads_only_requested_then_reconciles(store, item, tmp_path) -> None:
+    orchestrator, runner, backend, api = services(store, item, tmp_path)
+    orchestrator.process(item.item_id)
+    before = (runner.probes, runner.compresses, runner.wavs, backend.calls)
+    api.remote["audio"] = None
+    orchestrator.retry_artifact(item.item_id, "audio")
+    assert api.uploads == ["video", "audio", "transcript", "audio"]
+    assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == before
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
+
+
+def test_meeting_stage_refuses_concurrent_metadata_and_persists_only_meeting_id(
+    store, item, tmp_path
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingApi:
+        def create_meeting(self, stage_item):
+            assert stage_item.client_id == 52
+            entered.set()
+            assert release.wait(2)
+            return MeetingState(
+                id=700,
+                worker_item_id=stage_item.item_id,
+                client_id=52,
+                title=stage_item.title,
+                meeting_at=stage_item.meeting_at,
+                duration_seconds=stage_item.duration_seconds,
+                start_transcript_server=False,
+                artifacts={},
+            )
+
+    store.reconcile_success(item.item_id, Stage.PROBE)
+    orchestrator = Orchestrator(store, object(), object(), BlockingApi(), tmp_path / "work")
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            orchestrator._run_stage(item.item_id, Stage.MEETING)
+        except BaseException as exception:
+            errors.append(exception)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert entered.wait(1)
+    with pytest.raises(Exception, match="while processing"):
+        store.update_metadata(
+            item.item_id,
+            title="Wrong client race",
+            meeting_at=item.meeting_at,
+            client_id=7,
+        )
+    release.set()
+    thread.join(2)
+    assert not errors
+    persisted = store.get_item(item.item_id)
+    assert persisted.client_id == 52
+    assert persisted.title == "Planning"
+    assert persisted.server_meeting_id == 700
+
+
+def test_transport_token_never_reaches_persisted_or_gui_diagnostics(store, item, tmp_path) -> None:
+    token = "review-token-never-display"
+
+    class LeakingTransport:
+        def request(self, *args, **kwargs):
+            raise TransportFailure(f"socket failed with Bearer {token}")
+
+    api = WorkerApiClient(
+        "https://example.test",
+        token,
+        LeakingTransport(),
+        max_attempts=1,
+        sleeper=lambda _: None,
+    )
+    store.reconcile_success(item.item_id, Stage.PROBE)
+    orchestrator = Orchestrator(store, object(), object(), api, tmp_path / "work")
+    with pytest.raises(ApiError) as caught:
+        orchestrator._run_stage(item.item_id, Stage.MEETING)
+    formatted = "".join(
+        traceback.format_exception(type(caught.value), caught.value, caught.value.__traceback__)
+    )
+    row = store.stage(item.item_id, Stage.MEETING)
+
+    class ClientApi:
+        def list_clients(self):
+            return []
+
+    view = QueueController(store, ClientApi(), timezone="Europe/Bucharest").view(item.item_id)
+    copied = diagnostic_text(view)
+    for rendered in (
+        str(caught.value),
+        repr(caught.value),
+        formatted,
+        str(row["diagnostic"]),
+        copied,
+    ):
+        assert token not in rendered
 
 
 @pytest.mark.parametrize("artifact", ["video", "audio", "transcript"])

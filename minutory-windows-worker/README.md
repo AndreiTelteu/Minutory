@@ -13,16 +13,20 @@ delegate ASR to Laravel.
 
 1. Copy `.env.example` to the ignored `.env` and set the Worker API URL/token.
 2. Obtain a release-approved `manifests/runtime-assets.local.json` containing
-   verified immutable HTTPS URLs and SHA-256 values.
-3. Double-click `start.bat`. It invokes the strict PowerShell bootstrap when the
-   managed environment is absent, then launches the GUI with `pythonw.exe`.
+   verified immutable HTTPS URLs, archive SHA-256 values, and normalized
+   installed-tree SHA-256 values.
+3. Double-click `start.bat`. Every launch runs non-mutating bootstrap verification.
+   A missing, partial, stale, or modified runtime triggers a full staged bootstrap;
+   only a completely verified venv receives the readiness marker and is launched.
 
 The tracked manifest deliberately contains unresolved values instead of invented
 hashes. Bootstrap fails closed until a release workstation verifies those assets.
-`bootstrap.ps1 -DryRun` validates without downloading or writing anything and
-reports unresolved assets as an error. `bootstrap.ps1 -Verify` performs no downloads and verifies the
-installed assets, Python, FFmpeg, ROCm CTranslate2, visible HIP device, RX 7900
-XTX, and Large v3 model.
+`bootstrap.ps1 -DryRun` validates the exact schema/archive layout without
+downloading or writing and reports unresolved assets as an error.
+`bootstrap.ps1 -Verify` performs no downloads and checks expected files,
+installed-tree digests, the manifest/requirements/schema readiness fingerprint,
+venv dependencies, Python, FFmpeg, ROCm CTranslate2, visible HIP device, RX 7900
+XTX, and the declared Large v3 model snapshot.
 
 All downloaded/generated data remains below ignored `.venv/`, `libs/`, `models/`,
 `cache/`, `work/`, `state/`, and `logs/`.
@@ -35,7 +39,7 @@ uv sync --extra dev
 QT_QPA_PLATFORM=offscreen uv run pytest
 uv run ruff format --check .
 uv run ruff check .
-uv run mypy
+uv run mypy src/minutory_worker
 ```
 
 Tests use fake subprocess, ASR, and HTTP transports. Qt tests use the offscreen
@@ -61,9 +65,12 @@ HTTPS; plain HTTP is accepted only for loopback development endpoints.
 
 ## Queue and shutdown behavior
 
-Drop several supported video files or use **Add files**. Canonical paths are
-deduplicated and the queue is restored from SQLite after restart. Choose a client,
-edit the suggested title/date, and select a compression preset before starting.
+Drop MP4, MOV, AVI, or WebM files, or use **Add files**. Canonical paths are
+deduplicated and the queue is restored from SQLite after restart. New files run
+probe-only preflight in the serialized background lane; restored unprobed files
+can use **Preflight unprobed**. Review duration/resolution/FPS and the size
+estimate, choose a client, edit the suggested title/date, and select a compression
+preset before starting.
 Metadata and presets become immutable as soon as meeting creation is attempted,
 because a lost response may hide a committed server row. This preserves the API
 idempotency contract.
@@ -74,6 +81,9 @@ compression/audio extraction can be cancelled safely and leaves a retryable
 failed stage. Active transcription cannot be cancelled and the application
 refuses to close until it finishes, avoiding CTranslate2/HIP teardown during ASR.
 Errors are concise; the diagnostics disclosure contains copyable redacted detail.
+Failed or reconciliation-reset uploads expose separate video/audio/transcript
+retry controls. They reconcile first, never request replacement, upload only the
+requested artifact when needed, and finalize when all remote artifacts match.
 
 ## Runtime boundary
 
@@ -82,6 +92,9 @@ CTranslate2 ROCm/HIP Windows wheel pinned to 4.8.1. The CTranslate2 API uses
 `device="cuda"` for HIP and `compute_type="float16"`. `faster-whisper` is imported
 lazily, and one model object remains alive for the worker process lifetime.
 `whisper.cpp` is neither the default nor a fallback.
+Production always loads the verified local `models/large-v3` directory. Launchers
+force `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`; a missing model is an
+actionable startup error, never a network download.
 
 See [Architecture](docs/architecture.md), [Stage 3 notes](docs/stage3-operations.md),
 and [Stage 4 Windows operations](docs/stage4-operations.md).

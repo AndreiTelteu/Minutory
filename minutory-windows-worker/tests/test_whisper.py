@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from minutory_worker.config import WorkerConfig
+from minutory_worker.runtime import build_orchestrator
 from minutory_worker.whisper import (
     BackendResult,
     BackendSegment,
@@ -95,10 +99,45 @@ def test_invalid_transcript_preserves_known_good_file(tmp_path: Path) -> None:
     assert list(tmp_path.glob(".transcript.json.*.tmp")) == []
 
 
-def test_faster_whisper_defaults_and_does_not_import_at_construction() -> None:
-    backend = FasterWhisperBackend()
+def test_faster_whisper_defaults_and_does_not_import_at_construction(tmp_path: Path) -> None:
+    backend = FasterWhisperBackend(tmp_path / "large-v3")
     assert backend.model_name == "large-v3"
     assert backend.device == "cuda"
     assert backend.compute_type == "float16"
-    assert backend.model_path is None
+    assert backend.model_path == tmp_path / "large-v3"
     assert backend._model is None
+
+
+def test_faster_whisper_loads_only_the_explicit_local_model(monkeypatch, tmp_path: Path) -> None:
+    captured = {}
+
+    def model(path, **kwargs):
+        captured["path"] = path
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=model))
+    local = tmp_path / "models" / "large-v3"
+    backend = FasterWhisperBackend(local)
+    backend._get_model()
+    assert captured == {
+        "path": str(local),
+        "device": "cuda",
+        "compute_type": "float16",
+    }
+
+
+def test_production_runtime_refuses_missing_local_model_before_opening_state(tmp_path: Path) -> None:
+    config = WorkerConfig(
+        api_base_url="https://example.test",
+        api_token="fake-token",
+        ffmpeg_path=tmp_path / "ffmpeg.exe",
+        ffprobe_path=tmp_path / "ffprobe.exe",
+        model_dir=tmp_path / "models",
+        runtime_dir=tmp_path / "libs",
+        work_dir=tmp_path / "work",
+        state_db=tmp_path / "state.sqlite3",
+    )
+    with pytest.raises(RuntimeError, match="network model downloads are disabled"):
+        build_orchestrator(config)
+    assert not config.state_db.exists()

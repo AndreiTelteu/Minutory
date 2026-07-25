@@ -78,8 +78,10 @@ class HttpxTransport:
                 data=data,
                 timeout=self._httpx.Timeout(timeout.read, connect=timeout.connect),
             )
-        except Exception as exception:
-            raise TransportFailure(str(exception)) from exception
+        except Exception:
+            # Transport exception messages and causes may echo request headers. Discard
+            # both at the first boundary so no bearer token can enter diagnostics.
+            raise TransportFailure("The HTTP transport failed.") from None
         return TransportResponse(response.status_code, response.headers, response.content)
 
 
@@ -376,7 +378,7 @@ class WorkerApiClient:
                     transient=False,
                 )
             if not retryable or not last_error.transient or attempt >= self._max_attempts:
-                raise last_error
+                raise last_error from None
             self._sleeper(
                 last_error.retry_after if last_error.retry_after is not None else min(2 ** (attempt - 1), 8)
             )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import traceback
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
@@ -101,6 +102,27 @@ def test_artifact_upload_retries_stream_from_start(tmp_path: Path) -> None:
     assert [call["file_bytes"] for call in transport.calls] == [b"artifact", b"artifact"]
     assert transport.calls[0]["url"].endswith("/meetings/12/artifacts/audio")
     assert transport.calls[0]["data"] is None
+
+
+@pytest.mark.parametrize(
+    ("extension", "media_type"),
+    [
+        (".mp4", "video/mp4"),
+        (".mov", "video/quicktime"),
+        (".avi", "video/x-msvideo"),
+        (".webm", "video/webm"),
+    ],
+)
+def test_every_advertised_video_extension_has_exact_api_mime(
+    tmp_path: Path, extension: str, media_type: str
+) -> None:
+    path = tmp_path / f"video{extension}"
+    path.write_bytes(b"video")
+    transport = RecordingTransport(
+        [response(200, {"data": {"state": "uploaded", "sha256": "a" * 64, "bytes": 5}})]
+    )
+    WorkerApiClient("https://example.test", "token", transport).upload_artifact(1, "video", path)
+    assert transport.calls[0]["files"]["file"][2] == media_type
 
 
 @pytest.mark.parametrize("status", [401, 409, 422])
@@ -244,3 +266,25 @@ def test_httpx_multipart_retry_rewinds_full_file_and_maps_timeouts(tmp_path: Pat
     assert len(bodies) == 2
     assert all(body.count(artifact) == 1 for body in bodies)
     assert all(timeout["connect"] == 7 and timeout["read"] == 321 for timeout in timeout_extensions)
+
+
+def test_httpx_transport_discards_raw_exception_message_and_cause() -> None:
+    token = "exact-bearer-value-never-display"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError(f"failed Authorization: {request.headers['authorization']}")
+
+    client = WorkerApiClient(
+        "https://example.test",
+        token,
+        HttpxTransport(httpx.Client(transport=httpx.MockTransport(handler))),
+        max_attempts=1,
+    )
+    with pytest.raises(ApiError) as caught:
+        client.list_clients()
+    rendered = "".join(
+        traceback.format_exception(type(caught.value), caught.value, caught.value.__traceback__)
+    )
+    assert token not in str(caught.value)
+    assert token not in repr(caught.value)
+    assert token not in rendered
