@@ -42,9 +42,10 @@ export interface Meeting {
     id: number;
     client_id: number;
     title: string;
-    video_path: string;
+    video_path: string | null;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     duration: number | null;
+    meeting_at: string | null;
     uploaded_at: string;
     processing_started_at: string | null;
     processing_completed_at: string | null;

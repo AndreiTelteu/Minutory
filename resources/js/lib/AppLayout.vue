@@ -119,13 +119,13 @@
                         leave-to-class="-translate-y-2 opacity-0"
                     >
                         <div
-                            v-if="$page.props.flash?.success"
+                            v-if="flash?.success"
                             class="pointer-events-auto flex items-center gap-2.5 rounded-lg border border-border bg-ground-raised px-3.5 py-2.5 text-[13px] font-medium shadow-[0_4px_12px_rgb(0_0_0/0.08)] dark:shadow-[0_4px_12px_rgb(0_0_0/0.24)]"
                         >
                             <svg class="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            <span>{{ $page.props.flash.success }}</span>
+                            <span>{{ flash.success }}</span>
                             <button @click="clearFlashMessage('success')" class="ml-1 text-ink-tertiary hover:text-ink">
                                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -142,7 +142,7 @@
                         leave-to-class="-translate-y-2 opacity-0"
                     >
                         <div
-                            v-if="$page.props.flash?.error"
+                            v-if="flash?.error"
                             class="pointer-events-auto flex items-center gap-2.5 rounded-lg border border-border bg-ground-raised px-3.5 py-2.5 text-[13px] font-medium shadow-[0_4px_12px_rgb(0_0_0/0.08)] dark:shadow-[0_4px_12px_rgb(0_0_0/0.24)]"
                         >
                             <svg class="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -152,7 +152,7 @@
                                     d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
                                 />
                             </svg>
-                            <span>{{ $page.props.flash.error }}</span>
+                            <span>{{ flash.error }}</span>
                             <button @click="clearFlashMessage('error')" class="ml-1 text-ink-tertiary hover:text-ink">
                                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -177,7 +177,7 @@
 
 <script setup lang="ts">
 import { Link, router, usePage } from '@inertiajs/vue3';
-import { computed, h, onMounted, onUnmounted, ref, type FunctionalComponent } from 'vue';
+import { computed, h, onMounted, onUnmounted, ref } from 'vue';
 import ErrorBoundary from './ErrorBoundary.vue';
 import NetworkStatus from './NetworkStatus.vue';
 import SpotlightSearch from './SpotlightSearch.vue';
@@ -196,8 +196,15 @@ const isDark = ref(false);
 const toastComponent = ref();
 const spotlightRef = ref<InstanceType<typeof SpotlightSearch>>();
 
-const page = usePage<{ sidebarMeetings?: SidebarMeeting[] }>();
+const page = usePage<{
+    sidebarMeetings?: SidebarMeeting[];
+    flash?: {
+        success?: string;
+        error?: string;
+    };
+}>();
 const sidebarMeetings = computed(() => page.props.sidebarMeetings ?? []);
+const flash = computed(() => page.props.flash);
 
 const isActiveMeeting = (id: number) => {
     return page.component.startsWith('Meetings/Show') && (page.props as any).meeting?.id === id;
@@ -242,7 +249,7 @@ const clearFlashMessage = (_type: 'success' | 'error') => {
     router.reload({ only: [] });
 };
 
-const icon = (paths: string): FunctionalComponent =>
+const icon = (paths: string) =>
     h(
         'svg',
         { fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', viewBox: '0 0 24 24' },

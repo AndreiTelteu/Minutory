@@ -21,14 +21,39 @@
                     <label for="title" class="mb-1.5 block text-[13px] font-medium">Title</label>
                     <input
                         id="title"
-                        v-model="form.title"
+                        :value="suggestionState.title.value"
+                        @input="handleTitleInput"
                         type="text"
                         required
                         placeholder="e.g. Q3 planning review"
                         class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink placeholder:text-ink-tertiary focus:ring-2 focus:outline-none"
-                        :class="errors.title ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'"
+                        :class="
+                            errors.title ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'
+                        "
                     />
                     <p v-if="errors.title" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ errors.title }}</p>
+                </div>
+
+                <!-- Meeting date and time -->
+                <div>
+                    <label for="meeting_at" class="mb-1.5 block text-[13px] font-medium">
+                        Meeting date and time <span class="font-normal text-ink-tertiary">(optional)</span>
+                    </label>
+                    <input
+                        id="meeting_at"
+                        :value="suggestionState.localDateTime.value"
+                        @input="handleMeetingAtInput"
+                        type="datetime-local"
+                        step="1"
+                        class="tnum w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink [color-scheme:light] focus:ring-2 focus:outline-none dark:[color-scheme:dark]"
+                        :class="
+                            errors.meeting_at
+                                ? 'border-red-400 focus:ring-red-400/30'
+                                : 'border-border-strong focus:border-accent focus:ring-accent/30'
+                        "
+                    />
+                    <p v-if="errors.meeting_at" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ errors.meeting_at }}</p>
+                    <p v-else class="mt-1 text-[12px] text-ink-tertiary">Suggested from a timestamp at the start of the filename when available.</p>
                 </div>
 
                 <!-- Client -->
@@ -39,7 +64,11 @@
                         v-model="form.client_id"
                         required
                         class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink focus:ring-2 focus:outline-none"
-                        :class="errors.client_id ? 'border-red-400 focus:ring-red-400/30' : 'border-border-strong focus:border-accent focus:ring-accent/30'"
+                        :class="
+                            errors.client_id
+                                ? 'border-red-400 focus:ring-red-400/30'
+                                : 'border-border-strong focus:border-accent focus:ring-accent/30'
+                        "
                     >
                         <option value="">Select a client</option>
                         <option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option>
@@ -85,8 +114,18 @@
                         </div>
 
                         <div v-else>
-                            <svg class="mx-auto h-8 w-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            <svg
+                                class="mx-auto h-8 w-8 text-green-600 dark:text-green-400"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
                             </svg>
                             <p class="mt-3 text-[13px] font-medium">{{ form.video.name }}</p>
                             <p class="tnum mt-0.5 text-[12px] text-ink-tertiary">{{ formatFileSize(form.video.size) }}</p>
@@ -109,8 +148,17 @@
                         class="hidden"
                     />
 
-                    <div v-if="errors.video" class="mt-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/30">
-                        <svg class="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <div
+                        v-if="errors.video"
+                        class="mt-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-900/50 dark:bg-red-950/30"
+                    >
+                        <svg
+                            class="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            viewBox="0 0 24 24"
+                        >
                             <path
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
@@ -127,7 +175,10 @@
                             <span class="tnum">{{ uploadProgress }}%</span>
                         </div>
                         <div class="h-1.5 w-full overflow-hidden rounded-full bg-ground-subtle">
-                            <div class="h-full rounded-full bg-accent transition-[width] duration-300 ease-out" :style="{ width: uploadProgress + '%' }" />
+                            <div
+                                class="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
+                                :style="{ width: uploadProgress + '%' }"
+                            />
                         </div>
                         <p class="mt-1 text-[12px] text-ink-tertiary">Don't close this page while uploading.</p>
                     </div>
@@ -143,7 +194,10 @@
                             >
                                 Try again
                             </button>
-                            <button @click="clearUploadError" class="px-2.5 py-1 text-[12px] font-medium text-red-600 hover:text-red-700 dark:text-red-400">
+                            <button
+                                @click="clearUploadError"
+                                class="px-2.5 py-1 text-[12px] font-medium text-red-600 hover:text-red-700 dark:text-red-400"
+                            >
                                 Choose different file
                             </button>
                         </div>
@@ -160,7 +214,7 @@
                     </Link>
                     <button
                         type="submit"
-                        :disabled="processing || !form.title || !form.client_id || !form.video"
+                        :disabled="processing || !suggestionState.title.value || !form.client_id || !form.video"
                         class="rounded-md bg-accent-solid px-4 py-1.5 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {{ processing ? 'Uploading…' : 'Upload meeting' }}
@@ -173,6 +227,13 @@
 
 <script setup lang="ts">
 import AppLayout from '@/lib/AppLayout.vue';
+import { localDateTimeToOffsetIso, parseMeetingFilename } from '@/lib/meetingFilename';
+import {
+    applyMeetingFilenameSuggestion,
+    clearAutomaticMeetingSuggestions,
+    createMeetingSuggestionState,
+    markSuggestedFieldEdited,
+} from '@/lib/meetingSuggestionState';
 import { Link, router } from '@inertiajs/vue3';
 import { onMounted, onUnmounted, reactive, ref } from 'vue';
 
@@ -196,8 +257,8 @@ const uploadError = ref<string>('');
 const retryCount = ref(0);
 const maxRetries = 3;
 
+const suggestionState = reactive(createMeetingSuggestionState());
 const form = reactive({
-    title: '',
     client_id: '',
     video: null as File | null,
 });
@@ -219,8 +280,7 @@ const handleFileSelect = (event: Event) => {
     if (target.files && target.files[0]) {
         const file = target.files[0];
         if (validateFile(file)) {
-            form.video = file;
-            uploadError.value = '';
+            selectFile(file);
         }
     }
 };
@@ -232,14 +292,27 @@ const handleDrop = (event: DragEvent) => {
     if (event.dataTransfer?.files && event.dataTransfer.files[0]) {
         const file = event.dataTransfer.files[0];
         if (validateFile(file)) {
-            form.video = file;
-            uploadError.value = '';
+            selectFile(file);
         }
     }
 };
 
+const selectFile = (file: File) => {
+    form.video = file;
+    uploadError.value = '';
+    applyMeetingFilenameSuggestion(suggestionState, parseMeetingFilename(file.name));
+};
+
+const handleTitleInput = (event: Event) => {
+    markSuggestedFieldEdited(suggestionState.title, (event.target as HTMLInputElement).value);
+};
+
+const handleMeetingAtInput = (event: Event) => {
+    markSuggestedFieldEdited(suggestionState.localDateTime, (event.target as HTMLInputElement).value);
+};
+
 const handleDragLeave = (event: DragEvent) => {
-    if (!event.currentTarget?.contains(event.relatedTarget as Node)) {
+    if (!(event.currentTarget as Node | null)?.contains(event.relatedTarget as Node)) {
         isDragOver.value = false;
     }
 };
@@ -266,6 +339,7 @@ const validateFile = (file: File): boolean => {
 
 const removeFile = () => {
     form.video = null;
+    clearAutomaticMeetingSuggestions(suggestionState);
     if (fileInput.value) {
         fileInput.value.value = '';
     }
@@ -282,54 +356,67 @@ const formatFileSize = (bytes: number) => {
 const submit = () => {
     if (!form.video || !validateFile(form.video)) return;
 
+    const meetingAt = suggestionState.localDateTime.value ? localDateTimeToOffsetIso(suggestionState.localDateTime.value) : null;
+    if (suggestionState.localDateTime.value && !meetingAt) {
+        uploadError.value = 'Please enter a valid meeting date and time.';
+        return;
+    }
+
     processing.value = true;
     uploadProgress.value = 0;
     uploadError.value = '';
 
-    const formData = new FormData();
-    formData.append('title', form.title);
-    formData.append('client_id', form.client_id);
-    formData.append('video', form.video);
+    router.post(
+        route('meetings.store'),
+        {
+            title: suggestionState.title.value,
+            client_id: form.client_id,
+            meeting_at: meetingAt,
+            video: form.video,
+        },
+        {
+            forceFormData: true,
+            onProgress: (progress?: { percentage?: number }) => {
+                if (progress?.percentage !== undefined && progress?.percentage !== null) {
+                    uploadProgress.value = Math.round(progress.percentage);
+                }
+            },
+            onSuccess: () => {
+                processing.value = false;
+                uploadProgress.value = null;
+                retryCount.value = 0;
+                if (window.toast) {
+                    window.toast.success('Meeting uploaded', 'Your meeting is now being processed.');
+                }
+            },
+            onError: (errors) => {
+                processing.value = false;
+                uploadProgress.value = null;
 
-    router.post(route('meetings.store'), formData, {
-        onProgress: (progress?: { percentage?: number }) => {
-            if (progress?.percentage !== undefined && progress?.percentage !== null) {
-                uploadProgress.value = Math.round(progress.percentage);
-            }
-        },
-        onSuccess: () => {
-            processing.value = false;
-            uploadProgress.value = null;
-            retryCount.value = 0;
-            if (window.toast) {
-                window.toast.success('Meeting uploaded', 'Your meeting is now being processed.');
-            }
-        },
-        onError: (errors) => {
-            processing.value = false;
-            uploadProgress.value = null;
+                if (errors.video) {
+                    uploadError.value = errors.video;
+                } else if (errors.title) {
+                    uploadError.value = 'Please check the meeting title';
+                } else if (errors.client_id) {
+                    uploadError.value = 'Please select a client';
+                } else if (errors.meeting_at) {
+                    uploadError.value = errors.meeting_at;
+                } else {
+                    uploadError.value = 'Upload failed. Please try again.';
+                }
 
-            if (errors.video) {
-                uploadError.value = errors.video;
-            } else if (errors.title) {
-                uploadError.value = 'Please check the meeting title';
-            } else if (errors.client_id) {
-                uploadError.value = 'Please select a client';
-            } else {
-                uploadError.value = 'Upload failed. Please try again.';
-            }
-
-            if (window.toast && retryCount.value < maxRetries) {
-                window.toast.error('Upload failed', uploadError.value, {
-                    actions: [{ label: 'Try again', handler: retryUpload, primary: true }],
-                });
-            }
+                if (window.toast && retryCount.value < maxRetries) {
+                    window.toast.error('Upload failed', uploadError.value, {
+                        actions: [{ label: 'Try again', handler: retryUpload, primary: true }],
+                    });
+                }
+            },
+            onFinish: () => {
+                processing.value = false;
+                uploadProgress.value = null;
+            },
         },
-        onFinish: () => {
-            processing.value = false;
-            uploadProgress.value = null;
-        },
-    });
+    );
 };
 
 const retryUpload = () => {
@@ -345,6 +432,7 @@ const retryUpload = () => {
 const clearUploadError = () => {
     uploadError.value = '';
     form.video = null;
+    clearAutomaticMeetingSuggestions(suggestionState);
     if (fileInput.value) {
         fileInput.value.value = '';
     }

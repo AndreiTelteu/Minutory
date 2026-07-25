@@ -91,7 +91,9 @@
                                         class="inline-flex items-center gap-1 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase transition-colors hover:text-ink"
                                     >
                                         {{ col.label }}
-                                        <span v-if="filterForm.sort === col.key" class="text-ink">{{ filterForm.direction === 'asc' ? '↑' : '↓' }}</span>
+                                        <span v-if="filterForm.sort === col.key" class="text-ink">{{
+                                            filterForm.direction === 'asc' ? '↑' : '↓'
+                                        }}</span>
                                     </button>
                                     <span v-else class="text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">{{ col.label }}</span>
                                 </th>
@@ -116,8 +118,15 @@
                                         />
                                     </div>
                                 </td>
-                                <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary">{{ formatDate(meeting.uploaded_at) }}</td>
-                                <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary">{{ formatDuration(meeting.duration) }}</td>
+                                <td
+                                    class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary"
+                                    :title="meeting.meeting_at ? `Uploaded ${formatDate(meeting.uploaded_at)}` : 'Using upload time'"
+                                >
+                                    {{ formatDate(meeting.meeting_at ?? meeting.uploaded_at) }}
+                                </td>
+                                <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary">
+                                    {{ formatDuration(meeting.duration) }}
+                                </td>
                                 <td class="px-5 py-2.5 text-right">
                                     <button
                                         @click.stop="deleteMeeting(meeting)"
@@ -181,6 +190,7 @@ interface Meeting {
     title: string;
     client: Client;
     status: 'pending' | 'processing' | 'completed' | 'failed';
+    meeting_at: string | null;
     uploaded_at: string;
     duration: number | null;
     elapsed_time?: number;
@@ -232,7 +242,7 @@ const filterForm = reactive({
     status: props.filters.status || '',
     date_from: props.filters.date_from || '',
     date_to: props.filters.date_to || '',
-    sort: props.filters.sort || 'uploaded_at',
+    sort: props.filters.sort || 'meeting_at',
     direction: (props.filters.direction as 'asc' | 'desc') || 'desc',
 });
 
@@ -240,7 +250,7 @@ const columns = [
     { key: 'title', label: 'Meeting', sortable: true, headerClass: '' },
     { key: 'client', label: 'Client', sortable: true, headerClass: '' },
     { key: 'status', label: 'Status', sortable: false, headerClass: '' },
-    { key: 'uploaded_at', label: 'Uploaded', sortable: true, headerClass: '' },
+    { key: 'meeting_at', label: 'Meeting time', sortable: true, headerClass: '' },
     { key: 'duration', label: 'Duration', sortable: true, headerClass: '' },
 ];
 

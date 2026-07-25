@@ -17,6 +17,10 @@
                     <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                 </div>
                 <p class="mt-1 text-[13px] text-ink-secondary">{{ meeting.client.name }}</p>
+                <div class="tnum mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-tertiary">
+                    <span v-if="meeting.meeting_at">Meeting time {{ formatDateTime(meeting.meeting_at) }}</span>
+                    <span>Uploaded {{ formatDateTime(meeting.uploaded_at) }}</span>
+                </div>
             </div>
 
             <!-- Processing status -->
@@ -75,7 +79,10 @@
                                 Next →
                             </button>
                         </div>
-                        <span v-if="transcriptionViewerRef && transcriptionViewerRef.currentSegmentIndex >= 0" class="tnum text-[12px] text-ink-tertiary">
+                        <span
+                            v-if="transcriptionViewerRef && transcriptionViewerRef.currentSegmentIndex >= 0"
+                            class="tnum text-[12px] text-ink-tertiary"
+                        >
                             {{ transcriptionViewerRef.currentSegmentIndex + 1 }} / {{ transcriptionViewerRef.filteredTranscriptions.length }}
                         </span>
                     </div>
@@ -117,13 +124,22 @@
                         @pause="onVideoPause"
                         @error="onVideoError"
                     />
-                    <div v-if="!meeting.transcriptions || meeting.transcriptions.length === 0" class="py-8 text-center text-[13px] text-ink-secondary">
+                    <div
+                        v-if="!meeting.transcriptions || meeting.transcriptions.length === 0"
+                        class="py-8 text-center text-[13px] text-ink-secondary"
+                    >
                         No transcription available for this meeting.
                     </div>
                 </div>
 
                 <div v-else class="py-16 text-center">
-                    <svg class="mx-auto h-10 w-10 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <svg
+                        class="mx-auto h-10 w-10 text-red-500 dark:text-red-400"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        viewBox="0 0 24 24"
+                    >
                         <path
                             stroke-linecap="round"
                             stroke-linejoin="round"
@@ -177,6 +193,7 @@ interface Meeting {
     title: string;
     client: Client;
     status: 'pending' | 'processing' | 'completed' | 'failed';
+    meeting_at: string | null;
     uploaded_at: string;
     duration?: number;
     estimated_processing_time?: number;
@@ -202,6 +219,12 @@ const videoCurrentTime = ref(0);
 const videoDuration = ref(0);
 const isVideoPlaying = ref(false);
 const pendingSeekTime = ref<number | null>(null);
+
+const formatDateTime = (value: string) =>
+    new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+    }).format(new Date(value));
 
 const isLargeScreen = computed(() => {
     if (typeof window === 'undefined') return true;

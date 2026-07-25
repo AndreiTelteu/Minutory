@@ -5,8 +5,12 @@ namespace App\Http\Controllers;
 use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
+use Carbon\CarbonImmutable;
+use Closure;
+use DateTimeImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\File;
 use Inertia\Inertia;
@@ -28,34 +32,37 @@ class MeetingController extends Controller
         }
 
         if ($request->filled('date_from')) {
-            $query->whereDate('uploaded_at', '>=', $request->date_from);
+            $query->whereDate(DB::raw('COALESCE(meetings.meeting_at, meetings.uploaded_at)'), '>=', $request->date_from);
         }
 
         if ($request->filled('date_to')) {
-            $query->whereDate('uploaded_at', '<=', $request->date_to);
+            $query->whereDate(DB::raw('COALESCE(meetings.meeting_at, meetings.uploaded_at)'), '<=', $request->date_to);
         }
 
         // Sorting
-        $allowedSorts = ['uploaded_at', 'title', 'status', 'duration', 'client'];
-        $sort = in_array($request->get('sort'), $allowedSorts, true) ? $request->get('sort') : 'uploaded_at';
+        $allowedSorts = ['meeting_at', 'uploaded_at', 'title', 'status', 'duration', 'client'];
+        $sort = in_array($request->get('sort'), $allowedSorts, true) ? $request->get('sort') : 'meeting_at';
         $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
 
         if ($sort === 'client') {
             $query->select('meetings.*')
                 ->leftJoin('clients', 'clients.id', '=', 'meetings.client_id')
                 ->orderBy('clients.name', $direction)
-                ->orderBy('meetings.created_at', 'desc');
+                ->orderBy('meetings.id', 'desc');
+        } elseif ($sort === 'meeting_at') {
+            $query->orderByRaw("COALESCE(meetings.meeting_at, meetings.uploaded_at) {$direction}")
+                ->orderBy('meetings.id', 'desc');
         } else {
             $column = match ($sort) {
-                'title' => 'title',
-                'status' => 'status',
-                'duration' => 'duration',
-                'uploaded_at' => 'uploaded_at',
-                default => 'uploaded_at',
+                'title' => 'meetings.title',
+                'status' => 'meetings.status',
+                'duration' => 'meetings.duration',
+                'uploaded_at' => 'meetings.uploaded_at',
+                default => 'meetings.uploaded_at',
             };
 
             $query->orderBy($column, $direction)
-                ->orderBy('created_at', 'desc');
+                ->orderBy('meetings.id', 'desc');
         }
 
         $meetings = $query->paginate(15)->withQueryString();
@@ -82,6 +89,7 @@ class MeetingController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'client_id' => 'required|exists:clients,id',
+            'meeting_at' => $this->meetingAtRules(),
             'video' => [
                 'required',
                 'file',
@@ -94,6 +102,7 @@ class MeetingController extends Controller
             'title.max' => 'Meeting title cannot exceed 255 characters.',
             'client_id.required' => 'Please select a client for this meeting.',
             'client_id.exists' => 'The selected client is invalid.',
+            'meeting_at' => 'Please enter a valid meeting date and time.',
             'video.required' => 'Please select a video file to upload.',
             'video.file' => 'The uploaded file is not valid.',
             'video.types' => 'The video must be a file of type: MP4, MOV, AVI, or WebM.',
@@ -122,6 +131,7 @@ class MeetingController extends Controller
                 'title' => $validated['title'],
                 'client_id' => $validated['client_id'],
                 'status' => 'pending',
+                'meeting_at' => $this->normalizeMeetingAt($validated['meeting_at'] ?? null),
                 'uploaded_at' => now(),
                 'video_path' => '', // Will be updated after file storage
             ]);
@@ -199,7 +209,7 @@ class MeetingController extends Controller
             \Log::error('Meeting upload failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'user_input' => $request->only(['title', 'client_id']),
+                'user_input' => $request->only(['title', 'client_id', 'meeting_at']),
             ]);
 
             return redirect()->back()
@@ -254,9 +264,16 @@ class MeetingController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'client_id' => 'required|exists:clients,id',
+            'meeting_at' => $this->meetingAtRules(),
         ]);
 
-        $meeting->update($validated);
+        $meeting->update([
+            'title' => $validated['title'],
+            'client_id' => $validated['client_id'],
+            ...($request->exists('meeting_at')
+                ? ['meeting_at' => $this->normalizeMeetingAt($validated['meeting_at'] ?? null)]
+                : []),
+        ]);
 
         return redirect()->route('meetings.show', $meeting)
             ->with('success', 'Meeting updated successfully.');
@@ -319,5 +336,38 @@ class MeetingController extends Controller
                 'error' => 'Failed to retrieve meeting status',
             ], 500);
         }
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function meetingAtRules(): array
+    {
+        return [
+            'nullable',
+            'string',
+            function (string $attribute, mixed $value, Closure $fail): void {
+                if (! is_string($value)
+                    || preg_match('/^[1-9]\\d{3}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-](?:(?:0\\d|1[0-3]):[0-5]\\d|14:00)$/', $value) !== 1) {
+                    $fail('The meeting date and time must include a UTC offset.');
+
+                    return;
+                }
+
+                $parts = date_parse($value);
+                if ($parts['error_count'] > 0 || $parts['warning_count'] > 0) {
+                    $fail('The meeting date and time must be valid.');
+
+                    return;
+                }
+
+                new DateTimeImmutable($value);
+            },
+        ];
+    }
+
+    private function normalizeMeetingAt(mixed $value): ?CarbonImmutable
+    {
+        return is_string($value) ? CarbonImmutable::parse($value)->utc() : null;
     }
 }

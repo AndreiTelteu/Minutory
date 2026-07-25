@@ -3,13 +3,15 @@ import createServer from '@inertiajs/vue3/server';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createSSRApp, DefineComponent, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
-import { ZiggyVue } from 'ziggy-js';
+import { Config, ZiggyVue } from 'ziggy-js';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 createServer(
-    (page) =>
-        createInertiaApp({
+    (page) => {
+        const ziggy = page.props.ziggy as Config & { location: string };
+
+        return createInertiaApp({
             page,
             render: renderToString,
             title: (title) => (title ? `${title} - ${appName}` : appName),
@@ -18,10 +20,11 @@ createServer(
                 createSSRApp({ render: () => h(App, props) })
                     .use(plugin)
                     .use(ZiggyVue, {
-                        ...page.props.ziggy,
-                        location: new URL(page.props.ziggy.location),
+                        ...ziggy,
+                        location: new URL(ziggy.location),
                     }),
-        }),
+        });
+    },
     { cluster: true },
 );
 

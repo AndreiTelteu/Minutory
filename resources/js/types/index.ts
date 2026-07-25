@@ -15,8 +15,9 @@ export interface Meeting {
     client_id: number;
     client: Client;
     status: 'pending' | 'processing' | 'completed' | 'failed';
-    video_path: string;
+    video_path: string | null;
     duration: number | null;
+    meeting_at: string | null;
     uploaded_at: string;
     processing_started_at: string | null;
     processing_completed_at: string | null;

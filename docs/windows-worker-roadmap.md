@@ -186,13 +186,13 @@ Acceptance: 48 Stage 1 tests / 253 assertions pass; migrations and rollback pass
 
 ### Stage 2 — Laravel/Vue meeting datetime UX
 
-- [ ] Add create/update datetime validation and persistence.
-- [ ] Add deterministic TypeScript filename parser and unit tests.
-- [ ] Add create form `datetime-local` and manual-edit preservation.
-- [ ] Display/filter/sort actual meeting time appropriately.
-- [ ] Build/typecheck and visually verify live UI.
+- [x] Add create/update datetime validation and persistence.
+- [x] Add deterministic TypeScript filename parser and unit tests.
+- [x] Add create form `datetime-local` and manual-edit preservation.
+- [x] Display/filter/sort actual meeting time appropriately.
+- [x] Build/typecheck and visually verify live UI.
 
-Acceptance: Pest request tests, frontend parser tests, production build, browser screenshot/console check.
+Acceptance: 9 frontend parser/ownership tests and 63 focused Pest tests / 458 assertions pass; typecheck, ESLint, production build, and Pint pass. The live create form was verified at the public URL with the required filename, manual-edit preservation, clean console, and no visible layout defects.
 
 ### Stage 3 — Windows worker core
 
