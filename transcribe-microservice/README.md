@@ -1,76 +1,69 @@
+# Minutory transcription runtime
 
-# Copyright. The entire code in this repository belogs to the contribuitors of [rishikanthc/Scriberr](https://github.com/rishikanthc/Scriberr)
+The transcription CLI is installed inside Minutory's Lerd custom container and exposes three lazy-loaded drivers with one normalized JSON output format.
 
-# Transcribe Microservice (WhisperX + optional diarization/alignment)
+## Drivers
 
-This Dockerized CLI lets you run the existing transcribe.py as a standalone tool.
+| Driver | Model | Runtime |
+|---|---|---|
+| `parakeet` | NVIDIA Parakeet TDT 0.6B v3 | ONNX-ASR / CPU |
+| `whisper` | OpenAI Whisper large-v3 | faster-whisper / CTranslate2 |
+| `qwen` | Qwen/Qwen3-ASR-1.7B | qwen-asr / PyTorch |
 
-## Image build
+All Hugging Face/model artifacts are cached under `storage/app/model`. They survive Lerd image rebuilds because the project is bind-mounted into the container.
 
-- CPU build:
-  docker build -t scriberr-local:latest transcribe-microservice
+## CLI
 
-- CUDA build (requires a CUDA-capable host + nvidia-container-toolkit):
-  docker build --build-arg WITH_CUDA=true -t scriberr-local:latest transcribe-microservice
+```bash
+/opt/minutory-venv/bin/python transcribe-microservice/transcribe.py \
+  --audio-file storage/app/public/meetings/1/91/audio.wav \
+  --output-file storage/app/public/meetings/1/91/transcript.json \
+  --driver whisper \
+  --model-dir storage/app/model \
+  --language ro \
+  --device cpu \
+  --compute-type auto
+```
 
-## Basic usage
+Important options:
 
-Mount an input video/audio as /input.mp4 and call the CLI:
+- `--driver parakeet|whisper|qwen`
+- `--model-dir`: persistent model/cache directory
+- `--language`: defaults to `ro`; Qwen maps it to its canonical `Romanian` name
+- `--device cpu|cuda`
+- `--compute-type`: faster-whisper compute type; `auto` selects `int8` on CPU and `float16` on CUDA
+- `--threads`: CPU thread count
+- `--qwen-chunk-seconds`: Qwen segment size, default 30 seconds
 
-- Explicit audio file:
-  docker run --rm -v "$(pwd)/videoinput.mp4:/input.mp4:ro" scriberr-local:latest transcribe.py --audio-file /input.mp4
+The output file is replaced atomically only after a valid, non-empty transcript has been generated.
 
-- Convenience: if you map to /input.mp4 and do NOT pass --audio-file, the wrapper injects it automatically:
-  docker run --rm -v "$(pwd)/videoinput.mp4:/input.mp4:ro" scriberr-local:latest transcribe.py --model-size small --device cpu
+## Laravel configuration
 
-Output is written inside the container unless you bind-mount a location. For example, to get transcript.json on the host:
+The default driver is configured in `config/services.php`:
 
-  docker run --rm \
-    -v "$(pwd)/videoinput.mp4:/input.mp4:ro" \
-    -v "$(pwd):/out" \
-    scriberr-local:latest \
-    transcribe.py --audio-file /input.mp4 --output-file /out/transcript.json
+```dotenv
+TRANSCRIBING_DRIVER=parakeet
+TRANSCRIBING_MODEL_PATH=/home/andrei/minutory/storage/app/model
+TRANSCRIBING_LANGUAGE=ro
+TRANSCRIBING_DEVICE=cpu
+TRANSCRIBING_COMPUTE_TYPE=auto
+```
 
-## Environment
+Queue a specific meeting for regeneration with another driver:
 
-- HF_API_KEY: optional HuggingFace token that enables private models (needed for some pyannote diarization pipelines).
+```bash
+php artisan meeting:transcribe 91 whisper
+php artisan meeting:transcribe 91 parakeet
+php artisan meeting:transcribe 91 qwen
+```
 
-The container sets:
-- HF_HUB_DISABLE_TELEMETRY=1
-- TRUST_REMOTE_CODE=1
+The existing database transcript remains available while the replacement is generated. Database rows are replaced in a transaction only after the new JSON passes validation.
 
-Models cache at /scriberr/models (bind mount it to reuse across runs):
-  -v "$(pwd)/.models:/scriberr/models"
+## Runtime build
 
-## CLI parameters
+```bash
+lerd check
+lerd rebuild
+```
 
-Taken directly from transcribe.py:
-
-- --audio-file (str, required): Path to the audio/video file to transcribe. If omitted and /input.mp4 exists, the wrapper injects --audio-file /input.mp4 automatically.
-- --model-size (str, default: small): Whisper model size (tiny, base, small, medium, large, large-v2).
-- --language (str, optional): Force Whisper language (e.g., "en"). If omitted, Whisper attempts detection.
-- --diarize (flag, default: false): Enable speaker diarization via pyannote.
-- --align (flag, default: false): Run alignment of Whisper segments.
-- --device (str, default: cpu): Device for inference ("cpu" or "cuda").
-- --compute-type (str, default: int8): Compute type for WhisperX (e.g., "float16", "float32", "int8"). Fallback to float32 if float16 not supported is implemented.
-- --output-file (str, default: transcript.json): Output JSON file path.
-- --threads (int, default: 1): Number of threads used by torch for CPU inference.
-- --models-dir (str, default: /scriberr/models): Directory used to download/cache models.
-- --diarization-model (str, default: pyannote/speaker-diarization-3.1): Model used when --diarize is enabled.
-- --batch_size (int, default: 16): Batch size during transcription.
-
-## Notes on diarization
-
-- For pyannote diarization pipelines, some models require an HF token. Export HF_API_KEY and pass it with -e:
-  docker run --rm -e HF_API_KEY=xxxxx \
-    -v "$(pwd)/videoinput.mp4:/input.mp4:ro" \
-    scriberr-local:latest transcribe.py --diarize --audio-file /input.mp4
-
-## GPU usage
-
-Build with --build-arg WITH_CUDA=true and run with NVIDIA runtime:
-  docker run --rm --gpus all \
-    -v "$(pwd)/videoinput.mp4:/input.mp4:ro" \
-    scriberr-local:latest \
-    transcribe.py --device cuda --audio-file /input.mp4
-
+The image uses Debian/glibc because CTranslate2 and PyTorch do not provide compatible Alpine/musl wheels for the previous Python 3.14 Lerd FPM image.

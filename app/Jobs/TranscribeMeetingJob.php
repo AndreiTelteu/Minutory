@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -22,7 +23,7 @@ class TranscribeMeetingJob implements ShouldBeUnique
         return (string) $this->meeting->getKey();
     }
 
-    public $timeout = 3600; // 1 hour timeout
+    public $timeout = 10800; // Qwen CPU inference can exceed one hour
 
     public $failOnTimeout = true;
 
@@ -39,7 +40,8 @@ class TranscribeMeetingJob implements ShouldBeUnique
      * Create a new job instance.
      */
     public function __construct(
-        public Meeting $meeting
+        public Meeting $meeting,
+        public ?string $driver = null,
     ) {
         // Managed by uv in the custom FPM image. Keep it outside the Lerd
         // bind-mounted project directory so image rebuilds own the runtime.
@@ -103,19 +105,33 @@ class TranscribeMeetingJob implements ShouldBeUnique
             $threads = $this->getCpuThreads();
             Log::info("Using {$threads} threads for transcription on meeting {$meetingId}");
 
-            // Build transcription command using native Python
-            $hfToken = config('services.huggingface.token', env('HUGGINGFACE_TOKEN', ''));
+            $driver = $this->driver ?? config('services.transcribing.driver', 'parakeet');
+            $allowedDrivers = ['parakeet', 'whisper', 'qwen'];
+            if (! in_array($driver, $allowedDrivers, true)) {
+                throw new \InvalidArgumentException("Unsupported transcription driver: {$driver}");
+            }
+
+            $modelPath = config('services.transcribing.model_path', storage_path('app/model'));
+            File::ensureDirectoryExists($modelPath);
+            $device = config('services.transcribing.device', 'cpu');
+            $computeType = config('services.transcribing.compute_type', 'auto');
+            $language = config('services.transcribing.language', 'ro');
 
             $transcribeCmd = sprintf(
-                'KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --output-file %s --threads %d --device cpu 2>&1',
-                $this->pythonPath,
-                $this->transcribeScript,
-                $wavPath,
-                $transcriptPath,
-                $threads
+                'KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --output-file %s --driver %s --model-dir %s --threads %d --device %s --compute-type %s --language %s 2>&1',
+                escapeshellarg($this->pythonPath),
+                escapeshellarg($this->transcribeScript),
+                escapeshellarg($wavPath),
+                escapeshellarg($transcriptPath),
+                escapeshellarg($driver),
+                escapeshellarg($modelPath),
+                $threads,
+                escapeshellarg($device),
+                escapeshellarg($computeType),
+                escapeshellarg($language),
             );
 
-            Log::info("Running transcription for meeting {$meetingId}");
+            Log::info("Running {$driver} transcription for meeting {$meetingId}");
             $this->runShell($transcribeCmd, $this->timeout - 120);
 
             // 3) Parse and save transcription segments
@@ -155,26 +171,26 @@ class TranscribeMeetingJob implements ShouldBeUnique
         $content = File::get($transcriptPath);
         $transcript = json_decode($content, true);
 
-        if (! $transcript || ! isset($transcript['segments'])) {
-            Log::warning("Invalid transcript format at: {$transcriptPath}");
-
-            return;
+        if (! $transcript || ! isset($transcript['segments']) || ! is_array($transcript['segments'])) {
+            throw new \RuntimeException("Invalid transcript format at: {$transcriptPath}");
         }
 
-        // Clear existing transcriptions for this meeting
-        Transcription::where('meeting_id', $this->meeting->id)->delete();
+        DB::transaction(function () use ($transcript): void {
+            // Replace the old transcript only after the new JSON is valid.
+            Transcription::where('meeting_id', $this->meeting->id)->delete();
 
-        foreach ($transcript['segments'] as $segment) {
-            Transcription::create([
-                'meeting_id' => $this->meeting->id,
-                'speaker' => $segment['speaker'] ?? 'Unknown',
-                'text' => $segment['text'] ?? '',
-                'start_time' => $segment['start'] ?? 0,
-                'end_time' => $segment['end'] ?? 0,
-                // Parakeet's output does not expose a per-segment confidence score.
-                // Let the database default (1.00) represent an unavailable score.
-            ]);
-        }
+            foreach ($transcript['segments'] as $segment) {
+                Transcription::create([
+                    'meeting_id' => $this->meeting->id,
+                    'speaker' => $segment['speaker'] ?? 'Unknown',
+                    'text' => $segment['text'] ?? '',
+                    'start_time' => $segment['start'] ?? 0,
+                    'end_time' => $segment['end'] ?? 0,
+                    // Not every driver exposes a comparable confidence value.
+                    // Let the database default represent an unavailable score.
+                ]);
+            }
+        });
 
         Log::info('Saved '.count($transcript['segments'])." transcription segments for meeting {$this->meeting->id}");
     }
@@ -409,24 +425,13 @@ class TranscribeMeetingJob implements ShouldBeUnique
             $storageDir = dirname(Storage::disk('public')->path($this->meeting->video_path));
 
             if (File::exists($storageDir)) {
-                foreach ([
-                    $storageDir.DIRECTORY_SEPARATOR.'audio.wav',
-                    $storageDir.DIRECTORY_SEPARATOR.'transcript.json',
-                ] as $artifact) {
-                    File::delete($artifact);
-                }
+                // audio.wav is disposable. transcript.json is durable and may be
+                // the last known-good transcript during a failed retranscription.
+                File::delete($storageDir.DIRECTORY_SEPARATOR.'audio.wav');
             }
         } catch (\Exception $e) {
             Log::warning("Failed to cleanup temp files for meeting {$this->meeting->id}: ".$e->getMessage());
         }
-    }
-
-    /**
-     * Determine if the job should be retried based on the exception
-     */
-    public function retryUntil(): \DateTime
-    {
-        return now()->addMinutes(30); // Allow retries for 30 minutes
     }
 
     /**

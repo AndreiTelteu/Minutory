@@ -1,15 +1,21 @@
 domains:
   - minutory.dn.onlinedigital.ro
-php_version: "8.4"
 node_version: "22"
-framework: laravel
-framework_version: "12"
 services:
   - mysql
   - redis
 workers:
   - queue
   - schedule
+custom_workers:
+  queue:
+    label: Queue Worker
+    command: php artisan queue:work --sleep=3 --tries=3 --timeout=10800
+    restart: always
+  schedule:
+    label: Scheduler
+    command: php artisan schedule:work
+    restart: always
 container:
-  port: 0
+  port: 8080
   containerfile: Containerfile.lerd

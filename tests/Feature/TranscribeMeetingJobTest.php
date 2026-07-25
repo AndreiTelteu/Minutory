@@ -3,6 +3,7 @@
 use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
+use App\Models\Transcription;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
@@ -65,9 +66,47 @@ it('stores generated artifacts beside the uploaded video', function () {
 
     Storage::disk('public')->assertExists($meeting->video_path);
     Storage::disk('public')->assertMissing("meetings/{$client->id}/91/audio.wav");
-    Storage::disk('public')->assertMissing("meetings/{$client->id}/91/transcript.json");
+    Storage::disk('public')->assertExists("meetings/{$client->id}/91/transcript.json");
     expect(File::exists(storage_path("{$meeting->id}/audio.wav")))->toBeFalse()
         ->and(File::exists(storage_path("{$meeting->id}/transcript.json")))->toBeFalse();
+});
+
+it('atomically replaces transcription rows from valid output', function () {
+    Storage::fake('public');
+    $meeting = Meeting::factory()->create();
+    $old = Transcription::factory()->create([
+        'meeting_id' => $meeting->id,
+        'text' => 'old transcript',
+    ]);
+    $path = Storage::disk('public')->path('transcript.json');
+    File::put($path, json_encode([
+        'segments' => [
+            ['speaker' => 'unknown', 'text' => 'new first', 'start' => 0, 'end' => 1],
+            ['speaker' => 'unknown', 'text' => 'new second', 'start' => 1, 'end' => 2],
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    $method = new ReflectionMethod(new TranscribeMeetingJob($meeting), 'saveTranscriptionSegments');
+    $method->invoke(new TranscribeMeetingJob($meeting), $path);
+
+    expect(Transcription::query()->find($old->id))->toBeNull()
+        ->and($meeting->transcriptions()->pluck('text')->all())->toBe(['new first', 'new second']);
+});
+
+it('preserves transcription rows when output JSON is invalid', function () {
+    Storage::fake('public');
+    $meeting = Meeting::factory()->create();
+    $old = Transcription::factory()->create([
+        'meeting_id' => $meeting->id,
+        'text' => 'known good transcript',
+    ]);
+    $path = Storage::disk('public')->path('invalid-transcript.json');
+    File::put($path, '{invalid');
+    $job = new TranscribeMeetingJob($meeting);
+    $method = new ReflectionMethod($job, 'saveTranscriptionSegments');
+
+    expect(fn () => $method->invoke($job, $path))->toThrow(RuntimeException::class)
+        ->and(Transcription::query()->find($old->id)?->text)->toBe('known good transcript');
 });
 
 it('calculates progress tracking attributes correctly', function () {

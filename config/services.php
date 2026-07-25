@@ -42,4 +42,12 @@ return [
         'image' => env('SCRIBERR_DOCKER_IMAGE', 'scriberr-local:latest'),
     ],
 
+    'transcribing' => [
+        'driver' => env('TRANSCRIBING_DRIVER', 'parakeet'),
+        'model_path' => env('TRANSCRIBING_MODEL_PATH', storage_path('app/model')),
+        'language' => env('TRANSCRIBING_LANGUAGE', 'ro'),
+        'device' => env('TRANSCRIBING_DEVICE', 'cpu'),
+        'compute_type' => env('TRANSCRIBING_COMPUTE_TYPE', 'auto'),
+    ],
+
 ];

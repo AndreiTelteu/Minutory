@@ -110,7 +110,7 @@ it('makes transcription jobs unique per meeting', function () {
 
     expect($job)->toBeInstanceOf(ShouldBeUnique::class)
         ->and($job->uniqueId())->toBe((string) $job->meeting->id)
-        ->and($job->timeout)->toBe(3600)
+        ->and($job->timeout)->toBe(10800)
         ->and($job->failOnTimeout)->toBeTrue()
         ->and(isset($job->uniqueFor))->toBeFalse();
 });

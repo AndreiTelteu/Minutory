@@ -1,24 +1,57 @@
-# Minutory custom PHP-FPM image.
-# ffmpeg converts uploaded meetings to WAV; uv manages the isolated Python runtime
-# used by TranscribeMeetingJob. Application source is bind-mounted by Lerd at runtime.
-FROM lerd-php84-fpm:local
+# Minutory Lerd custom container on glibc.
+# PHP-FPM + Nginx serve Laravel; Python 3.12 runs all ASR drivers.
+FROM ghcr.io/astral-sh/uv:latest AS uv
+
+FROM docker.io/serversideup/php:8.4-fpm-nginx
+
+USER root
 
 ENV UV_NO_PROGRESS=1 \
     UV_LINK_MODE=copy \
     HF_HUB_DISABLE_TELEMETRY=1 \
+    HF_HOME=/var/www/html/storage/app/model \
+    HUGGINGFACE_HUB_CACHE=/var/www/html/storage/app/model/hub \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APP_BASE_DIR=/var/www/html \
+    NGINX_WEBROOT=/var/www/html/public \
+    NGINX_HTTP_PORT=8080 \
+    PHP_MEMORY_LIMIT=1024M \
+    PHP_UPLOAD_MAX_FILE_SIZE=2048M \
+    PHP_POST_MAX_SIZE=2048M \
+    PHP_MAX_EXECUTION_TIME=3600 \
+    SHOW_WELCOME_MESSAGE=false
 
-RUN apk add --no-cache \
-      ffmpeg \
-      python3 \
-      py3-numpy \
-      py3-onnxruntime \
-      uv \
-      libstdc++
+COPY --from=uv /uv /uvx /usr/local/bin/
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg sox libsox-fmt-all libsndfile1 libgomp1 \
+ && install-php-extensions bcmath gd intl sockets \
+ && uv python install 3.12 \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY transcribe-microservice/requirements.txt /tmp/minutory-requirements.txt
 
-RUN uv venv --system-site-packages --python python3 /opt/minutory-venv \
- && uv pip install --python /opt/minutory-venv/bin/python -r /tmp/minutory-requirements.txt \
+RUN uv venv --python 3.12 /opt/minutory-venv \
+ && uv pip install --python /opt/minutory-venv/bin/python \
+      torch --index-url https://download.pytorch.org/whl/cpu \
+ && uv pip install --python /opt/minutory-venv/bin/python \
+      -r /tmp/minutory-requirements.txt \
  && rm -f /tmp/minutory-requirements.txt
+
+ENV PHP_FPM_CHILD_PROCESS_USER=root \
+    PHP_FPM_CHILD_PROCESS_GROUP=root
+
+RUN sed -i 's|/usr/local/sbin/php-fpm --nodaemonize|/usr/local/sbin/php-fpm -R --nodaemonize|' \
+      /etc/s6-overlay/s6-rc.d/php-fpm/run
+
+# Lerd bind-mounts the project at the same absolute host path. Keep the base
+# image's standard document root pointed at that mount.
+RUN rm -rf /var/www/html \
+ && ln -s /home/andrei/minutory /var/www/html
+
+WORKDIR /var/www/html
+
+# Lerd runs rootless Podman: container root maps to the host user on bind mounts.
+# The base entrypoint also needs root to render Nginx/PHP configuration.
+USER root

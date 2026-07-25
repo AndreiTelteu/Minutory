@@ -1,5 +1,5 @@
-# Runtime Python dependencies for the Minutory transcription worker.
-# Alpine supplies NumPy and ONNX Runtime as native APK packages in Containerfile.lerd;
-# PyPI currently does not publish musllinux wheels compatible with this image.
+# Native dependencies are installed in the Debian/glibc Lerd custom image.
 onnx-asr>=0.10.2
 huggingface_hub>=0.20.0
+faster-whisper==1.2.1
+qwen-asr==0.0.6
