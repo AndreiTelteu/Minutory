@@ -18,7 +18,7 @@
                 </div>
                 <p class="mt-1 text-[13px] text-ink-secondary">{{ meeting.client.name }}</p>
                 <div class="tnum mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-tertiary">
-                    <span v-if="meeting.meeting_at">Meeting time {{ formatDateTime(meeting.meeting_at) }}</span>
+                    <span>Meeting time {{ formatDateTime(meeting.meeting_at) }}</span>
                     <span>Uploaded {{ formatDateTime(meeting.uploaded_at) }}</span>
                 </div>
             </div>
@@ -168,6 +168,7 @@
 
 <script setup lang="ts">
 import AppLayout from '@/lib/AppLayout.vue';
+import { formatBrowserDateTime } from '@/lib/browserDateTime';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
 import TranscriptionViewer from '@/lib/TranscriptionViewer.vue';
 import VideoPlayer from '@/lib/VideoPlayer.vue';
@@ -194,7 +195,7 @@ interface Meeting {
     client: Client;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     meeting_at: string | null;
-    uploaded_at: string;
+    uploaded_at: string | null;
     duration?: number;
     estimated_processing_time?: number;
     queue_progress?: number;
@@ -219,12 +220,9 @@ const videoCurrentTime = ref(0);
 const videoDuration = ref(0);
 const isVideoPlaying = ref(false);
 const pendingSeekTime = ref<number | null>(null);
+const timestampsReady = ref(false);
 
-const formatDateTime = (value: string) =>
-    new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-    }).format(new Date(value));
+const formatDateTime = (value: string | null) => formatBrowserDateTime(value, timestampsReady.value);
 
 const isLargeScreen = computed(() => {
     if (typeof window === 'undefined') return true;
@@ -306,6 +304,8 @@ const applyDeepLinkTimestamp = () => {
 };
 
 onMounted(() => {
+    timestampsReady.value = true;
+
     if (props.meeting.status === 'pending' || props.meeting.status === 'processing') {
         statusInterval = setInterval(pollStatus, 2000);
         pollStatus();

@@ -4,12 +4,13 @@ export interface MeetingFilenameSuggestion {
 }
 
 const LEADING_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})[ ](\d{2})-(\d{2})-(\d{2})(?:\s+|$)/;
-const TERMINAL_RECORDER_PROFILE = /(?:^|\s+)Fast\s+(?:720|1080|1440|2160)p\s*\d+(?:\s*FPS)?$/i;
+const RECORDER_FPS = String.raw`(?:23\.976|24|25|29\.97|30|48|50|59\.94|60|90|120|144|240)`;
+const TERMINAL_RECORDER_PROFILE = new RegExp(String.raw`(?:^|\s+)Fast\s+(?:720|1080|1440|2160)p\s*${RECORDER_FPS}(?:\s+FPS)?$`, 'i');
 
 const isLeapYear = (year: number): boolean => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 
 const isValidLocalDateTime = (year: number, month: number, day: number, hour: number, minute: number, second: number): boolean => {
-    if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
+    if (year < 1000 || year > 9999 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
         return false;
     }
 
@@ -64,7 +65,26 @@ export const localDateTimeToOffsetIso = (value: string): string | null => {
         return null;
     }
 
-    const localDate = new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]);
+    const localDate = new Date(0);
+    localDate.setHours(0, 0, 0, 0);
+    localDate.setFullYear(parts[0], parts[1] - 1, parts[2]);
+
+    // Date's "compatible" disambiguation selects the earlier offset during a
+    // fall-back fold. Spring-forward gaps normalize forward, so the component
+    // round-trip below deliberately rejects those nonexistent wall times.
+    localDate.setHours(parts[3], parts[4], parts[5], 0);
+
+    if (
+        localDate.getFullYear() !== parts[0] ||
+        localDate.getMonth() !== parts[1] - 1 ||
+        localDate.getDate() !== parts[2] ||
+        localDate.getHours() !== parts[3] ||
+        localDate.getMinutes() !== parts[4] ||
+        localDate.getSeconds() !== parts[5]
+    ) {
+        return null;
+    }
+
     const offsetMinutes = -localDate.getTimezoneOffset();
     const sign = offsetMinutes >= 0 ? '+' : '-';
     const absoluteOffset = Math.abs(offsetMinutes);

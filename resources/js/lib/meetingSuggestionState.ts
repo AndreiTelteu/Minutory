@@ -10,6 +10,16 @@ export interface MeetingSuggestionState {
     localDateTime: SuggestedFieldState;
 }
 
+export interface MeetingCreateRememberData {
+    suggestionState: MeetingSuggestionState;
+    clientId: string;
+}
+
+export interface RememberableMeetingCreateState extends MeetingCreateRememberData {
+    __remember: () => MeetingCreateRememberData;
+    __restore: (value: unknown) => RememberableMeetingCreateState;
+}
+
 export const createMeetingSuggestionState = (): MeetingSuggestionState => ({
     title: { value: '', manuallyEdited: false },
     localDateTime: { value: '', manuallyEdited: false },
@@ -45,4 +55,68 @@ export const resetMeetingSuggestionState = (state: MeetingSuggestionState): void
     state.title.manuallyEdited = false;
     state.localDateTime.value = '';
     state.localDateTime.manuallyEdited = false;
+};
+
+const restoreSuggestedField = (value: unknown): SuggestedFieldState => {
+    if (!value || typeof value !== 'object') {
+        return { value: '', manuallyEdited: false };
+    }
+
+    const candidate = value as Partial<SuggestedFieldState>;
+
+    return {
+        value: typeof candidate.value === 'string' ? candidate.value : '',
+        manuallyEdited: candidate.manuallyEdited === true,
+    };
+};
+
+export const restoreMeetingCreateRememberData = (value: unknown): MeetingCreateRememberData => {
+    if (!value || typeof value !== 'object') {
+        return {
+            suggestionState: createMeetingSuggestionState(),
+            clientId: '',
+        };
+    }
+
+    const candidate = value as {
+        suggestionState?: {
+            title?: unknown;
+            localDateTime?: unknown;
+        };
+        clientId?: unknown;
+    };
+
+    return {
+        suggestionState: {
+            title: restoreSuggestedField(candidate.suggestionState?.title),
+            localDateTime: restoreSuggestedField(candidate.suggestionState?.localDateTime),
+        },
+        clientId: typeof candidate.clientId === 'string' ? candidate.clientId : '',
+    };
+};
+
+export const serializeMeetingCreateRememberData = (state: MeetingCreateRememberData): MeetingCreateRememberData => ({
+    suggestionState: {
+        title: { ...state.suggestionState.title },
+        localDateTime: { ...state.suggestionState.localDateTime },
+    },
+    clientId: state.clientId,
+});
+
+export const createRememberableMeetingCreateState = (value?: unknown): RememberableMeetingCreateState => {
+    const data = restoreMeetingCreateRememberData(value);
+
+    return {
+        ...data,
+        __remember() {
+            return serializeMeetingCreateRememberData(this);
+        },
+        __restore(restored) {
+            const restoredData = restoreMeetingCreateRememberData(restored);
+            this.suggestionState = restoredData.suggestionState;
+            this.clientId = restoredData.clientId;
+
+            return this;
+        },
+    };
 };

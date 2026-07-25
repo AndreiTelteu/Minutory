@@ -18,7 +18,7 @@ export interface Meeting {
     video_path: string | null;
     duration: number | null;
     meeting_at: string | null;
-    uploaded_at: string;
+    uploaded_at: string | null;
     processing_started_at: string | null;
     processing_completed_at: string | null;
     created_at: string;

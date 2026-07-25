@@ -46,7 +46,7 @@ export interface Meeting {
     status: 'pending' | 'processing' | 'completed' | 'failed';
     duration: number | null;
     meeting_at: string | null;
-    uploaded_at: string;
+    uploaded_at: string | null;
     processing_started_at: string | null;
     processing_completed_at: string | null;
     client?: Client;

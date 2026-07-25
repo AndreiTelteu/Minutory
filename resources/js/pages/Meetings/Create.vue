@@ -61,7 +61,7 @@
                     <label for="client_id" class="mb-1.5 block text-[13px] font-medium">Client</label>
                     <select
                         id="client_id"
-                        v-model="form.client_id"
+                        v-model="rememberedState.clientId"
                         required
                         class="w-full rounded-md border bg-ground-raised px-3 py-2 text-[13px] text-ink focus:ring-2 focus:outline-none"
                         :class="
@@ -71,7 +71,7 @@
                         "
                     >
                         <option value="">Select a client</option>
-                        <option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option>
+                        <option v-for="client in clients" :key="client.id" :value="String(client.id)">{{ client.name }}</option>
                     </select>
                     <p v-if="errors.client_id" class="mt-1 text-[12px] text-red-600 dark:text-red-400">{{ errors.client_id }}</p>
                     <p class="mt-1 text-[12px] text-ink-tertiary">
@@ -214,7 +214,7 @@
                     </Link>
                     <button
                         type="submit"
-                        :disabled="processing || !suggestionState.title.value || !form.client_id || !form.video"
+                        :disabled="processing || !suggestionState.title.value || !rememberedState.clientId || !form.video"
                         class="rounded-md bg-accent-solid px-4 py-1.5 text-[13px] font-medium text-white transition-colors duration-150 hover:bg-accent-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {{ processing ? 'Uploading…' : 'Upload meeting' }}
@@ -231,10 +231,12 @@ import { localDateTimeToOffsetIso, parseMeetingFilename } from '@/lib/meetingFil
 import {
     applyMeetingFilenameSuggestion,
     clearAutomaticMeetingSuggestions,
-    createMeetingSuggestionState,
+    createRememberableMeetingCreateState,
     markSuggestedFieldEdited,
+    resetMeetingSuggestionState,
+    type RememberableMeetingCreateState,
 } from '@/lib/meetingSuggestionState';
-import { Link, router } from '@inertiajs/vue3';
+import { Link, router, useRemember } from '@inertiajs/vue3';
 import { onMounted, onUnmounted, reactive, ref } from 'vue';
 
 interface Client {
@@ -257,9 +259,12 @@ const uploadError = ref<string>('');
 const retryCount = ref(0);
 const maxRetries = 3;
 
-const suggestionState = reactive(createMeetingSuggestionState());
+const rememberedState = useRemember(
+    reactive(createRememberableMeetingCreateState()),
+    'Meetings/Create:meeting-metadata:v1',
+) as RememberableMeetingCreateState;
+const suggestionState = rememberedState.suggestionState;
 const form = reactive({
-    client_id: '',
     video: null as File | null,
 });
 
@@ -267,8 +272,8 @@ onMounted(() => {
     try {
         const params = new URLSearchParams(window.location.search);
         const qClientId = params.get('client_id');
-        if (qClientId) {
-            form.client_id = qClientId;
+        if (qClientId && rememberedState.clientId === '') {
+            rememberedState.clientId = qClientId;
         }
     } catch {
         // ignore
@@ -281,6 +286,8 @@ const handleFileSelect = (event: Event) => {
         const file = target.files[0];
         if (validateFile(file)) {
             selectFile(file);
+        } else {
+            clearSelectedVideo(false);
         }
     }
 };
@@ -293,6 +300,8 @@ const handleDrop = (event: DragEvent) => {
         const file = event.dataTransfer.files[0];
         if (validateFile(file)) {
             selectFile(file);
+        } else {
+            clearSelectedVideo(false);
         }
     }
 };
@@ -337,12 +346,19 @@ const validateFile = (file: File): boolean => {
     return true;
 };
 
-const removeFile = () => {
+const clearSelectedVideo = (clearError = true) => {
     form.video = null;
     clearAutomaticMeetingSuggestions(suggestionState);
+    if (clearError) {
+        uploadError.value = '';
+    }
     if (fileInput.value) {
         fileInput.value.value = '';
     }
+};
+
+const removeFile = () => {
+    clearSelectedVideo();
 };
 
 const formatFileSize = (bytes: number) => {
@@ -370,7 +386,7 @@ const submit = () => {
         route('meetings.store'),
         {
             title: suggestionState.title.value,
-            client_id: form.client_id,
+            client_id: rememberedState.clientId,
             meeting_at: meetingAt,
             video: form.video,
         },
@@ -385,6 +401,8 @@ const submit = () => {
                 processing.value = false;
                 uploadProgress.value = null;
                 retryCount.value = 0;
+                resetMeetingSuggestionState(suggestionState);
+                rememberedState.clientId = '';
                 if (window.toast) {
                     window.toast.success('Meeting uploaded', 'Your meeting is now being processed.');
                 }
@@ -431,11 +449,7 @@ const retryUpload = () => {
 
 const clearUploadError = () => {
     uploadError.value = '';
-    form.video = null;
-    clearAutomaticMeetingSuggestions(suggestionState);
-    if (fileInput.value) {
-        fileInput.value.value = '';
-    }
+    clearSelectedVideo();
 };
 
 const handleBeforeUnload = (event: BeforeUnloadEvent) => {

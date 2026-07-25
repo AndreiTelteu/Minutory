@@ -192,7 +192,7 @@ Acceptance: 48 Stage 1 tests / 253 assertions pass; migrations and rollback pass
 - [x] Display/filter/sort actual meeting time appropriately.
 - [x] Build/typecheck and visually verify live UI.
 
-Acceptance: 9 frontend parser/ownership tests and 63 focused Pest tests / 458 assertions pass; typecheck, ESLint, production build, and Pint pass. The live create form was verified at the public URL with the required filename, manual-edit preservation, clean console, and no visible layout defects.
+Acceptance: 19 frontend parser/ownership/timezone tests and 80 focused Pest tests / 624 assertions pass; typecheck, ESLint, client and SSR production builds, and Pint pass. The live create form was verified at the public URL with the required filename, manual-edit preservation, clean console, and no visible layout defects.
 
 ### Stage 3 — Windows worker core
 

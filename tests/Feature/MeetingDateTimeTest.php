@@ -91,11 +91,25 @@ it('strictly rejects invalid web meeting datetimes', function (string $meetingAt
     'UTC designator instead of numeric browser offset' => '2026-07-10T13:03:47Z',
     'impossible date' => '2026-02-30T13:03:47+03:00',
     'zero year' => '0000-01-01T13:03:47+03:00',
+    'year below frontend minimum' => '0999-01-01T13:03:47+03:00',
     'impossible time' => '2026-07-10T24:03:47+03:00',
     'offset out of range' => '2026-07-10T13:03:47+15:00',
     'minutes beyond the maximum offset' => '2026-07-10T13:03:47+14:30',
     'missing seconds' => '2026-07-10T13:03+03:00',
 ]);
+
+it('accepts the aligned minimum meeting year', function () {
+    $client = Client::factory()->create();
+    $meeting = Meeting::factory()->create(['client_id' => $client->id]);
+
+    $this->put(route('meetings.update', $meeting), [
+        'title' => 'Year one thousand',
+        'client_id' => $client->id,
+        'meeting_at' => '1000-01-02T03:04:05+00:00',
+    ])->assertRedirect(route('meetings.show', $meeting));
+
+    expect($meeting->fresh()->meeting_at?->utc()->format('Y-m-d\\TH:i:sP'))->toBe('1000-01-02T03:04:05+00:00');
+});
 
 it('exposes meeting and upload times on index and show props for a metadata-only meeting', function () {
     $meeting = Meeting::factory()->create([
@@ -122,5 +136,32 @@ it('exposes meeting and upload times on index and show props for a metadata-only
             ->has('meeting.uploaded_at')
             ->where('videoUrl', null)
             ->where('videoError', 'No video file associated with this meeting.')
+        );
+});
+
+it('exposes null meeting and upload timestamps without requiring a video', function () {
+    $meeting = Meeting::factory()->create([
+        'meeting_at' => null,
+        'uploaded_at' => null,
+        'video_path' => null,
+    ]);
+
+    $this->get(route('meetings.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Meetings/Index')
+            ->where('meetings.data.0.id', $meeting->id)
+            ->where('meetings.data.0.meeting_at', null)
+            ->where('meetings.data.0.uploaded_at', null)
+        );
+
+    $this->get(route('meetings.show', $meeting))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('Meetings/Show')
+            ->where('meeting.id', $meeting->id)
+            ->where('meeting.meeting_at', null)
+            ->where('meeting.uploaded_at', null)
+            ->where('videoUrl', null)
         );
 });

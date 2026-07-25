@@ -8,11 +8,14 @@ use App\Models\Meeting;
 use Carbon\CarbonImmutable;
 use Closure;
 use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\File;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -20,29 +23,39 @@ class MeetingController extends Controller
 {
     public function index(Request $request): Response
     {
+        $filters = $this->validateIndexFilters($request);
         $query = Meeting::query()->with('client');
 
         // Apply filters if provided
-        if ($request->filled('client_id')) {
-            $query->where('client_id', $request->client_id);
+        if (isset($filters['client_id'])) {
+            $query->where('client_id', $filters['client_id']);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
         }
 
-        if ($request->filled('date_from')) {
-            $query->whereDate(DB::raw('COALESCE(meetings.meeting_at, meetings.uploaded_at)'), '>=', $request->date_from);
+        $effectiveTime = 'COALESCE(meetings.meeting_at, meetings.uploaded_at)';
+        $timeZone = new DateTimeZone($filters['timezone'] ?? 'UTC');
+
+        if (isset($filters['date_from'])) {
+            $dateFromUtc = CarbonImmutable::createFromFormat('!Y-m-d', $filters['date_from'], $timeZone)
+                ->startOfDay()
+                ->utc();
+            $query->where(DB::raw($effectiveTime), '>=', $dateFromUtc->format('Y-m-d H:i:s'));
         }
 
-        if ($request->filled('date_to')) {
-            $query->whereDate(DB::raw('COALESCE(meetings.meeting_at, meetings.uploaded_at)'), '<=', $request->date_to);
+        if (isset($filters['date_to'])) {
+            $dateToUtc = CarbonImmutable::createFromFormat('!Y-m-d', $filters['date_to'], $timeZone)
+                ->endOfDay()
+                ->utc();
+            $query->where(DB::raw($effectiveTime), '<=', $dateToUtc->format('Y-m-d H:i:s'));
         }
 
         // Sorting
         $allowedSorts = ['meeting_at', 'uploaded_at', 'title', 'status', 'duration', 'client'];
-        $sort = in_array($request->get('sort'), $allowedSorts, true) ? $request->get('sort') : 'meeting_at';
-        $direction = $request->get('direction') === 'asc' ? 'asc' : 'desc';
+        $sort = in_array($filters['sort'] ?? null, $allowedSorts, true) ? $filters['sort'] : 'meeting_at';
+        $direction = ($filters['direction'] ?? null) === 'asc' ? 'asc' : 'desc';
 
         if ($sort === 'client') {
             $query->select('meetings.*')
@@ -50,15 +63,19 @@ class MeetingController extends Controller
                 ->orderBy('clients.name', $direction)
                 ->orderBy('meetings.id', 'desc');
         } elseif ($sort === 'meeting_at') {
-            $query->orderByRaw("COALESCE(meetings.meeting_at, meetings.uploaded_at) {$direction}")
+            $query->orderByRaw("CASE WHEN {$effectiveTime} IS NULL THEN 1 ELSE 0 END ASC")
+                ->orderByRaw("{$effectiveTime} {$direction}")
+                ->orderBy('meetings.id', 'desc');
+        } elseif ($sort === 'uploaded_at') {
+            $query->orderByRaw('CASE WHEN meetings.uploaded_at IS NULL THEN 1 ELSE 0 END ASC')
+                ->orderBy('meetings.uploaded_at', $direction)
                 ->orderBy('meetings.id', 'desc');
         } else {
             $column = match ($sort) {
                 'title' => 'meetings.title',
                 'status' => 'meetings.status',
                 'duration' => 'meetings.duration',
-                'uploaded_at' => 'meetings.uploaded_at',
-                default => 'meetings.uploaded_at',
+                default => 'meetings.title',
             };
 
             $query->orderBy($column, $direction)
@@ -71,7 +88,12 @@ class MeetingController extends Controller
         return Inertia::render('Meetings/Index', [
             'meetings' => $meetings,
             'clients' => $clients,
-            'filters' => $request->only(['client_id', 'status', 'date_from', 'date_to', 'sort', 'direction']),
+            'filters' => [
+                ...$filters,
+                'timezone' => $filters['timezone'] ?? 'UTC',
+                'sort' => $sort,
+                'direction' => $direction,
+            ],
         ]);
     }
 
@@ -369,5 +391,55 @@ class MeetingController extends Controller
     private function normalizeMeetingAt(mixed $value): ?CarbonImmutable
     {
         return is_string($value) ? CarbonImmutable::parse($value)->utc() : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateIndexFilters(Request $request): array
+    {
+        $validDate = function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_string($value)
+                || preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $value) !== 1
+                || ! checkdate((int) substr($value, 5, 2), (int) substr($value, 8, 2), (int) substr($value, 0, 4))) {
+                $fail("The {$attribute} field must be a real date in Y-m-d format.");
+            }
+        };
+
+        $validTimeZone = function (string $attribute, mixed $value, Closure $fail): void {
+            if (! is_string($value)
+                || ! in_array($value, DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true)) {
+                $fail('The timezone field must be a valid IANA timezone identifier.');
+            }
+        };
+
+        $validator = Validator::make($request->query(), [
+            'client_id' => ['nullable', 'integer', 'exists:clients,id'],
+            'status' => ['nullable', 'string', 'in:pending,processing,completed,failed'],
+            'date_from' => ['nullable', 'string', $validDate],
+            'date_to' => ['nullable', 'string', $validDate],
+            'timezone' => ['nullable', 'string', $validTimeZone],
+            'sort' => ['nullable', 'string', 'in:meeting_at,uploaded_at,title,status,duration,client'],
+            'direction' => ['nullable', 'string', 'in:asc,desc'],
+        ]);
+
+        $validator->after(function ($validator) use ($request): void {
+            $dateFrom = $request->query('date_from');
+            $dateTo = $request->query('date_to');
+
+            if (is_string($dateFrom)
+                && is_string($dateTo)
+                && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dateFrom) === 1
+                && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dateTo) === 1
+                && strcmp($dateTo, $dateFrom) < 0) {
+                $validator->errors()->add('date_to', 'The date to field must be on or after date from.');
+            }
+        });
+
+        if ($validator->fails()) {
+            throw (new ValidationException($validator))->redirectTo(route('meetings.index'));
+        }
+
+        return $validator->validated();
     }
 }

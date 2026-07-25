@@ -1,6 +1,9 @@
 {
     "private": true,
     "type": "module",
+    "engines": {
+        "node": ">=22.12.0"
+    },
     "scripts": {
         "build": "vite build",
         "build:ssr": "vite build && vite build --ssr",
@@ -8,7 +11,7 @@
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
-        "test:frontend": "node --experimental-strip-types tests/frontend/meetingFilename.test.ts",
+        "test:frontend": "node --experimental-strip-types tests/frontend/meetingFilename.test.ts && TZ=Europe/Bucharest node --experimental-strip-types tests/frontend/bucharestDateTime.test.ts && TZ=Europe/Bucharest node --experimental-strip-types tests/frontend/browserDateTimeTimezone.test.ts Europe/Bucharest \"Jul 10, 2026, 1:03:47 PM\" && TZ=America/Los_Angeles node --experimental-strip-types tests/frontend/browserDateTimeTimezone.test.ts America/Los_Angeles \"Jul 10, 2026, 3:03:47 AM\"",
         "typecheck": "vue-tsc --noEmit"
     },
     "devDependencies": {

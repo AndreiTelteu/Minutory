@@ -118,10 +118,7 @@
                                         />
                                     </div>
                                 </td>
-                                <td
-                                    class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary"
-                                    :title="meeting.meeting_at ? `Uploaded ${formatDate(meeting.uploaded_at)}` : 'Using upload time'"
-                                >
+                                <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary" :title="meetingTimeTitle(meeting)">
                                     {{ formatDate(meeting.meeting_at ?? meeting.uploaded_at) }}
                                 </td>
                                 <td class="tnum px-5 py-2.5 text-[13px] whitespace-nowrap text-ink-secondary">
@@ -174,11 +171,12 @@
 
 <script setup lang="ts">
 import AppLayout from '@/lib/AppLayout.vue';
+import { formatBrowserDateTime, resolveBrowserTimeZone } from '@/lib/browserDateTime';
 import MeetingProgressIndicator from '@/lib/MeetingProgressIndicator.vue';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
 import { useRealTimeUpdates } from '@/lib/useRealTimeUpdates';
 import { Link, router } from '@inertiajs/vue3';
-import { computed, reactive, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 interface Client {
     id: number;
@@ -191,7 +189,7 @@ interface Meeting {
     client: Client;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     meeting_at: string | null;
-    uploaded_at: string;
+    uploaded_at: string | null;
     duration: number | null;
     elapsed_time?: number;
     estimated_remaining_time?: number;
@@ -223,12 +221,19 @@ interface Props {
         date_to?: string;
         sort?: string;
         direction?: 'asc' | 'desc';
+        timezone?: string;
     };
 }
 
 const props = defineProps<Props>();
+const timestampsReady = ref(false);
 
 const { meetings: realtimeMeetings } = useRealTimeUpdates(props.meetings.data);
+
+onMounted(() => {
+    timestampsReady.value = true;
+    filterForm.timezone = resolveBrowserTimeZone();
+});
 
 watch(
     () => props.meetings.data,
@@ -244,6 +249,7 @@ const filterForm = reactive({
     date_to: props.filters.date_to || '',
     sort: props.filters.sort || 'meeting_at',
     direction: (props.filters.direction as 'asc' | 'desc') || 'desc',
+    timezone: props.filters.timezone || 'UTC',
 });
 
 const columns = [
@@ -259,6 +265,7 @@ const hasActiveFilters = computed(
 );
 
 const applyFilters = () => {
+    filterForm.timezone = resolveBrowserTimeZone();
     router.get(route('meetings.index'), filterForm, {
         preserveState: true,
         preserveScroll: true,
@@ -281,13 +288,24 @@ const deleteMeeting = (meeting: Meeting) => {
     }
 };
 
-const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+const formatDate = (dateString: string | null) =>
+    formatBrowserDateTime(dateString, timestampsReady.value, undefined, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
     });
+
+const meetingTimeTitle = (meeting: Meeting): string => {
+    if (meeting.meeting_at && meeting.uploaded_at) {
+        return `Uploaded ${formatDate(meeting.uploaded_at)}`;
+    }
+
+    if (!meeting.meeting_at && meeting.uploaded_at) {
+        return 'Using upload time';
+    }
+
+    return 'Meeting time unavailable';
 };
 
 const setSort = (column: string) => {
