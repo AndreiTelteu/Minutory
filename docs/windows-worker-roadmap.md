@@ -196,13 +196,13 @@ Acceptance: 19 frontend parser/ownership/timezone tests and 80 focused Pest test
 
 ### Stage 3 — Windows worker core
 
-- [ ] Create package layout, configuration, filename parser, domain model, SQLite state.
-- [ ] Implement API client and independent/reconcilable stage machine.
-- [ ] Implement FFprobe, compression presets/estimate, WAV extraction, hashing.
-- [ ] Implement faster-whisper ROCm backend abstraction and normalized JSON.
-- [ ] Add unit/integration tests using fake binaries/API transport.
+- [x] Create package layout, configuration, filename parser, domain model, SQLite state.
+- [x] Implement API client and independent/reconcilable stage machine.
+- [x] Implement FFprobe, compression presets/estimate, WAV extraction, hashing.
+- [x] Implement faster-whisper ROCm backend abstraction and normalized JSON.
+- [x] Add unit/integration tests using fake binaries/API transport.
 
-Acceptance: Linux-runnable non-GUI tests pass; no runtime binaries/models tracked.
+Acceptance: 52 Linux-runnable non-GUI tests pass; Ruff format/check, compileall, CLI config redaction, and Git whitespace checks pass. Source mutation after server creation is rejected safely, reconciliation verifies local transcription ownership and immutable metadata, DST gaps are rejected in `Europe/Bucharest`, and configured connect/read/upload timeouts are wired independently. Runtime binaries, models, caches, state, work files, and credentials are ignored. A distributable wheel was not built because `hatchling` was unavailable in the offline uv cache; dependency/bootstrap packaging remains a Stage 4 deliverable.
 
 ### Stage 4 — Windows GUI and bootstrap
 

@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+import hashlib
+import uuid
+from dataclasses import dataclass, field
+from enum import StrEnum
+from pathlib import Path
+
+
+class Stage(StrEnum):
+    PROBE = "probe"
+    SOURCE = "source"
+    WAV = "wav"
+    TRANSCRIBE = "transcribe"
+    MEETING = "meeting"
+    VIDEO_UPLOAD = "video_upload"
+    AUDIO_UPLOAD = "audio_upload"
+    TRANSCRIPT_UPLOAD = "transcript_upload"
+
+
+STAGE_ORDER = tuple(Stage)
+STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
+    Stage.PROBE: (),
+    Stage.SOURCE: (Stage.PROBE,),
+    Stage.WAV: (Stage.SOURCE,),
+    Stage.TRANSCRIBE: (Stage.WAV,),
+    Stage.MEETING: (Stage.PROBE,),
+    Stage.VIDEO_UPLOAD: (Stage.SOURCE, Stage.MEETING),
+    Stage.AUDIO_UPLOAD: (Stage.WAV, Stage.MEETING),
+    Stage.TRANSCRIPT_UPLOAD: (Stage.TRANSCRIBE, Stage.MEETING),
+}
+
+
+class StageStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class SourceIdentity:
+    path: str
+    size: int
+    mtime_ns: int
+    sha256: str | None = None
+
+    @classmethod
+    def from_path(cls, path: Path, *, hash_source: bool = False) -> SourceIdentity:
+        resolved = path.resolve(strict=True)
+        stat = resolved.stat()
+        digest = stream_sha256(resolved) if hash_source else None
+        return cls(str(resolved), stat.st_size, stat.st_mtime_ns, digest)
+
+
+@dataclass
+class WorkerItem:
+    source: SourceIdentity
+    title: str
+    meeting_at: str | None = None
+    client_id: int | None = None
+    compression_preset: str = "balanced"
+    item_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    title_manually_edited: bool = False
+    meeting_at_manually_edited: bool = False
+    duration_seconds: int | None = None
+    selected_video_path: str | None = None
+    wav_path: str | None = None
+    transcript_path: str | None = None
+    selected_video_sha256: str | None = None
+    audio_sha256: str | None = None
+    transcript_sha256: str | None = None
+    server_meeting_id: int | None = None
+
+    def __post_init__(self) -> None:
+        parsed = uuid.UUID(self.item_id)
+        if parsed.version != 4:
+            raise ValueError("item_id must be a UUID v4.")
+        if self.client_id is not None and self.client_id <= 0:
+            raise ValueError("client_id must be positive.")
+
+
+def stream_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(chunk_size):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def dependent_stages(stage: Stage) -> set[Stage]:
+    affected = {stage}
+    changed = True
+    while changed:
+        changed = False
+        for candidate, dependencies in STAGE_DEPENDENCIES.items():
+            if candidate not in affected and any(dependency in affected for dependency in dependencies):
+                affected.add(candidate)
+                changed = True
+    return affected
