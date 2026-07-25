@@ -10,14 +10,19 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('meetings', function (Blueprint $table) {
-            $table->timestamp('meeting_at')->nullable()->index()->after('duration');
+            $table->dateTime('meeting_at')->nullable()->index()->after('duration');
             $table->string('video_path', 500)->nullable()->change();
         });
     }
 
     public function down(): void
     {
-        DB::table('meetings')->whereNull('video_path')->update(['video_path' => '']);
+        if (DB::table('meetings')->whereNull('video_path')->exists()) {
+            throw new \RuntimeException(
+                'Cannot roll back worker meeting fields while metadata-only meetings have null video_path values. '
+                .'Upload a video or remove/archive those meetings before retrying the rollback.'
+            );
+        }
 
         Schema::table('meetings', function (Blueprint $table) {
             $table->dropIndex(['meeting_at']);

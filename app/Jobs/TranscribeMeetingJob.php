@@ -138,7 +138,7 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
             $this->runShell($transcribeCmd, $this->timeout - 120);
 
             // 3) Parse and save transcription segments
-            $segmentCount = $transcriptImporter->import($this->meeting, $transcriptPath);
+            $segmentCount = $this->importTranscript($transcriptImporter, $transcriptPath);
             Log::info("Saved {$segmentCount} transcription segments for meeting {$this->meeting->id}");
 
             // Update meeting status to completed
@@ -159,6 +159,14 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
 
             throw $e;
         }
+    }
+
+    /**
+     * Import normalized output through the shared transcript contract.
+     */
+    public function importTranscript(TranscriptImporter $transcriptImporter, string $transcriptPath): int
+    {
+        return $transcriptImporter->import($this->meeting, $transcriptPath);
     }
 
     private function processPathForLocalTesting(string $path): string

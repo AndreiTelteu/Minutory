@@ -8,11 +8,14 @@ use App\Models\Transcription;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use RuntimeException;
 use Throwable;
 
 class TranscriptImporter
 {
+    private const MAX_TIMESTAMP = 9_999_999.999;
+
+    public function __construct(private readonly AtomicFilesystem $filesystem) {}
+
     /**
      * Validate and import a transcript already stored at its durable path.
      */
@@ -20,7 +23,7 @@ class TranscriptImporter
     {
         $segments = $this->validateFile($path);
 
-        return DB::transaction(fn (): int => $this->replaceRows($meeting, $segments));
+        return DB::transaction(fn (): int => $this->replaceRowsWithinTransaction($meeting, $segments));
     }
 
     /**
@@ -35,57 +38,33 @@ class TranscriptImporter
         ?Closure $afterImport = null,
     ): int {
         $segments = $this->validateFile($stagedPath);
-        $backupPath = null;
-        $fileReplaced = false;
+        $replacement = null;
 
         try {
-            return DB::transaction(function () use (
+            $count = DB::transaction(function () use (
                 $meeting,
                 $segments,
                 $stagedPath,
                 $destinationPath,
                 $afterImport,
-                &$backupPath,
-                &$fileReplaced,
+                &$replacement,
             ): int {
-                File::ensureDirectoryExists(dirname($destinationPath));
-
-                if (File::exists($destinationPath)) {
-                    $backupPath = $destinationPath.'.backup.'.bin2hex(random_bytes(8));
-                    if (! rename($destinationPath, $backupPath)) {
-                        throw new RuntimeException('Unable to prepare the existing transcript for replacement.');
-                    }
-                }
-
-                if (! rename($stagedPath, $destinationPath)) {
-                    if ($backupPath !== null) {
-                        rename($backupPath, $destinationPath);
-                    }
-
-                    throw new RuntimeException('Unable to store the transcript artifact.');
-                }
-
-                $fileReplaced = true;
-                $count = $this->replaceRows($meeting, $segments);
+                $replacement = $this->filesystem->beginReplacement($stagedPath, $destinationPath);
+                $count = $this->replaceRowsWithinTransaction($meeting, $segments);
                 $afterImport?->__invoke($count);
 
                 return $count;
             });
-        } catch (Throwable $exception) {
-            if ($fileReplaced && File::exists($destinationPath)) {
-                File::delete($destinationPath);
-            }
 
-            if ($backupPath !== null && File::exists($backupPath)) {
-                rename($backupPath, $destinationPath);
-            }
+        } catch (Throwable $exception) {
+            $replacement?->rollback();
 
             throw $exception;
-        } finally {
-            if ($backupPath !== null && File::exists($backupPath)) {
-                File::delete($backupPath);
-            }
         }
+
+        $replacement?->commit();
+
+        return $count;
     }
 
     /**
@@ -94,7 +73,7 @@ class TranscriptImporter
     public function validateFile(string $path): array
     {
         if (! File::isFile($path)) {
-            throw new InvalidTranscriptException("Transcript file not found at: {$path}");
+            throw new InvalidTranscriptException('Transcript file was not found.');
         }
 
         $size = File::size($path);
@@ -151,7 +130,10 @@ class TranscriptImporter
             $start = $this->finiteNumber($segment['start'] ?? null, "segment {$index} start");
             $end = $this->finiteNumber($segment['end'] ?? null, "segment {$index} end");
 
-            if ($start < 0 || $end < $start) {
+            if ($start < 0
+                || $end < $start
+                || $start > self::MAX_TIMESTAMP
+                || $end > self::MAX_TIMESTAMP) {
                 throw new InvalidTranscriptException("Transcript segment {$index} has invalid timestamps.");
             }
 
@@ -264,7 +246,7 @@ class TranscriptImporter
     /**
      * @param  list<array{speaker: ?string, text: string, start: float, end: float, confidence: ?float, has_confidence: bool}>  $segments
      */
-    private function replaceRows(Meeting $meeting, array $segments): int
+    public function replaceRowsWithinTransaction(Meeting $meeting, array $segments): int
     {
         Transcription::where('meeting_id', $meeting->id)->delete();
 

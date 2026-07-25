@@ -3,12 +3,27 @@
 use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
+use App\Models\Transcription;
+use App\Services\TranscriptImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
+
+function linuxTranscriptPayload(array $segments): string
+{
+    return json_encode([
+        'driver' => 'parakeet',
+        'model' => 'nemo-parakeet-tdt-0.6b-v3',
+        'language' => 'ro',
+        'language_probability' => null,
+        'duration' => 2,
+        'runtime' => (object) [],
+        'segments' => $segments,
+    ], JSON_THROW_ON_ERROR);
+}
 
 it('updates meeting status to processing and then completed', function () {
     $client = Client::factory()->create();
@@ -68,6 +83,43 @@ it('stores generated artifacts beside the uploaded video', function () {
     Storage::disk('public')->assertExists("meetings/{$client->id}/91/transcript.json");
     expect(File::exists(storage_path("{$meeting->id}/audio.wav")))->toBeFalse()
         ->and(File::exists(storage_path("{$meeting->id}/transcript.json")))->toBeFalse();
+});
+
+it('delegates normalized Linux output through the shared transcript importer contract', function () {
+    Storage::fake('public');
+    $meeting = Meeting::factory()->create();
+    Transcription::factory()->create([
+        'meeting_id' => $meeting->id,
+        'text' => 'old',
+    ]);
+    $path = Storage::disk('public')->path('linux-transcript.json');
+    File::put($path, linuxTranscriptPayload([
+        ['speaker' => 'unknown', 'text' => 'new first', 'start' => 0, 'end' => 1],
+        ['speaker' => 'unknown', 'text' => 'new second', 'start' => 1, 'end' => 2],
+    ]));
+
+    $count = (new TranscribeMeetingJob($meeting))
+        ->importTranscript(app(TranscriptImporter::class), $path);
+
+    expect($count)->toBe(2)
+        ->and($meeting->transcriptions()->orderBy('id')->pluck('text')->all())
+        ->toBe(['new first', 'new second']);
+});
+
+it('preserves Linux transcription rows when delegated normalized output is invalid', function () {
+    Storage::fake('public');
+    $meeting = Meeting::factory()->create();
+    $old = Transcription::factory()->create([
+        'meeting_id' => $meeting->id,
+        'text' => 'known good',
+    ]);
+    $path = Storage::disk('public')->path('invalid-linux-transcript.json');
+    File::put($path, '{invalid');
+
+    expect(fn () => (new TranscribeMeetingJob($meeting))
+        ->importTranscript(app(TranscriptImporter::class), $path))
+        ->toThrow(RuntimeException::class)
+        ->and($old->fresh()?->text)->toBe('known good');
 });
 
 it('calculates progress tracking attributes correctly', function () {

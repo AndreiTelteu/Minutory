@@ -22,9 +22,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        RateLimiter::for('worker-api', function (Request $request): Limit {
-            return Limit::perMinute((int) config('services.worker.throttle_per_minute', 60))
-                ->by($request->ip() ?? 'unknown');
+        RateLimiter::for('worker-auth-attempts', function (Request $request): array {
+            $key = (string) config('app.key');
+            $remoteAddress = (string) $request->server('REMOTE_ADDR', 'unknown');
+            $authorization = (string) $request->header('Authorization', '');
+
+            return [
+                Limit::perMinute((int) config('services.worker.auth_attempts_per_minute', 20))
+                    ->by('worker-auth-remote:'.hash_hmac('sha256', $remoteAddress, $key)),
+                Limit::perMinute((int) config('services.worker.auth_attempts_per_credential_per_minute', 10))
+                    ->by('worker-auth-credential:'.hash_hmac('sha256', $authorization, $key)),
+            ];
         });
     }
 }

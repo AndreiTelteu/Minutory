@@ -52,10 +52,14 @@ return [
 
     'worker' => [
         'token' => env('WORKER_API_TOKEN'),
+        'auth_attempts_per_minute' => (int) env('WORKER_API_AUTH_ATTEMPTS_PER_MINUTE', 20),
+        'auth_attempts_per_credential_per_minute' => (int) env('WORKER_API_AUTH_ATTEMPTS_PER_CREDENTIAL_PER_MINUTE', 10),
         'throttle_per_minute' => (int) env('WORKER_API_THROTTLE_PER_MINUTE', 60),
         'artifacts' => [
             'video' => [
                 'max_bytes' => (int) env('WORKER_VIDEO_MAX_BYTES', 5_368_709_120),
+                'ffprobe_path' => env('WORKER_FFPROBE_PATH', 'ffprobe'),
+                'ffprobe_timeout' => (int) env('WORKER_FFPROBE_TIMEOUT', 15),
                 'mime_types' => [
                     'video/mp4',
                     'video/quicktime',

@@ -49,6 +49,10 @@ Multipart uploads use `POST`; PHP does not reliably populate files for multipart
 - The start flag is persisted because metadata creation happens before video upload.
 - `true` dispatches the existing Linux job exactly once only after video upload succeeds.
 - `false` never dispatches Linux ASR; transcript upload completes the meeting.
+- `true` is accepted only when Laravel uses the database queue on the application
+  database connection with `after_commit=false`, so queue insertion and the
+  durable dispatch marker commit in one transaction. External or deferred queue
+  backends are rejected for this API path.
 
 ### Durable idempotency
 
@@ -164,21 +168,21 @@ Tracked `manifests/runtime-assets.json` records URL, version, size, and SHA-256.
 
 - [x] Inspect repository and existing Linux contract.
 - [x] Freeze API/idempotency/runtime architecture in this roadmap.
-- [ ] Commit and push the roadmap.
+- [x] Commit and push the roadmap.
 
-Acceptance: clean baseline and a reviewable authoritative plan.
+Acceptance: completed in `5381ab5`; clean baseline and an authoritative plan were pushed.
 
 ### Stage 1 — Laravel schema, transcript service, worker API
 
-- [ ] Add nullable `meeting_at` and metadata-first nullable `video_path`.
-- [ ] Add `worker_ingestions` durable idempotency table/model.
-- [ ] Extract and test `TranscriptImporter`; preserve Linux behavior.
-- [ ] Register `routes/api.php`, token middleware, throttles, requests/controllers.
-- [ ] Implement client list, meeting create/reconcile, three artifact endpoints.
-- [ ] Add configuration and `.env.example` placeholders.
-- [ ] Verify `start_transcript_server=false/true` dispatch semantics.
+- [x] Add nullable `meeting_at` and metadata-first nullable `video_path`.
+- [x] Add `worker_ingestions` durable idempotency table/model.
+- [x] Extract and test `TranscriptImporter`; preserve Linux behavior.
+- [x] Register `routes/api.php`, token middleware, throttles, requests/controllers.
+- [x] Implement client list, meeting create/reconcile, three artifact endpoints.
+- [x] Add configuration and `.env.example` placeholders.
+- [x] Verify `start_transcript_server=false/true` dispatch semantics.
 
-Acceptance: focused API/service tests, existing transcription tests, migrations, Pint, and route inspection pass.
+Acceptance: 48 Stage 1 tests / 253 assertions pass; migrations and rollback pass on isolated SQLite and MySQL databases; Pint, route inspection, and diff checks pass. The two unrelated pre-existing transcription test failures remain documented and unchanged.
 
 ### Stage 2 — Laravel/Vue meeting datetime UX
 

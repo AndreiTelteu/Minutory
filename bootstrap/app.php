@@ -3,6 +3,7 @@
 use App\Exceptions\WorkerApiException;
 use App\Http\Middleware\AuthenticateWorker;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\ThrottleAuthenticatedWorker;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -21,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         $middleware->alias([
             'worker.token' => AuthenticateWorker::class,
+            'worker.throttle' => ThrottleAuthenticatedWorker::class,
         ]);
 
         $middleware->web(append: [
@@ -54,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             [$code, $message] = match ($status) {
                 404 => ['not_found', 'The requested worker API resource was not found.'],
                 405 => ['method_not_allowed', 'The request method is not allowed.'],
+                413 => ['payload_too_large', 'The request body exceeds the server upload limit.'],
                 429 => ['rate_limit_exceeded', 'Too many worker API requests.'],
                 default => ['server_error', 'The worker API could not process the request.'],
             };

@@ -11,11 +11,15 @@ use Illuminate\Support\Facades\DB;
 
 class WorkerMeetingService
 {
+    public function __construct(private readonly WorkerQueueGuard $queueGuard) {}
+
     /**
      * @return array{meeting: Meeting, created: bool}
      */
     public function createOrReplay(array $metadata): array
     {
+        $workerItemId = strtolower($metadata['worker_item_id']);
+
         $canonical = [
             'client_id' => (int) $metadata['client_id'],
             'title' => trim($metadata['title']),
@@ -28,10 +32,14 @@ class WorkerMeetingService
             'start_transcript_server' => (bool) $metadata['start_transcript_server'],
         ];
 
+        if ($canonical['start_transcript_server']) {
+            $this->queueGuard->ensureTransactionalDatabaseQueue();
+        }
+
         try {
-            return DB::transaction(function () use ($metadata, $canonical): array {
+            return DB::transaction(function () use ($workerItemId, $canonical): array {
                 $ingestion = WorkerIngestion::query()
-                    ->where('worker_item_id', $metadata['worker_item_id'])
+                    ->where('worker_item_id', $workerItemId)
                     ->lockForUpdate()
                     ->first();
 
@@ -50,7 +58,7 @@ class WorkerMeetingService
                 ]);
 
                 $meeting->workerIngestion()->create([
-                    'worker_item_id' => $metadata['worker_item_id'],
+                    'worker_item_id' => $workerItemId,
                     'start_transcript_server' => $canonical['start_transcript_server'],
                 ]);
 
@@ -62,7 +70,7 @@ class WorkerMeetingService
             }
 
             $ingestion = WorkerIngestion::query()
-                ->where('worker_item_id', $metadata['worker_item_id'])
+                ->where('worker_item_id', $workerItemId)
                 ->firstOrFail();
 
             return $this->replay($ingestion, $canonical);

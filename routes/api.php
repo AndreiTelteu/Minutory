@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\WorkerController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/worker')
-    ->middleware(['worker.token', 'throttle:worker-api'])
+    ->middleware(['throttle:worker-auth-attempts', 'worker.token', 'worker.throttle'])
     ->group(function (): void {
         Route::get('clients', [WorkerController::class, 'clients']);
         Route::post('meetings', [WorkerController::class, 'storeMeeting']);

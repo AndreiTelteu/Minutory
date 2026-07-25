@@ -37,6 +37,11 @@ class AuthenticateWorker
             );
         }
 
+        $request->attributes->set(
+            'worker_auth_identity',
+            hash_hmac('sha256', $configuredToken, (string) config('app.key')),
+        );
+
         return $next($request);
     }
 
