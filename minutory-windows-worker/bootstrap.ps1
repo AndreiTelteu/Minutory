@@ -36,7 +36,7 @@ $Contracts = @{
     "runtime-wheelhouse" = @("libs/wheelhouse", "zip")
     "faster-whisper-large-v3" = @("models/large-v3", "zip")
 }
-$RequiredExpected = @{
+$RequiredExpectedFiles = @{
     "python-runtime" = @("python.exe", "pythonw.exe", "Lib/venv/__init__.py", "Lib/ensurepip/__init__.py")
     "ffmpeg" = @("bin/ffmpeg.exe", "bin/ffprobe.exe")
     "ctranslate2-rocm-wheel" = @("ctranslate2-4.8.1-cp312-cp312-win_amd64.whl")
@@ -115,9 +115,9 @@ function Read-AssetManifest {
             if ($expectedSeen.ContainsKey($key)) { throw "Asset '$($asset.id)' has duplicate expected files." }
             $expectedSeen[$key] = $true
         }
-        foreach ($requiredExpected in $RequiredExpected[$assetId]) {
-            if (-not $expectedSeen.ContainsKey($requiredExpected.ToLowerInvariant())) {
-                throw "Asset '$($asset.id)' omits required expected file '$requiredExpected'."
+        foreach ($requiredFile in $RequiredExpectedFiles[$assetId]) {
+            if (-not $expectedSeen.ContainsKey($requiredFile.ToLowerInvariant())) {
+                throw "Asset '$($asset.id)' omits required expected file '$requiredFile'."
             }
         }
         if ($asset.id -eq "python-runtime" `
@@ -450,6 +450,6 @@ try {
     }
     Write-Host "Minutory Worker runtime is ready."
 } catch {
-    Write-Error $_.Exception.Message
+    Write-Error "$($_.Exception.Message)`n$($_.ScriptStackTrace)"
     exit 1
 }
