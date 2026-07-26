@@ -93,6 +93,7 @@ class FasterWhisperBackend:
         segments, info = model.transcribe(
             str(audio_path),
             language=language,
+            condition_on_previous_text=False,
             vad_filter=vad_filter,
             vad_parameters=dict(vad_parameters),
         )
