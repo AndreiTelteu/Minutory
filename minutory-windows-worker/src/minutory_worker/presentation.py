@@ -100,13 +100,15 @@ class QueueController:
         api: ApiWithClients,
         *,
         timezone: str,
-        default_preset: str = "balanced",
+        default_preset: str = "crf22",
+        default_language: str = "ro",
         work_dir: Path | None = None,
     ) -> None:
         self.store = store
         self.api = api
         self.timezone = timezone
         self.default_preset = default_preset
+        self.default_language = default_language
         self.work_dir = work_dir
 
     def add_paths(self, paths: Iterable[str | Path]) -> AddResult:
@@ -151,6 +153,7 @@ class QueueController:
                 title=title,
                 meeting_at=meeting_at,
                 compression_preset=self.default_preset,
+                language=self.default_language,
             )
             self.store.add_item(item)
             added.append(item.item_id)
@@ -187,6 +190,9 @@ class QueueController:
 
     def set_preset(self, item_id: str, preset: str) -> bool:
         return self.store.set_compression_preset(item_id, preset)
+
+    def set_language(self, item_id: str, language: str) -> bool:
+        return self.store.set_language(item_id, language)
 
     def remove(self, item_id: str) -> None:
         if self.view(item_id).metadata_locked:

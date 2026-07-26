@@ -185,6 +185,7 @@ class WorkerApiClient:
             "title": item.title,
             "meeting_at": item.meeting_at,
             "duration_seconds": item.duration_seconds,
+            "language": item.language,
             "start_transcript_server": False,
         }
         response = self._request("POST", "/meetings", json_body=payload)

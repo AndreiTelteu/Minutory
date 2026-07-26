@@ -137,11 +137,17 @@ class ItemCard(QFrame):
         ):
             self.preset.addItem(label, key)
         self.preset.setCurrentIndex(self.preset.findData(view.item.compression_preset))
+        self.language = QComboBox()
+        self.language.setAccessibleName("Transcription language")
+        for key, label in (("ro", "Romanian"), ("en", "English")):
+            self.language.addItem(label, key)
+        self.language.setCurrentIndex(self.language.findData(view.item.language))
         for label, control, stretch in (
             ("Client", self.client, 2),
             ("Meeting title", self.title, 4),
             ("Meeting time", self.datetime, 3),
             ("Compression", self.preset, 2),
+            ("Language", self.language, 1),
         ):
             field = QVBoxLayout()
             caption = QLabel(label)
@@ -220,6 +226,7 @@ class ItemCard(QFrame):
         self.datetime.editingFinished.connect(self._save_metadata)
         self.client.currentIndexChanged.connect(self._save_metadata)
         self.preset.currentIndexChanged.connect(self._change_preset)
+        self.language.currentIndexChanged.connect(self._change_language)
         self.start.clicked.connect(lambda: self._main_window.start_item(self.item_id))
         self.retry_video.clicked.connect(lambda: self._main_window.retry_artifact(self.item_id, "video"))
         self.retry_audio.clicked.connect(lambda: self._main_window.retry_artifact(self.item_id, "audio"))
@@ -260,6 +267,9 @@ class ItemCard(QFrame):
     def _change_preset(self) -> None:
         self._main_window.change_preset(self.item_id, str(self.preset.currentData()))
 
+    def _change_language(self) -> None:
+        self._main_window.change_language(self.item_id, str(self.language.currentData()))
+
     def apply_view(
         self,
         view: ItemView,
@@ -283,6 +293,10 @@ class ItemCard(QFrame):
             self.preset.blockSignals(True)
             self.preset.setCurrentIndex(self.preset.findData(view.item.compression_preset))
             self.preset.blockSignals(False)
+        if force_fields or not self.language.hasFocus():
+            self.language.blockSignals(True)
+            self.language.setCurrentIndex(self.language.findData(view.item.language))
+            self.language.blockSignals(False)
         if force_fields or not self.client.hasFocus():
             selected = self.client.findData(view.item.client_id)
             self.client.blockSignals(True)
@@ -318,7 +332,7 @@ class ItemCard(QFrame):
         self.error.setVisible(failed is not None)
         self.details.setPlainText(diagnostic_text(view))
         immutable = view.metadata_locked or scheduled or view.active_stage is not None
-        for editable in (self.client, self.title, self.datetime, self.preset):
+        for editable in (self.client, self.title, self.datetime, self.preset, self.language):
             editable.setEnabled(not immutable)
         self.remove.setEnabled(
             view.removable and not scheduled and view.active_stage is None
@@ -522,6 +536,18 @@ class MainWindow(QMainWindow):
     def change_preset(self, item_id: str, preset: str) -> None:
         try:
             self.controller.set_preset(item_id, preset)
+            self.render_state()
+        except Exception as exception:
+            self.show_notice(str(exception), error=True)
+            self.cards[item_id].apply_view(
+                self.controller.view(item_id),
+                scheduled=self.coordinator.is_scheduled(item_id),
+                force_fields=True,
+            )
+
+    def change_language(self, item_id: str, language: str) -> None:
+        try:
+            self.controller.set_language(item_id, language)
             self.render_state()
         except Exception as exception:
             self.show_notice(str(exception), error=True)

@@ -8,6 +8,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .domain import COMPRESSION_PRESETS
+
 REDACTED = "[REDACTED]"
 
 
@@ -92,7 +94,7 @@ class WorkerConfig:
     connect_timeout: float = 10.0
     read_timeout: float = 120.0
     upload_timeout: float = 3600.0
-    compression_preset: str = "balanced"
+    compression_preset: str = "crf22"
     video_codec: str = "h264_amf"
     fallback_video_codec: str = "libx264"
     whisper_model: str = "large-v3"
@@ -145,8 +147,8 @@ def load_config(
     if require_token and (not token or token == REDACTED):
         raise ConfigError("MINUTORY_API_TOKEN is required at runtime.")
 
-    preset = get("MINUTORY_COMPRESSION_PRESET", "balanced").lower()
-    if preset not in {"none", "compact", "balanced", "quality"}:
+    preset = get("MINUTORY_COMPRESSION_PRESET", "crf22").lower()
+    if preset not in COMPRESSION_PRESETS:
         raise ConfigError("MINUTORY_COMPRESSION_PRESET is invalid.")
 
     timezone = get("MINUTORY_TIMEZONE", "Europe/Bucharest")

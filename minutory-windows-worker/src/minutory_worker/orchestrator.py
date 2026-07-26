@@ -277,6 +277,7 @@ class Orchestrator:
             self.whisper.transcribe(
                 Path(_required(item.wav_path, "WAV")),
                 transcript,
+                language=item.language,
                 on_progress=on_progress,
             )
             item.transcript_path = str(transcript)

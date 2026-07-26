@@ -158,11 +158,12 @@ class WhisperService:
         audio_path: Path,
         destination: Path,
         *,
+        language: str | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> dict[str, object]:
         result = self.backend.transcribe(
             audio_path,
-            language=self.language,
+            language=language or self.language,
             vad_filter=self.vad_filter,
             vad_parameters=self.vad_parameters,
         )

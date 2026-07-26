@@ -13,6 +13,7 @@ from .domain import (
     COMPRESSION_PRESETS,
     STAGE_DEPENDENCIES,
     STAGE_ORDER,
+    SUPPORTED_LANGUAGES,
     SourceIdentity,
     Stage,
     StageStatus,
@@ -20,7 +21,7 @@ from .domain import (
     dependent_stages,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 STAGE_OUTPUT_COLUMNS: dict[Stage, tuple[str, ...]] = {
     Stage.PROBE: (
@@ -182,6 +183,7 @@ class StateStore:
                         meeting_at_manually_edited INTEGER NOT NULL DEFAULT 0,
                         client_id INTEGER,
                         compression_preset TEXT NOT NULL,
+                        language TEXT NOT NULL DEFAULT 'ro',
                         duration_seconds INTEGER,
                         probe_width INTEGER,
                         probe_height INTEGER,
@@ -250,6 +252,18 @@ class StateStore:
                     if column not in existing_columns:
                         connection.execute(f"ALTER TABLE items ADD COLUMN {column} {kind}")
                 connection.execute("PRAGMA user_version = 3")
+            version = 3
+        if version == 3:
+            with self.transaction() as connection:
+                existing_columns = {
+                    str(row["name"]) for row in connection.execute("PRAGMA table_info(items)")
+                }
+                if "language" not in existing_columns:
+                    connection.execute(
+                        "ALTER TABLE items ADD COLUMN language TEXT NOT NULL DEFAULT 'ro'"
+                    )
+                connection.execute("PRAGMA user_version = 4")
+            version = 4
 
     def add_item(self, item: WorkerItem) -> None:
         with self.transaction() as connection:
@@ -258,8 +272,8 @@ class StateStore:
                 INSERT INTO items (
                     item_id, source_path, source_size, source_mtime_ns, source_sha256,
                     title, title_manually_edited, meeting_at, meeting_at_manually_edited,
-                    client_id, compression_preset
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    client_id, compression_preset, language
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.item_id,
@@ -273,6 +287,7 @@ class StateStore:
                     item.meeting_at_manually_edited,
                     item.client_id,
                     item.compression_preset,
+                    item.language,
                 ),
             )
             connection.executemany(
@@ -615,6 +630,42 @@ class StateStore:
             )
             return True
 
+    def set_language(self, item_id: str, language: str) -> bool:
+        if language not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported language {language!r}.")
+        stages = dependent_stages(Stage.TRANSCRIBE)
+        with self.transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT items.language, stages.status AS transcript_upload_status
+                FROM items JOIN stages ON stages.item_id = items.item_id AND stages.stage = ?
+                WHERE items.item_id = ?
+                """,
+                (Stage.TRANSCRIPT_UPLOAD.value, item_id),
+            ).fetchone()
+            if row is None:
+                raise StateError(f"Unknown item {item_id}.")
+            self._refuse_running(connection, item_id, "Language cannot change while processing.")
+            if row["language"] == language:
+                return False
+            if row["transcript_upload_status"] == StageStatus.SUCCEEDED.value:
+                raise StateError(
+                    "Language cannot change after the transcript was uploaded; create a new worker item."
+                )
+            connection.execute(
+                "UPDATE items SET language = ?, updated_at = CURRENT_TIMESTAMP WHERE item_id = ?",
+                (language, item_id),
+            )
+            connection.executemany(
+                """
+                UPDATE stages SET status = ?, user_error = NULL, diagnostic = NULL,
+                    started_at = NULL, completed_at = NULL
+                WHERE item_id = ? AND stage = ?
+                """,
+                [(StageStatus.PENDING.value, item_id, stage.value) for stage in stages],
+            )
+            return True
+
     @staticmethod
     def _refuse_running(
         connection: sqlite3.Connection,
@@ -730,6 +781,7 @@ def _item_from_row(row: sqlite3.Row) -> WorkerItem:
         meeting_at_manually_edited=bool(row["meeting_at_manually_edited"]),
         client_id=row["client_id"],
         compression_preset=row["compression_preset"],
+        language=row["language"],
         duration_seconds=row["duration_seconds"],
         probe_width=row["probe_width"],
         probe_height=row["probe_height"],

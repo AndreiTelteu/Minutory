@@ -37,6 +37,7 @@ def item(source: Path) -> WorkerItem:
         title="Planning",
         meeting_at="2026-07-10T13:03:47+03:00",
         client_id=52,
+        compression_preset="balanced",
     )
 
 

@@ -47,6 +47,8 @@ IO_STAGES = (
 
 COMPRESSION_PRESETS = frozenset({"none", "nano", "micro", "compact", "balanced", "quality", "crf22", "crf26"})
 
+SUPPORTED_LANGUAGES = frozenset({"ro", "en"})
+
 
 class StageStatus(StrEnum):
     PENDING = "pending"
@@ -76,7 +78,8 @@ class WorkerItem:
     title: str
     meeting_at: str | None = None
     client_id: int | None = None
-    compression_preset: str = "balanced"
+    compression_preset: str = "crf22"
+    language: str = "ro"
     item_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     title_manually_edited: bool = False
     meeting_at_manually_edited: bool = False
@@ -104,6 +107,8 @@ class WorkerItem:
             raise ValueError("client_id must be positive.")
         if self.compression_preset not in COMPRESSION_PRESETS:
             raise ValueError(f"Unsupported compression preset {self.compression_preset!r}.")
+        if self.language not in SUPPORTED_LANGUAGES:
+            raise ValueError(f"Unsupported language {self.language!r}.")
 
 
 def stream_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
