@@ -38,29 +38,76 @@ from ..presentation import (
 )
 
 DARK_STYLE = """
-QWidget { background: #0f0f10; color: #ededec; font-family: "Segoe UI"; font-size: 13px; }
-QMainWindow { background: #0f0f10; }
-QFrame#card { background: #171718; border: 1px solid #2a2a2d; border-radius: 8px; }
-QLabel#title { font-size: 20px; font-weight: 600; }
+QWidget {
+  background: #0f0f10;
+  color: #ededec;
+  font-family: "Inter", "Segoe UI Variable Text", "Segoe UI";
+  font-size: 13px;
+}
+QMainWindow, QWidget#appShell, QWidget#mainSurface { background: #0f0f10; }
+QLabel { background: transparent; color: #ededec; }
+QLabel#brandMark {
+  background: #4f46e5; color: white; border-radius: 6px;
+  font-size: 12px; font-weight: 700;
+}
+QLabel#brandName { font-size: 14px; font-weight: 650; }
+QLabel#pageTitle { font-size: 21px; font-weight: 650; letter-spacing: -0.2px; }
+QLabel#sectionTitle { font-size: 13px; font-weight: 600; }
 QLabel#cardTitle { font-size: 14px; font-weight: 600; }
-QLabel#muted { color: #a1a1aa; }
+QLabel#muted, QLabel#fieldLabel, QLabel#metricLabel { color: #c9c9d1; }
+QLabel#fieldLabel { font-size: 12px; }
+QLabel#micro { color: #b6b6bf; font-size: 11px; }
+QLabel#metricValue { font-size: 16px; font-weight: 650; }
 QLabel#error { color: #f87171; }
+QLabel#notice {
+  background: #171718; border: 1px solid #2a2a2d; border-radius: 6px;
+  color: #c9c9d1; padding: 8px 11px;
+}
+QLabel#noticeError {
+  background: rgba(239, 68, 68, 0.08); border: 1px solid #7f1d1d;
+  border-radius: 6px; color: #f87171; padding: 8px 11px;
+}
+QFrame#card { background: #1f1f21; border: 1px solid #2a2a2d; border-radius: 8px; }
+QFrame#card:hover { border-color: #3a3a3e; }
+QFrame#divider { background: #2a2a2d; border: 0; max-height: 1px; }
 QLineEdit, QComboBox, QPlainTextEdit {
-  background: #1f1f21; border: 1px solid #3a3a3e; border-radius: 6px; padding: 7px;
-  selection-background-color: #4f46e5;
+  background: #171718; border: 1px solid #3a3a3e; border-radius: 6px;
+  padding: 7px 9px; selection-background-color: #4f46e5;
 }
-QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus { border: 2px solid #818cf8; }
+QLineEdit:hover, QComboBox:hover { border-color: #52525b; }
+QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus { border: 2px solid #818cf8; padding: 6px 8px; }
+QComboBox::drop-down { border: 0; width: 24px; }
+QComboBox QAbstractItemView {
+  background: #1f1f21; border: 1px solid #3a3a3e; border-radius: 6px;
+  selection-background-color: rgba(129, 140, 248, 0.16); selection-color: #ededec;
+  padding: 4px; outline: 0;
+}
 QPushButton, QToolButton {
-  background: transparent; border: 1px solid #3a3a3e; border-radius: 6px; padding: 7px 12px;
+  background: transparent; border: 1px solid #3a3a3e; border-radius: 6px;
+  padding: 7px 12px; font-weight: 500;
 }
-QPushButton:hover, QToolButton:hover { background: #1f1f21; border-color: #52525b; }
-QPushButton:focus, QToolButton:focus { border: 2px solid #818cf8; }
+QPushButton:hover, QToolButton:hover { background: #2a2a2d; border-color: #52525b; }
+QPushButton:pressed, QToolButton:pressed { background: #323235; }
+QPushButton:focus, QToolButton:focus { border: 2px solid #818cf8; padding: 6px 11px; }
 QPushButton#primary { background: #4f46e5; border-color: #4f46e5; color: white; font-weight: 600; }
-QPushButton#primary:hover { background: #5b53e9; }
-QPushButton:disabled, QToolButton:disabled { color: #71717a; border-color: #2a2a2d; }
-QProgressBar { background: #1f1f21; border: 0; border-radius: 3px; height: 6px; text-align: center; }
-QProgressBar::chunk { background: #818cf8; border-radius: 3px; }
-QScrollArea { border: 0; }
+QPushButton#primary:hover { background: #5b53e9; border-color: #5b53e9; }
+QPushButton#ghost { border-color: transparent; color: #c9c9d1; }
+QPushButton#ghost:hover { background: #2a2a2d; color: #ffffff; }
+QPushButton#dangerGhost { border-color: transparent; color: #c9c9d1; }
+QPushButton#dangerGhost:hover { background: rgba(239, 68, 68, 0.10); color: #f87171; }
+QPushButton:disabled, QToolButton:disabled { color: #5f5f66; border-color: #2a2a2d; background: transparent; }
+QProgressBar {
+  background: #171718; border: 0; border-radius: 2px; height: 4px;
+  min-height: 4px; max-height: 4px; text-align: center;
+}
+QProgressBar::chunk { background: #818cf8; border-radius: 2px; }
+QScrollArea { border: 0; background: #0f0f10; }
+QScrollArea > QWidget > QWidget { background: #0f0f10; }
+QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
+QScrollBar::handle:vertical { background: #3a3a3e; border-radius: 4px; min-height: 32px; }
+QScrollBar::handle:vertical:hover { background: #52525b; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QToolTip { background: #27272a; color: #ededec; border: 1px solid #3f3f46; padding: 5px; }
 """
 
 
@@ -94,26 +141,27 @@ class ItemCard(QFrame):
         self.setObjectName("card")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(18, 16, 18, 15)
+        root.setSpacing(11)
 
         heading = QHBoxLayout()
+        heading.setSpacing(10)
         self.name = QLabel(Path(view.item.source.path).name)
         self.name.setObjectName("cardTitle")
         self.name.setToolTip(view.item.source.path)
         self.name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByKeyboard)
         self.status = QLabel()
-        self.status.setObjectName("muted")
         heading.addWidget(self.name, 1)
         heading.addWidget(self.status)
         root.addLayout(heading)
 
         self.path = QLabel(view.item.source.path)
-        self.path.setObjectName("muted")
+        self.path.setObjectName("micro")
         self.path.setWordWrap(True)
         root.addWidget(self.path)
 
         fields = QHBoxLayout()
+        fields.setSpacing(10)
         self.client = QComboBox()
         self.client.setAccessibleName("Client")
         self.client.addItem("Select client…", None)
@@ -150,20 +198,23 @@ class ItemCard(QFrame):
             ("Language", self.language, 1),
         ):
             field = QVBoxLayout()
+            field.setSpacing(5)
             caption = QLabel(label)
-            caption.setObjectName("muted")
+            caption.setObjectName("fieldLabel")
+            caption.setBuddy(control)
             field.addWidget(caption)
             field.addWidget(control)
             fields.addLayout(field, stretch)
         root.addLayout(fields)
 
         metrics = QHBoxLayout()
+        metrics.setSpacing(8)
         self.probe = QLabel()
-        self.probe.setObjectName("muted")
+        self.probe.setObjectName("micro")
         self.estimate = QLabel()
-        self.estimate.setObjectName("muted")
+        self.estimate.setObjectName("micro")
         self.meeting = QLabel()
-        self.meeting.setObjectName("muted")
+        self.meeting.setObjectName("micro")
         metrics.addWidget(self.probe)
         metrics.addWidget(self.estimate)
         metrics.addStretch()
@@ -176,7 +227,7 @@ class ItemCard(QFrame):
         self.progress.setAccessibleName("Pipeline stage progress")
         root.addWidget(self.progress)
         self.stage_summary = QLabel()
-        self.stage_summary.setObjectName("muted")
+        self.stage_summary.setObjectName("micro")
         self.stage_summary.setWordWrap(True)
         root.addWidget(self.stage_summary)
         self.error = QLabel()
@@ -186,14 +237,16 @@ class ItemCard(QFrame):
         root.addWidget(self.error)
 
         actions = QHBoxLayout()
-        self.start = QPushButton("Start / resume")
+        actions.setSpacing(6)
+        self.start = QPushButton("Start processing")
         self.start.setObjectName("primary")
         self.retry_video = QPushButton("Retry video")
         self.retry_audio = QPushButton("Retry audio")
         self.retry_transcript = QPushButton("Retry transcript")
         retry_actions = QHBoxLayout()
-        self.retry_label = QLabel("Artifact recovery")
-        self.retry_label.setObjectName("muted")
+        retry_actions.setSpacing(6)
+        self.retry_label = QLabel("Recovery options")
+        self.retry_label.setObjectName("micro")
         retry_actions.addWidget(self.retry_label)
         retry_actions.addWidget(self.retry_video)
         retry_actions.addWidget(self.retry_audio)
@@ -201,12 +254,16 @@ class ItemCard(QFrame):
         retry_actions.addStretch()
         root.addLayout(retry_actions)
         self.remove = QPushButton("Remove")
+        self.remove.setObjectName("dangerGhost")
         self.open_source = QPushButton("Open source")
+        self.open_source.setObjectName("ghost")
         self.open_work = QPushButton("Open work folder")
+        self.open_work.setObjectName("ghost")
         self.details_toggle = QToolButton()
         self.details_toggle.setText("Diagnostics")
         self.details_toggle.setCheckable(True)
         self.copy_details = QPushButton("Copy diagnostics")
+        self.copy_details.setObjectName("ghost")
         actions.addWidget(self.start)
         actions.addWidget(self.remove)
         actions.addWidget(self.open_source)
@@ -218,7 +275,7 @@ class ItemCard(QFrame):
 
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setMaximumHeight(180)
+        self.details.setMaximumHeight(170)
         self.details.hide()
         root.addWidget(self.details)
 
@@ -308,17 +365,20 @@ class ItemCard(QFrame):
             if rendered_status == "Completed" and view.final_size is not None
             else rendered_status
         )
-        self.status.setText(status_text)
-        status_color = (
-            "#4ade80"
+        status_color, status_background = (
+            ("#4ade80", "rgba(34, 197, 94, 0.12)")
             if rendered_status == "Completed"
-            else "#f87171"
+            else ("#f87171", "rgba(239, 68, 68, 0.12)")
             if rendered_status.startswith("Needs attention")
-            else "#fbbf24"
+            else ("#fbbf24", "rgba(245, 158, 11, 0.12)")
             if rendered_status.startswith(("Processing", "Scheduled"))
-            else "#a1a1aa"
+            else ("#c9c9d1", "rgba(201, 201, 209, 0.10)")
         )
-        self.status.setStyleSheet(f"color: {status_color}; font-weight: 600;")
+        self.status.setText(f"  •  {status_text}  ")
+        self.status.setStyleSheet(
+            f"background: {status_background}; color: {status_color}; border-radius: 10px; "
+            "font-size: 12px; font-weight: 600; padding: 2px 5px;"
+        )
         self.probe.setText(view.probe_summary)
         self.estimate.setText(f"Estimated video · {view.estimated_size}")
         self.meeting.setText(
@@ -352,7 +412,7 @@ class ItemCard(QFrame):
             button.setVisible(name in view.retryable_artifacts)
             button.setEnabled(not scheduled and view.active_stage is None)
         self.start.setText(
-            f"Retry {failed.stage.value.replace('_', ' ')}" if failed is not None else "Start / resume"
+            f"Retry {failed.stage.value.replace('_', ' ')}" if failed is not None else "Start processing"
         )
         self.start.setEnabled(
             not scheduled and view.active_stage is None and view.completed_stages < len(STAGE_ORDER)
@@ -371,48 +431,116 @@ class MainWindow(QMainWindow):
         self.bridge.pipeline_event.connect(self._pipeline_event)
         self.coordinator = ProcessingCoordinator(orchestrator, self.bridge.pipeline_event.emit)
         self.setWindowTitle("Minutory Worker")
-        self.resize(1180, 780)
-        self.setMinimumSize(1180, 650)
+        self.resize(1320, 820)
+        self.setMinimumSize(1080, 680)
         self.setAcceptDrops(True)
         self.setStyleSheet(DARK_STYLE)
 
         central = QWidget()
-        shell = QVBoxLayout(central)
-        shell.setContentsMargins(24, 20, 24, 20)
-        shell.setSpacing(14)
+        central.setObjectName("appShell")
+        app_layout = QHBoxLayout(central)
+        app_layout.setContentsMargins(0, 0, 0, 0)
+        app_layout.setSpacing(0)
+
+        surface = QWidget()
+        surface.setObjectName("mainSurface")
+        shell = QVBoxLayout(surface)
+        shell.setContentsMargins(32, 28, 32, 24)
+        shell.setSpacing(16)
+
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(10)
+        brand_mark = QLabel("M")
+        brand_mark.setObjectName("brandMark")
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_mark.setFixedSize(26, 26)
+        brand_name = QLabel("Minutory")
+        brand_name.setObjectName("brandName")
+        brand_row.addWidget(brand_mark)
+        brand_row.addWidget(brand_name)
+        brand_row.addStretch()
+        processor = QLabel("AMD local processor · Online")
+        processor.setStyleSheet("color: #4ade80;")
+        brand_row.addWidget(processor)
+        shell.addLayout(brand_row)
+
+        header_row = QHBoxLayout()
         header = QVBoxLayout()
-        title = QLabel("Windows ingestion queue")
-        title.setObjectName("title")
-        subtitle = QLabel("Local AMD transcription · artifacts upload only after local processing")
+        header.setSpacing(4)
+        title = QLabel("Ingestion queue")
+        title.setObjectName("pageTitle")
+        subtitle = QLabel("Prepare, transcribe, and upload meetings from this Windows machine.")
         subtitle.setObjectName("muted")
         subtitle.setWordWrap(True)
         header.addWidget(title)
         header.addWidget(subtitle)
-        shell.addLayout(header)
+        header_row.addLayout(header, 1)
 
-        primary_actions = QHBoxLayout()
-        primary_actions.addStretch()
-        self.refresh_button = QPushButton("Refresh clients && state")
-        self.preflight_button = QPushButton("Preflight unprobed")
         self.add_button = QPushButton("Add files")
         self.start_batch = QPushButton("Start pending")
         self.start_batch.setObjectName("primary")
+        header_row.addWidget(self.add_button)
+        header_row.addWidget(self.start_batch)
+        shell.addLayout(header_row)
+
+        divider = QFrame()
+        divider.setObjectName("divider")
+        divider.setFrameShape(QFrame.Shape.HLine)
+        shell.addWidget(divider)
+
+        stats = QHBoxLayout()
+        stats.setSpacing(28)
+        self.total_value = QLabel("0")
+        self.ready_value = QLabel("0")
+        self.processing_value = QLabel("0")
+        self.attention_value = QLabel("0")
+        self.processing_value.setStyleSheet("color: #fbbf24;")
+        self.attention_value.setStyleSheet("color: #f87171;")
+        for value, label in (
+            (self.total_value, "queued"),
+            (self.ready_value, "ready"),
+            (self.processing_value, "processing"),
+            (self.attention_value, "needs attention"),
+        ):
+            value.setObjectName("metricValue")
+            metric = QHBoxLayout()
+            metric.setSpacing(7)
+            metric_label = QLabel(label)
+            metric_label.setObjectName("metricLabel")
+            metric.addWidget(value)
+            metric.addWidget(metric_label)
+            stats.addLayout(metric)
+        stats.addStretch()
+        shell.addLayout(stats)
+
+        divider_two = QFrame()
+        divider_two.setObjectName("divider")
+        divider_two.setFrameShape(QFrame.Shape.HLine)
+        shell.addWidget(divider_two)
+
+        primary_actions = QHBoxLayout()
+        primary_actions.setSpacing(6)
+        section_title = QLabel("Meeting files")
+        section_title.setObjectName("sectionTitle")
+        primary_actions.addWidget(section_title)
+        primary_actions.addStretch()
+        self.refresh_button = QPushButton("Refresh clients && state")
+        self.preflight_button = QPushButton("Preflight unprobed")
         self.cancel_button = QPushButton("Cancel media command")
         self.clear_all_button = QPushButton("Clear all")
+        self.refresh_button.setObjectName("ghost")
+        self.preflight_button.setObjectName("ghost")
+        self.cancel_button.setObjectName("ghost")
+        self.clear_all_button.setObjectName("dangerGhost")
         primary_actions.addWidget(self.refresh_button)
         primary_actions.addWidget(self.preflight_button)
-        primary_actions.addWidget(self.add_button)
-        primary_actions.addWidget(self.start_batch)
+        primary_actions.addWidget(self.cancel_button)
+        primary_actions.addWidget(self.clear_all_button)
         shell.addLayout(primary_actions)
 
-        secondary_actions = QHBoxLayout()
-        secondary_actions.addStretch()
-        secondary_actions.addWidget(self.clear_all_button)
-        secondary_actions.addWidget(self.cancel_button)
-        shell.addLayout(secondary_actions)
-
         self.notice = QLabel("Drop MP4, MOV, AVI, or WebM files anywhere in this window.")
-        self.notice.setObjectName("muted")
+        self.notice.setObjectName("notice")
+        self.notice.setAccessibleName("Worker status")
         self.notice.setWordWrap(True)
         shell.addWidget(self.notice)
 
@@ -430,6 +558,7 @@ class MainWindow(QMainWindow):
         self.queue_layout.addStretch()
         self.scroll_area.setWidget(self.queue_widget)
         shell.addWidget(self.scroll_area, 1)
+        app_layout.addWidget(surface, 1)
         self.setCentralWidget(central)
 
         self.add_button.clicked.connect(self.choose_files)
@@ -443,7 +572,7 @@ class MainWindow(QMainWindow):
 
     def show_notice(self, message: str, *, error: bool = False) -> None:
         self.notice.setText(message)
-        self.notice.setObjectName("error" if error else "muted")
+        self.notice.setObjectName("noticeError" if error else "notice")
         self.style().unpolish(self.notice)
         self.style().polish(self.notice)
 
@@ -502,6 +631,29 @@ class MainWindow(QMainWindow):
 
     def render_state(self) -> None:
         views = self.controller.views()
+        self.total_value.setText(str(len(views)))
+        self.ready_value.setText(
+            str(
+                sum(
+                    view.active_stage is None
+                    and view.status in {"Ready", "Completed"}
+                    and not self.coordinator.is_scheduled(view.item.item_id)
+                    for view in views
+                )
+            )
+        )
+        self.processing_value.setText(
+            str(
+                sum(
+                    view.active_stage is not None
+                    or self.coordinator.is_scheduled(view.item.item_id)
+                    for view in views
+                )
+            )
+        )
+        self.attention_value.setText(
+            str(sum(view.status.startswith("Needs attention") for view in views))
+        )
         existing = {view.item.item_id for view in views}
         for item_id in set(self.cards) - existing:
             card = self.cards.pop(item_id)
@@ -671,7 +823,7 @@ class MainWindow(QMainWindow):
                     Stage.AUDIO_UPLOAD: "uploading audio",
                     Stage.TRANSCRIPT_UPLOAD: "uploading transcript",
                 }
-                card.status.setText(f"Processing · {labels.get(stage, 'working')} {value}%")
+                card.status.setText(f"  •  Processing · {labels.get(stage, 'working')} {value}%  ")
             return
         self.render_state()
         if kind == "failed":
