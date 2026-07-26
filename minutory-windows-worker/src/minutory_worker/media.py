@@ -94,13 +94,18 @@ class Probe:
 class CompressionPreset:
     video_bitrate: int
     audio_bitrate: int
+    crf: int | None = None
 
 
 PRESETS: dict[str, CompressionPreset | None] = {
     "none": None,
+    "nano": CompressionPreset(500_000, 64_000),
+    "micro": CompressionPreset(1_000_000, 96_000),
     "compact": CompressionPreset(2_500_000, 128_000),
     "balanced": CompressionPreset(5_000_000, 160_000),
     "quality": CompressionPreset(8_000_000, 192_000),
+    "crf22": CompressionPreset(400_000, 128_000, crf=22),
+    "crf26": CompressionPreset(200_000, 96_000, crf=26),
 }
 
 
@@ -263,7 +268,7 @@ class MediaService:
     def compression_command(
         self, source: Path, destination: Path, preset: CompressionPreset, codec: str
     ) -> list[str]:
-        return [
+        command = [
             str(self.ffmpeg),
             "-hide_banner",
             "-nostdin",
@@ -276,12 +281,22 @@ class MediaService:
             "0:a:0?",
             "-c:v",
             codec,
-            "-b:v",
-            str(preset.video_bitrate),
-            "-maxrate",
-            str(preset.video_bitrate),
-            "-bufsize",
-            str(preset.video_bitrate * 2),
+        ]
+        if preset.crf is not None:
+            if "amf" in codec:
+                command += ["-rc", "cqp", "-qp_i", str(preset.crf), "-qp_p", str(preset.crf)]
+            else:
+                command += ["-crf", str(preset.crf)]
+        else:
+            command += [
+                "-b:v",
+                str(preset.video_bitrate),
+                "-maxrate",
+                str(preset.video_bitrate),
+                "-bufsize",
+                str(preset.video_bitrate * 2),
+            ]
+        command += [
             "-c:a",
             "aac",
             "-b:a",
@@ -292,6 +307,7 @@ class MediaService:
             "mp4",
             str(destination),
         ]
+        return command
 
     def extract_wav(self, source: Path, destination: Path, *, cancel: threading.Event | None = None) -> Path:
         def run(temporary: Path) -> None:

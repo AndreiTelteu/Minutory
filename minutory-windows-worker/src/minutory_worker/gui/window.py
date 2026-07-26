@@ -127,6 +127,10 @@ class ItemCard(QFrame):
         self.preset.setAccessibleName("Compression preset")
         for key, label in (
             ("none", "None · original"),
+            ("crf26", "CRF 26 · auto quality"),
+            ("crf22", "CRF 22 · auto quality"),
+            ("nano", "Nano · 500 kbps"),
+            ("micro", "Micro · 1 Mbps"),
             ("compact", "Compact · 2.5 Mbps"),
             ("balanced", "Balanced · 5 Mbps"),
             ("quality", "Quality · 8 Mbps"),

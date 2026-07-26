@@ -45,7 +45,7 @@ IO_STAGES = (
     Stage.FINAL_RECONCILE,
 )
 
-COMPRESSION_PRESETS = frozenset({"none", "compact", "balanced", "quality"})
+COMPRESSION_PRESETS = frozenset({"none", "nano", "micro", "compact", "balanced", "quality", "crf22", "crf26"})
 
 
 class StageStatus(StrEnum):
