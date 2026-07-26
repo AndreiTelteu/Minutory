@@ -34,6 +34,7 @@ def main() -> int:
         orchestrator.api,
         timezone=config.timezone,
         default_preset=config.compression_preset,
+        work_dir=orchestrator.work_dir,
     )
     window = MainWindow(controller, orchestrator)
     window.show()

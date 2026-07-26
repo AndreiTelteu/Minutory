@@ -44,6 +44,16 @@ def _positive_int(value: str, name: str) -> int:
     return parsed
 
 
+def _non_negative_int(value: str, name: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exception:
+        raise ConfigError(f"{name} must be an integer.") from exception
+    if parsed < 0:
+        raise ConfigError(f"{name} must be zero or greater.")
+    return parsed
+
+
 def validate_api_base_url(value: str) -> str:
     base_url = value.rstrip("/")
     parsed = urlparse(base_url)
@@ -89,6 +99,8 @@ class WorkerConfig:
     language: str = "ro"
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
+    beam_size: int = 5
+    batch_size: int = 0
     timezone: str = "Europe/Bucharest"
 
     def __repr__(self) -> str:
@@ -158,13 +170,15 @@ def load_config(
         compression_preset=preset,
         video_codec=get("MINUTORY_VIDEO_CODEC", "h264_amf"),
         fallback_video_codec=get("MINUTORY_FALLBACK_VIDEO_CODEC", "libx264"),
-        whisper_model=get("MINUTORY_WHISPER_MODEL", "large-v3"),
+        whisper_model=get("MINUTORY_MODEL_NAME", get("MINUTORY_WHISPER_MODEL", "large-v3")),
         language=get("MINUTORY_LANGUAGE", "ro"),
         vad_filter=_boolean(get("MINUTORY_VAD_FILTER", "true"), "MINUTORY_VAD_FILTER"),
         vad_min_silence_ms=_positive_int(
             get("MINUTORY_VAD_MIN_SILENCE_MS", "500"),
             "MINUTORY_VAD_MIN_SILENCE_MS",
         ),
+        beam_size=_positive_int(get("MINUTORY_BEAM_SIZE", "5"), "MINUTORY_BEAM_SIZE"),
+        batch_size=_non_negative_int(get("MINUTORY_BATCH_SIZE", "0"), "MINUTORY_BATCH_SIZE"),
         timezone=timezone,
     )
 

@@ -286,6 +286,19 @@ def test_probe_preflight_stops_before_source(store, item, tmp_path) -> None:
     assert api.created == 0
 
 
+def test_preflight_eagerly_extracts_wav_and_pipeline_reuses_it(store, item, tmp_path) -> None:
+    orchestrator, runner, _backend, api = services(store, item, tmp_path)
+    result = orchestrator.preflight(item.item_id)
+    assert store.stage(item.item_id, Stage.WAV)["status"] == StageStatus.SUCCEEDED
+    assert store.stage(item.item_id, Stage.SOURCE)["status"] == StageStatus.PENDING
+    assert result.wav_path is not None
+    assert runner.wavs == 1
+    completed = orchestrator.process(item.item_id)
+    assert runner.wavs == 1
+    assert completed.server_meeting_id == 500
+    assert api.uploads == ["video", "audio", "transcript"]
+
+
 def test_explicit_artifact_retry_uploads_only_requested_then_reconciles(store, item, tmp_path) -> None:
     orchestrator, runner, backend, api = services(store, item, tmp_path)
     orchestrator.process(item.item_id)

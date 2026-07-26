@@ -30,6 +30,8 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
         FasterWhisperBackend(
             local_model,
             model_name=config.whisper_model,
+            beam_size=config.beam_size,
+            batch_size=config.batch_size,
         ),
         language=config.language,
         vad_filter=config.vad_filter,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import threading
 from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -8,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from .domain import STAGE_ORDER, SourceIdentity, Stage, StageStatus, WorkerItem
+from .domain import GPU_STAGES, IO_STAGES, STAGE_ORDER, SourceIdentity, Stage, StageStatus, WorkerItem
 from .filename_parser import local_datetime_to_offset_iso, parse_meeting_filename
 from .media import PRESETS, estimate_output_bytes
 from .orchestrator import Orchestrator
@@ -100,11 +101,13 @@ class QueueController:
         *,
         timezone: str,
         default_preset: str = "balanced",
+        work_dir: Path | None = None,
     ) -> None:
         self.store = store
         self.api = api
         self.timezone = timezone
         self.default_preset = default_preset
+        self.work_dir = work_dir
 
     def add_paths(self, paths: Iterable[str | Path]) -> AddResult:
         added: list[str] = []
@@ -190,6 +193,12 @@ class QueueController:
             self.store.delete_reconciled_item(item_id)
         else:
             self.store.delete_pre_server_item(item_id)
+        self._cleanup_work_dir(item_id)
+
+    def _cleanup_work_dir(self, item_id: str) -> None:
+        if self.work_dir is None:
+            return
+        shutil.rmtree(self.work_dir / item_id, ignore_errors=True)
 
     def views(self) -> tuple[ItemView, ...]:
         return tuple(self.view(item.item_id) for item in self.store.list_items())
@@ -272,16 +281,24 @@ EventSink = Callable[[str, str, object | None], None]
 
 
 class ProcessingCoordinator:
-    """One long-lived execution lane; duplicate item starts are coalesced."""
+    """Two execution lanes: a sequential GPU lane and a concurrent IO lane.
+
+    The GPU lane runs probe/source/wav/transcribe for one item at a time so only
+    one ASR model lives in VRAM. As soon as an item finishes transcribing, the GPU
+    lane starts the next item while the finished item's meeting creation and uploads
+    proceed on the IO lane.
+    """
 
     def __init__(self, orchestrator: Orchestrator, event_sink: EventSink | None = None) -> None:
         self.orchestrator = orchestrator
         self._event_sink = event_sink or (lambda _kind, _item_id, _value: None)
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-pipeline")
+        self._gpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-gpu")
+        self._io_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="minutory-io")
         self._lock = threading.RLock()
         self._scheduled: dict[str, str] = {}
-        self._current_item: str | None = None
-        self._current_stage: Stage | None = None
+        self._gpu_item: str | None = None
+        self._gpu_stage: Stage | None = None
+        self._io_stages: dict[str, Stage | None] = {}
         self._cancel = threading.Event()
         self._closed = False
 
@@ -301,13 +318,26 @@ class ProcessingCoordinator:
             if self._closed or item_id in self._scheduled:
                 return False
             self._scheduled[item_id] = operation
-            future = self._executor.submit(self._run, item_id, operation)
-
-            def done_callback(result: Future[WorkerItem]) -> None:
-                self._done(item_id, operation, result)
-
-            future.add_done_callback(done_callback)
+            if operation == "pipeline":
+                self._submit_gpu(item_id, "pipeline")
+            elif operation == "preflight":
+                self._submit_gpu(item_id, "preflight")
+            else:
+                self._submit_io(item_id, operation)
             return True
+
+    def _submit_gpu(self, item_id: str, operation: str) -> None:
+        future = self._gpu_executor.submit(self._run_gpu, item_id, operation)
+        future.add_done_callback(lambda result: self._gpu_done(item_id, operation, result))
+
+    def _submit_io(self, item_id: str, operation: str) -> None:
+        with self._lock:
+            if self._closed:
+                self._scheduled.pop(item_id, None)
+                self._event_sink("deferred", item_id, "Item deferred — will resume on next start.")
+                return
+            future = self._io_executor.submit(self._run_io, item_id, operation)
+        future.add_done_callback(lambda result: self._io_done(item_id, operation, result))
 
     def start_pending(self) -> int:
         count = 0
@@ -327,15 +357,17 @@ class ProcessingCoordinator:
                 count += int(self.preflight(item.item_id))
         return count
 
-    def _run(self, item_id: str, operation: str) -> WorkerItem:
+    def _run_gpu(self, item_id: str, operation: str) -> WorkerItem:
         with self._lock:
-            self._current_item = item_id
+            self._gpu_item = item_id
+            self._gpu_stage = None
             self._cancel = threading.Event()
+            cancel = self._cancel
         self._event_sink("started", item_id, None)
 
         def stage_changed(stage: Stage, status: StageStatus) -> None:
             with self._lock:
-                self._current_stage = stage if status is StageStatus.RUNNING else None
+                self._gpu_stage = stage if status is StageStatus.RUNNING else None
             self._event_sink("stage", item_id, (stage, status))
 
         last_percent = {"value": -1}
@@ -346,41 +378,70 @@ class ProcessingCoordinator:
                 last_percent["value"] = percent
                 self._event_sink("progress", item_id, percent)
 
-        if operation == "preflight":
-            return self.orchestrator.preflight(item_id, on_stage=stage_changed)
-        if operation.startswith("artifact:"):
-            return self.orchestrator.retry_artifact(
-                item_id,
-                operation.removeprefix("artifact:"),
-                on_stage=stage_changed,
-            )
-        return self.orchestrator.process(
-            item_id,
-            cancel=self._cancel,
-            on_stage=stage_changed,
-            on_progress=progress,
-        )
-
-    def _done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
         try:
-            result: object | None = future.result()
-            kind = {
-                "preflight": "preflight_completed",
-                "pipeline": "completed",
-            }.get(operation, "artifact_completed")
+            if operation == "preflight":
+                return self.orchestrator.preflight(item_id, cancel=cancel, on_stage=stage_changed)
+            return self.orchestrator.process_stages(
+                item_id,
+                GPU_STAGES,
+                cancel=cancel,
+                on_stage=stage_changed,
+                on_progress=progress,
+            )
+        finally:
+            with self._lock:
+                self._gpu_item = None
+                self._gpu_stage = None
+
+    def _run_io(self, item_id: str, operation: str) -> WorkerItem:
+        if operation.startswith("artifact:"):
+            self._event_sink("started", item_id, None)
+
+        def stage_changed(stage: Stage, status: StageStatus) -> None:
+            with self._lock:
+                self._io_stages[item_id] = stage if status is StageStatus.RUNNING else None
+            self._event_sink("stage", item_id, (stage, status))
+
+        try:
+            if operation.startswith("artifact:"):
+                return self.orchestrator.retry_artifact(
+                    item_id,
+                    operation.removeprefix("artifact:"),
+                    on_stage=stage_changed,
+                )
+            return self.orchestrator.process_stages(item_id, IO_STAGES, on_stage=stage_changed)
+        finally:
+            with self._lock:
+                self._io_stages.pop(item_id, None)
+
+    def _gpu_done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
+        try:
+            result: object = future.result()
+        except Exception as exception:
+            self._finalize(item_id, "failed", exception)
+            return
+        if operation == "pipeline":
+            self._submit_io(item_id, "pipeline-io")
+            return
+        self._finalize(item_id, "preflight_completed", result)
+
+    def _io_done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
+        try:
+            result: object = future.result()
+            kind = "artifact_completed" if operation.startswith("artifact:") else "completed"
         except Exception as exception:
             result = exception
             kind = "failed"
+        self._finalize(item_id, kind, result)
+
+    def _finalize(self, item_id: str, kind: str, result: object) -> None:
         with self._lock:
             self._scheduled.pop(item_id, None)
-            if self._current_item == item_id:
-                self._current_item = None
-                self._current_stage = None
         self._event_sink(kind, item_id, result)
 
     def cancel_current_media(self) -> bool:
         with self._lock:
-            if self._current_item is None or self._current_stage not in {Stage.SOURCE, Stage.WAV}:
+            if self._gpu_item is None or self._gpu_stage not in {Stage.SOURCE, Stage.WAV}:
                 return False
             self._cancel.set()
             return True
@@ -388,12 +449,17 @@ class ProcessingCoordinator:
     @property
     def transcription_active(self) -> bool:
         with self._lock:
-            return self._current_stage is Stage.TRANSCRIBE
+            return self._gpu_stage is Stage.TRANSCRIBE
 
     @property
     def current_stage(self) -> Stage | None:
         with self._lock:
-            return self._current_stage
+            if self._gpu_stage is not None:
+                return self._gpu_stage
+            for stage in self._io_stages.values():
+                if stage is not None:
+                    return stage
+            return None
 
     @property
     def busy(self) -> bool:
@@ -406,12 +472,13 @@ class ProcessingCoordinator:
 
     def close(self) -> bool:
         with self._lock:
-            if self.transcription_active:
+            if self._gpu_stage is Stage.TRANSCRIBE:
                 return False
             self._closed = True
-            if self._current_item is not None:
+            if self._gpu_item is not None:
                 self._cancel.set()
-        self._executor.shutdown(wait=True, cancel_futures=True)
+        self._gpu_executor.shutdown(wait=True, cancel_futures=True)
+        self._io_executor.shutdown(wait=True, cancel_futures=True)
         return True
 
 

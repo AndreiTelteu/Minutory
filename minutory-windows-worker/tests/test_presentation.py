@@ -157,21 +157,22 @@ class SerialOrchestrator:
         self.started = threading.Event()
         self.fail_once: set[str] = set()
 
-    def process(self, item_id, *, cancel, on_stage):
+    def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
         self.calls.append(item_id)
-        self.concurrent += 1
-        self.maximum_concurrent = max(self.maximum_concurrent, self.concurrent)
-        on_stage(Stage.TRANSCRIBE, StageStatus.RUNNING)
-        self.started.set()
-        self.release.wait(2)
-        on_stage(Stage.TRANSCRIBE, StageStatus.SUCCEEDED)
-        self.concurrent -= 1
-        if item_id in self.fail_once:
-            self.fail_once.remove(item_id)
-            raise RuntimeError("retry me")
+        if Stage.TRANSCRIBE in stages:
+            self.concurrent += 1
+            self.maximum_concurrent = max(self.maximum_concurrent, self.concurrent)
+            on_stage(Stage.TRANSCRIBE, StageStatus.RUNNING)
+            self.started.set()
+            self.release.wait(2)
+            on_stage(Stage.TRANSCRIBE, StageStatus.SUCCEEDED)
+            self.concurrent -= 1
+            if item_id in self.fail_once:
+                self.fail_once.remove(item_id)
+                raise RuntimeError("retry me")
         return item_id
 
-    def preflight(self, item_id, *, on_stage):
+    def preflight(self, item_id, *, cancel=None, on_stage=None):
         self.calls.append(f"preflight:{item_id}")
         on_stage(Stage.PROBE, StageStatus.RUNNING)
         self.started.set()
@@ -179,7 +180,7 @@ class SerialOrchestrator:
         on_stage(Stage.PROBE, StageStatus.SUCCEEDED)
         return item_id
 
-    def retry_artifact(self, item_id, artifact_name, *, on_stage):
+    def retry_artifact(self, item_id, artifact_name, *, on_stage=None):
         self.calls.append(f"{artifact_name}:{item_id}")
         on_stage(Stage.AUDIO_UPLOAD, StageStatus.RUNNING)
         on_stage(Stage.AUDIO_UPLOAD, StageStatus.SUCCEEDED)
@@ -194,25 +195,125 @@ def wait_until(predicate, timeout: float = 2) -> None:
         time.sleep(0.01)
 
 
-def test_background_serialization_duplicate_start_retry_and_close_safety(item: WorkerItem) -> None:
+class OverlapOrchestrator:
+    def __init__(self, items):
+        self.store = FakeStore(items)
+        self.io_entered = threading.Event()
+        self.io_release = threading.Event()
+        self.transcribe_overlap = threading.Event()
+        self.calls: list[str] = []
+        self._io_active = False
+        self._gpu_count = 0
+        self.concurrent = 0
+        self.maximum_concurrent = 0
+
+    def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
+        self.calls.append(item_id)
+        if Stage.TRANSCRIBE in stages:
+            self._gpu_count += 1
+            if self._gpu_count > 1:
+                self.io_entered.wait(2)
+            if self._io_active:
+                self.transcribe_overlap.set()
+            self.concurrent += 1
+            self.maximum_concurrent = max(self.maximum_concurrent, self.concurrent)
+            on_stage(Stage.TRANSCRIBE, StageStatus.RUNNING)
+            on_stage(Stage.TRANSCRIBE, StageStatus.SUCCEEDED)
+            self.concurrent -= 1
+        elif Stage.MEETING in stages:
+            self._io_active = True
+            self.io_entered.set()
+            self.io_release.wait(2)
+            self._io_active = False
+        return item_id
+
+    def preflight(self, item_id, *, cancel=None, on_stage=None):
+        return item_id
+
+    def retry_artifact(self, item_id, artifact_name, *, on_stage=None):
+        return item_id
+
+
+class IsolatingOrchestrator:
+    def __init__(self, items, fail_item_id):
+        self.store = FakeStore(items)
+        self.fail_item_id = fail_item_id
+        self.io_entered = threading.Event()
+        self.io_release = threading.Event()
+        self.transcribe_started_during_io = threading.Event()
+        self.calls: list[str] = []
+        self._io_active = False
+        self._gpu_count = 0
+
+    def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
+        self.calls.append(item_id)
+        if Stage.TRANSCRIBE in stages:
+            self._gpu_count += 1
+            if self._gpu_count > 1:
+                self.io_entered.wait(2)
+            if self._io_active:
+                self.transcribe_started_during_io.set()
+            on_stage(Stage.TRANSCRIBE, StageStatus.RUNNING)
+            on_stage(Stage.TRANSCRIBE, StageStatus.SUCCEEDED)
+        elif Stage.MEETING in stages:
+            if item_id == self.fail_item_id:
+                self._io_active = True
+                self.io_entered.set()
+                self.io_release.wait(2)
+                self._io_active = False
+                raise RuntimeError("upload 503")
+        return item_id
+
+    def preflight(self, item_id, *, cancel=None, on_stage=None):
+        return item_id
+
+    def retry_artifact(self, item_id, artifact_name, *, on_stage=None):
+        return item_id
+
+
+def test_dual_lane_serializes_transcription_and_overlaps_uploads(item: WorkerItem) -> None:
     second = WorkerItem(source=item.source, title="Second")
-    orchestrator = SerialOrchestrator([item, second])
+    orchestrator = OverlapOrchestrator([item, second])
     coordinator = ProcessingCoordinator(orchestrator)
     assert coordinator.start(item.item_id)
     assert not coordinator.start(item.item_id)
     assert coordinator.start(second.item_id)
-    assert orchestrator.started.wait(1)
-    assert coordinator.transcription_active
-    assert not coordinator.close()
-    orchestrator.release.set()
+    assert orchestrator.transcribe_overlap.wait(2)
+    orchestrator.io_release.set()
     wait_until(lambda: not coordinator.busy)
-    assert orchestrator.calls == [item.item_id, second.item_id]
     assert orchestrator.maximum_concurrent == 1
+    assert orchestrator.calls.count(item.item_id) == 2
+    assert orchestrator.calls.count(second.item_id) == 2
+    assert coordinator.close()
 
+
+def test_io_lane_failure_does_not_block_gpu_lane(item: WorkerItem) -> None:
+    second = WorkerItem(source=item.source, title="Second")
+    orchestrator = IsolatingOrchestrator([item, second], fail_item_id=item.item_id)
+    events: list[tuple[str, str]] = []
+    coordinator = ProcessingCoordinator(
+        orchestrator,
+        event_sink=lambda kind, item_id, value: events.append((kind, item_id)),
+    )
+    assert coordinator.start(item.item_id)
+    assert orchestrator.io_entered.wait(1)
+    assert coordinator.start(second.item_id)
+    assert orchestrator.transcribe_started_during_io.wait(1)
+    orchestrator.io_release.set()
+    wait_until(lambda: not coordinator.busy)
+    assert ("failed", item.item_id) in events
+    assert ("completed", second.item_id) in events
+    assert coordinator.close()
+
+
+def test_gpu_lane_failure_skips_io_and_retry_recovers(item: WorkerItem) -> None:
+    orchestrator = SerialOrchestrator([item])
     orchestrator.release.set()
     orchestrator.fail_once.add(item.item_id)
+    coordinator = ProcessingCoordinator(orchestrator)
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
+    assert orchestrator.calls.count(item.item_id) == 1
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
     assert orchestrator.calls.count(item.item_id) == 3
@@ -236,7 +337,9 @@ def test_preflight_and_artifact_dispatch_are_scheduled_and_deduplicated(item: Wo
 
 
 class MediaOrchestrator(SerialOrchestrator):
-    def process(self, item_id, *, cancel, on_stage):
+    def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
+        if Stage.SOURCE not in stages:
+            return item_id
         on_stage(Stage.SOURCE, StageStatus.RUNNING)
         self.started.set()
         assert cancel.wait(1)
@@ -252,3 +355,25 @@ def test_media_cancellation_is_scoped_to_supported_stage(item: WorkerItem) -> No
     assert coordinator.cancel_current_media()
     wait_until(lambda: not coordinator.busy)
     assert coordinator.close()
+
+
+def test_cleanup_work_dir_on_remove(store: StateStore, item: WorkerItem, tmp_path: Path) -> None:
+    work_dir = tmp_path / "work"
+    item_work = work_dir / item.item_id
+    item_work.mkdir(parents=True)
+    (item_work / "audio.wav").write_bytes(b"wav")
+    queue = QueueController(store, ClientApi(), timezone="Europe/Bucharest", work_dir=work_dir)
+    queue.remove(item.item_id)
+    assert not item_work.exists()
+
+
+def test_cleanup_work_dir_preserves_running_item(store: StateStore, item: WorkerItem, tmp_path: Path) -> None:
+    work_dir = tmp_path / "work"
+    item_work = work_dir / item.item_id
+    item_work.mkdir(parents=True)
+    (item_work / "audio.wav").write_bytes(b"wav")
+    store.start_stage(item.item_id, Stage.PROBE)
+    queue = QueueController(store, ClientApi(), timezone="Europe/Bucharest", work_dir=work_dir)
+    with pytest.raises(StateError, match="running"):
+        queue.remove(item.item_id)
+    assert item_work.exists()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -56,11 +56,15 @@ class FasterWhisperBackend:
         model_name: str = "large-v3",
         device: str = "cuda",
         compute_type: str = "float16",
+        beam_size: int = 5,
+        batch_size: int = 0,
     ) -> None:
         self.model_name = model_name
         self.model_path = model_path
         self.device = device
         self.compute_type = compute_type
+        self.beam_size = beam_size
+        self.batch_size = batch_size
         self._model: Any = None
 
     def _get_model(self) -> Any:
@@ -73,11 +77,20 @@ class FasterWhisperBackend:
                     f"({exception}). "
                     "Stage 4 bootstrap must install the managed ROCm runtime."
                 ) from exception
-            self._model = WhisperModel(
+            model: Any = WhisperModel(
                 str(self.model_path),
                 device=self.device,
                 compute_type=self.compute_type,
             )
+            if self.batch_size > 0:
+                try:
+                    from faster_whisper import BatchedInferencePipeline
+                except ImportError as exception:
+                    raise RuntimeError(
+                        f"faster-whisper BatchedInferencePipeline is unavailable ({exception})."
+                    ) from exception
+                model = BatchedInferencePipeline(model, batch_size=self.batch_size)
+            self._model = model
         return self._model
 
     def transcribe(
@@ -93,6 +106,7 @@ class FasterWhisperBackend:
         segments, info = model.transcribe(
             str(audio_path),
             language=language,
+            beam_size=self.beam_size,
             condition_on_previous_text=False,
             vad_filter=vad_filter,
             vad_parameters=dict(vad_parameters),

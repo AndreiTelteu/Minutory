@@ -634,6 +634,8 @@ class MainWindow(QMainWindow):
         self.render_state()
         if kind == "failed":
             self.show_notice(f"Item paused safely: {value}", error=True)
+        elif kind == "deferred":
+            self.show_notice(str(value))
         elif kind == "completed":
             self.show_notice("Item completed and reconciled with the server.")
         elif kind == "preflight_completed":

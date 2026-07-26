@@ -214,6 +214,10 @@ def test_compression_preset_mutation_is_transactional(store: StateStore, item) -
     assert store.stage(item.item_id, Stage.MEETING)["status"] == StageStatus.SUCCEEDED.value
     for stage in dependent_stages(Stage.SOURCE):
         assert store.stage(item.item_id, stage)["status"] == StageStatus.PENDING.value
+    assert store.stage(item.item_id, Stage.WAV)["status"] == StageStatus.SUCCEEDED.value
+    assert store.stage(item.item_id, Stage.TRANSCRIBE)["status"] == StageStatus.SUCCEEDED.value
+    assert changed.wav_path == "audio.wav"
+    assert changed.transcript_path == "transcript.json"
     assert not store.set_compression_preset(item.item_id, "quality")
 
 
@@ -236,8 +240,8 @@ def test_preset_validation_and_post_server_refusal(store: StateStore, item) -> N
 def test_preset_refuses_while_generation_stage_is_running(store: StateStore, item, stage: Stage) -> None:
     dependencies = {
         Stage.SOURCE: (Stage.PROBE,),
-        Stage.WAV: (Stage.PROBE, Stage.SOURCE),
-        Stage.TRANSCRIBE: (Stage.PROBE, Stage.SOURCE, Stage.WAV),
+        Stage.WAV: (Stage.PROBE,),
+        Stage.TRANSCRIBE: (Stage.WAV,),
     }[stage]
     for dependency in dependencies:
         store.reconcile_success(item.item_id, dependency)

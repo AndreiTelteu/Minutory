@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import threading
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -97,16 +97,18 @@ class Orchestrator:
         self,
         item_id: str,
         *,
+        cancel: threading.Event | None = None,
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
     ) -> WorkerItem:
-        """Run only the media probe so the operator can review metadata and size."""
+        """Probe the media and eagerly extract the source WAV for review and fast start."""
         self.refresh_source(item_id)
-        status = str(self.store.stage(item_id, Stage.PROBE)["status"])
-        if status == StageStatus.SUCCEEDED.value:
-            return self.store.get_item(item_id)
-        if status == StageStatus.RUNNING.value:
-            raise PipelineError("Stage probe is already running.")
-        self._run_stage(item_id, Stage.PROBE, on_stage=on_stage)
+        for stage in (Stage.PROBE, Stage.WAV):
+            status = str(self.store.stage(item_id, stage)["status"])
+            if status == StageStatus.SUCCEEDED.value:
+                continue
+            if status == StageStatus.RUNNING.value:
+                raise PipelineError(f"Stage {stage.value} is already running.")
+            self._run_stage(item_id, stage, cancel=cancel, on_stage=on_stage)
         return self.store.get_item(item_id)
 
     def retry_artifact(
@@ -148,12 +150,30 @@ class Orchestrator:
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> WorkerItem:
+        return self.process_stages(
+            item_id,
+            STAGE_ORDER,
+            cancel=cancel,
+            on_stage=on_stage,
+            on_progress=on_progress,
+        )
+
+    def process_stages(
+        self,
+        item_id: str,
+        stages: Iterable[Stage],
+        *,
+        cancel: threading.Event | None = None,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> WorkerItem:
+        """Run only the requested stages, skipping any that already succeeded."""
         self.refresh_source(item_id)
         item = self.store.get_item(item_id)
         if item.server_meeting_id is not None:
             self._reconcile(item)
             item = self.store.get_item(item_id)
-        for stage in STAGE_ORDER:
+        for stage in stages:
             status = str(self.store.stage(item_id, stage)["status"])
             if status == StageStatus.SUCCEEDED.value:
                 continue
@@ -248,11 +268,7 @@ class Orchestrator:
             item.selected_video_bytes = selected.stat().st_size
         elif stage is Stage.WAV:
             wav = item_dir / "audio.wav"
-            self.media.extract_wav(
-                Path(_required(item.selected_video_path, "selected video")),
-                wav,
-                cancel=cancel,
-            )
+            self.media.extract_wav(source, wav, cancel=cancel)
             item.wav_path = str(wav)
             item.audio_sha256 = stream_sha256(wav)
             item.audio_bytes = wav.stat().st_size

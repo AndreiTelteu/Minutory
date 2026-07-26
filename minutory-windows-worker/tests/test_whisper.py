@@ -104,6 +104,8 @@ def test_faster_whisper_defaults_and_does_not_import_at_construction(tmp_path: P
     assert backend.model_name == "large-v3"
     assert backend.device == "cuda"
     assert backend.compute_type == "float16"
+    assert backend.beam_size == 5
+    assert backend.batch_size == 0
     assert backend.model_path == tmp_path / "large-v3"
     assert backend._model is None
 
@@ -125,6 +127,28 @@ def test_faster_whisper_loads_only_the_explicit_local_model(monkeypatch, tmp_pat
         "device": "cuda",
         "compute_type": "float16",
     }
+
+
+def test_faster_whisper_wraps_batched_pipeline_when_enabled(monkeypatch, tmp_path: Path) -> None:
+    captured = {}
+
+    def model(path, **kwargs):
+        return object()
+
+    def batched(inner, *, batch_size):
+        captured["inner"] = inner
+        captured["batch_size"] = batch_size
+        return object()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper",
+        SimpleNamespace(WhisperModel=model, BatchedInferencePipeline=batched),
+    )
+    backend = FasterWhisperBackend(tmp_path / "large-v3", batch_size=8)
+    backend._get_model()
+    assert captured["batch_size"] == 8
+    assert captured["inner"] is not None
 
 
 def test_production_runtime_refuses_missing_local_model_before_opening_state(tmp_path: Path) -> None:

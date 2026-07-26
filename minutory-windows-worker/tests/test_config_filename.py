@@ -108,3 +108,38 @@ def test_config_validates_url_timeouts_boolean_and_preset() -> None:
 def test_config_accepts_https_and_http_loopback_only(url: str) -> None:
     config = load_config(environ={"MINUTORY_API_TOKEN": "fake-test-token", "MINUTORY_API_BASE_URL": url})
     assert config.api_base_url == url
+
+
+def test_config_parses_model_beam_and_batch_knobs() -> None:
+    config = load_config(
+        environ={
+            "MINUTORY_API_TOKEN": "fake-test-token",
+            "MINUTORY_MODEL_NAME": "large-v3-turbo",
+            "MINUTORY_BEAM_SIZE": "1",
+            "MINUTORY_BATCH_SIZE": "8",
+        }
+    )
+    assert config.whisper_model == "large-v3-turbo"
+    assert config.beam_size == 1
+    assert config.batch_size == 8
+
+
+def test_config_model_name_falls_back_to_whisper_model() -> None:
+    config = load_config(
+        environ={
+            "MINUTORY_API_TOKEN": "fake-test-token",
+            "MINUTORY_WHISPER_MODEL": "large-v3",
+        }
+    )
+    assert config.whisper_model == "large-v3"
+
+
+def test_config_rejects_invalid_beam_and_batch() -> None:
+    base = {"MINUTORY_API_TOKEN": "fake-test-token"}
+    for override in (
+        {"MINUTORY_BEAM_SIZE": "0"},
+        {"MINUTORY_BATCH_SIZE": "-1"},
+        {"MINUTORY_BEAM_SIZE": "wide"},
+    ):
+        with pytest.raises(ConfigError):
+            load_config(environ={**base, **override})

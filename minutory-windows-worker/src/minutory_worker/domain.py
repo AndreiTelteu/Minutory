@@ -23,7 +23,7 @@ STAGE_ORDER = tuple(Stage)
 STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     Stage.PROBE: (),
     Stage.SOURCE: (Stage.PROBE,),
-    Stage.WAV: (Stage.SOURCE,),
+    Stage.WAV: (Stage.PROBE,),
     Stage.TRANSCRIBE: (Stage.WAV,),
     Stage.MEETING: (Stage.PROBE,),
     Stage.VIDEO_UPLOAD: (Stage.SOURCE, Stage.MEETING),
@@ -35,6 +35,15 @@ STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
         Stage.TRANSCRIPT_UPLOAD,
     ),
 }
+
+GPU_STAGES = (Stage.PROBE, Stage.SOURCE, Stage.WAV, Stage.TRANSCRIBE)
+IO_STAGES = (
+    Stage.MEETING,
+    Stage.VIDEO_UPLOAD,
+    Stage.AUDIO_UPLOAD,
+    Stage.TRANSCRIPT_UPLOAD,
+    Stage.FINAL_RECONCILE,
+)
 
 COMPRESSION_PRESETS = frozenset({"none", "compact", "balanced", "quality"})
 

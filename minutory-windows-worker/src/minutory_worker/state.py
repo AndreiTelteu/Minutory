@@ -599,10 +599,8 @@ class StateStore:
             connection.execute(
                 """
                 UPDATE items SET compression_preset = ?,
-                    selected_video_path = NULL, wav_path = NULL, transcript_path = NULL,
-                    selected_video_sha256 = NULL, audio_sha256 = NULL, transcript_sha256 = NULL,
-                    selected_video_bytes = NULL, audio_bytes = NULL, transcript_bytes = NULL,
-                    updated_at = CURRENT_TIMESTAMP
+                    selected_video_path = NULL, selected_video_sha256 = NULL,
+                    selected_video_bytes = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE item_id = ?
                 """,
                 (preset, item_id),

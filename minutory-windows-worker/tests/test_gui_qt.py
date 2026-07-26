@@ -24,10 +24,10 @@ def test_main_window_constructs_offscreen(qtbot, store, item, tmp_path):
             self.work_dir = tmp_path / "work"
             self.calls = []
 
-        def process(self, item_id, *, cancel, on_stage):
+        def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
             return store.get_item(item_id)
 
-        def preflight(self, item_id, *, on_stage):
+        def preflight(self, item_id, *, cancel=None, on_stage):
             self.calls.append(("preflight", item_id))
             return store.get_item(item_id)
 
@@ -68,10 +68,10 @@ def test_window_add_edit_clients_and_state_render_offscreen(qtbot, store, tmp_pa
             self.preflight_entered = threading.Event()
             self.preflight_release = threading.Event()
 
-        def process(self, item_id, *, cancel, on_stage):
+        def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
             return store.get_item(item_id)
 
-        def preflight(self, item_id, *, on_stage):
+        def preflight(self, item_id, *, cancel=None, on_stage):
             self.calls.append(("preflight", item_id))
             self.preflight_entered.set()
             self.preflight_release.wait(2)
