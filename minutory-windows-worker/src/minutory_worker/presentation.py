@@ -236,7 +236,12 @@ class QueueController:
         estimate = item.source.size
         preset = PRESETS[item.compression_preset]
         if preset is not None and item.duration_seconds is not None:
-            estimate = estimate_output_bytes(float(item.duration_seconds), preset)
+            estimate = estimate_output_bytes(
+                float(item.duration_seconds),
+                preset,
+                source_size=item.source.size,
+                source_bitrate=item.probe_bitrate,
+            )
         return ItemView(
             item=item,
             stages=stages,

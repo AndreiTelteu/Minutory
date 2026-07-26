@@ -161,10 +161,21 @@ def parse_probe_json(content: str) -> Probe:
     )
 
 
-def estimate_output_bytes(duration: float, preset: CompressionPreset) -> int:
+def estimate_output_bytes(
+    duration: float,
+    preset: CompressionPreset,
+    *,
+    source_size: int | None = None,
+    source_bitrate: int | None = None,
+) -> int:
     if not math.isfinite(duration) or duration < 0:
         raise ValueError("Duration must be finite and nonnegative.")
-    return math.ceil(duration * (preset.video_bitrate + preset.audio_bitrate) / 8 * 1.02)
+    absolute = math.ceil(duration * (preset.video_bitrate + preset.audio_bitrate) / 8 * 1.02)
+    if source_size is not None and source_bitrate is not None and source_bitrate > 0:
+        target = preset.video_bitrate + preset.audio_bitrate
+        proportional = math.ceil(source_size * target / source_bitrate)
+        return min(proportional, source_size)
+    return absolute
 
 
 class MediaService:
