@@ -6,8 +6,7 @@ native Windows queue, then reviewed in a synchronized video and transcript
 workspace. An OpenRouter-powered assistant can search the transcript archive and
 return relevant meeting context.
 
-> AI Disclaimer: 100% **vibe-coded slop**
-> Security Disclaimer: **no authentication implemented** - this is built for your local computer or local server (for now)
+> AI Disclaimer: 100% **vibe-coded slop** <br /> Security Disclaimer: **no authentication implemented** - this is built for your local computer or local server (for now)
 
 
 ## Current Features
