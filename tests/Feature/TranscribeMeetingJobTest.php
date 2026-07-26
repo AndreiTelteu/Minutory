@@ -57,8 +57,29 @@ it('dispatches transcription job when meeting is uploaded', function () {
     ]);
 
     Queue::assertPushed(TranscribeMeetingJob::class);
+    expect(Meeting::query()->latest('id')->value('language'))->toBe('ro');
 });
 
+it('passes the meeting language to the Linux Whisper command', function () {
+    $meeting = Meeting::factory()->make(['language' => 'en']);
+    $job = new TranscribeMeetingJob($meeting, 'whisper');
+    $method = new ReflectionMethod($job, 'buildTranscriptionCommand');
+
+    $command = $method->invoke(
+        $job,
+        '/tmp/audio.wav',
+        '/tmp/transcript.json',
+        'whisper',
+        '/tmp/model',
+        4,
+        'cpu',
+        'int8',
+        $meeting->language,
+    );
+
+    expect($command)->toContain("--driver 'whisper'")
+        ->and($command)->toContain("--language 'en'");
+});
 it('stores generated artifacts beside the uploaded video', function () {
     Storage::fake('public');
 

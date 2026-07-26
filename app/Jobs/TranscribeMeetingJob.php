@@ -120,18 +120,15 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
             $computeType = config('services.transcribing.compute_type', 'auto');
             $language = $this->meeting->language;
 
-            $transcribeCmd = sprintf(
-                'KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --output-file %s --driver %s --model-dir %s --threads %d --device %s --compute-type %s --language %s 2>&1',
-                escapeshellarg($this->pythonPath),
-                escapeshellarg($this->transcribeScript),
-                escapeshellarg($wavPath),
-                escapeshellarg($transcriptPath),
-                escapeshellarg($driver),
-                escapeshellarg($modelPath),
+            $transcribeCmd = $this->buildTranscriptionCommand(
+                $wavPath,
+                $transcriptPath,
+                $driver,
+                $modelPath,
                 $threads,
-                escapeshellarg($device),
-                escapeshellarg($computeType),
-                escapeshellarg($language),
+                $device,
+                $computeType,
+                $language,
             );
 
             Log::info("Running {$driver} transcription for meeting {$meetingId}");
@@ -167,6 +164,34 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
     public function importTranscript(TranscriptImporter $transcriptImporter, string $transcriptPath): int
     {
         return $transcriptImporter->import($this->meeting, $transcriptPath);
+    }
+
+    /**
+     * Build the Linux transcription command for a normalized meeting language.
+     */
+    private function buildTranscriptionCommand(
+        string $wavPath,
+        string $transcriptPath,
+        string $driver,
+        string $modelPath,
+        int $threads,
+        string $device,
+        string $computeType,
+        string $language,
+    ): string {
+        return sprintf(
+            'KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --output-file %s --driver %s --model-dir %s --threads %d --device %s --compute-type %s --language %s 2>&1',
+            escapeshellarg($this->pythonPath),
+            escapeshellarg($this->transcribeScript),
+            escapeshellarg($wavPath),
+            escapeshellarg($transcriptPath),
+            escapeshellarg($driver),
+            escapeshellarg($modelPath),
+            $threads,
+            escapeshellarg($device),
+            escapeshellarg($computeType),
+            escapeshellarg($language),
+        );
     }
 
     private function processPathForLocalTesting(string $path): string
