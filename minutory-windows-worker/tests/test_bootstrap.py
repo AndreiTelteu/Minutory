@@ -182,6 +182,7 @@ def test_bootstrap_and_launchers_are_credential_free_and_local_transcription_onl
     assert ".venv.installing-" in bootstrap
     assert "installed_tree_sha256" in bootstrap
     assert "PYTHONDONTWRITEBYTECODE" in bootstrap
+    assert "[[string]" not in bootstrap
     launcher = (ROOT / "start.ps1").read_text()
     assert 'bootstrap.ps1") -Verify' in launcher
     assert '$env:HF_HUB_OFFLINE = "1"' in launcher

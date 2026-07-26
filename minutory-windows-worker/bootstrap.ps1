@@ -91,11 +91,12 @@ function Read-AssetManifest {
     $seen = @{}
     $unresolved = @()
     foreach ($asset in $document.assets) {
-        if (-not $Contracts.ContainsKey([string]$asset.id) -or $seen.ContainsKey([string]$asset.id)) {
+        $assetId = [string]$asset.id
+        if (-not $Contracts.ContainsKey($assetId) -or $seen.ContainsKey($assetId)) {
             throw "Runtime manifest contains an unknown or duplicate asset ID."
         }
-        $seen[[string]$asset.id] = $true
-        $contract = $Contracts[[string]$asset.id]
+        $seen[$assetId] = $true
+        $contract = $Contracts[$assetId]
         if ($asset.destination -cne $contract[0] -or $asset.archive -cne $contract[1]) {
             throw "Asset '$($asset.id)' violates its exact destination/archive contract."
         }
@@ -114,7 +115,7 @@ function Read-AssetManifest {
             if ($expectedSeen.ContainsKey($key)) { throw "Asset '$($asset.id)' has duplicate expected files." }
             $expectedSeen[$key] = $true
         }
-        foreach ($requiredExpected in $RequiredExpected[[string]$asset.id]) {
+        foreach ($requiredExpected in $RequiredExpected[$assetId]) {
             if (-not $expectedSeen.ContainsKey($requiredExpected.ToLowerInvariant())) {
                 throw "Asset '$($asset.id)' omits required expected file '$requiredExpected'."
             }
