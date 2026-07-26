@@ -16,8 +16,11 @@
                     <h1 class="text-[20px] font-semibold tracking-tight">{{ meeting.title }}</h1>
                     <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                 </div>
-                <p class="mt-1 text-[13px] text-ink-secondary">{{ meeting.client.name }}</p>
+                <Link :href="route('clients.show', meeting.client.id)" class="mt-1 inline-block text-[13px] text-ink-secondary hover:text-accent">
+                    {{ meeting.client.name }}
+                </Link>
                 <div class="tnum mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-tertiary">
+                    <span>Language {{ meeting.language === 'en' ? 'English' : 'Română' }}</span>
                     <span>Meeting time {{ formatDateTime(meeting.meeting_at) }}</span>
                     <span>Uploaded {{ formatDateTime(meeting.uploaded_at) }}</span>
                 </div>
@@ -197,6 +200,7 @@ interface Meeting {
     meeting_at: string | null;
     uploaded_at: string | null;
     duration?: number;
+    language: 'ro' | 'en';
     estimated_processing_time?: number;
     queue_progress?: number;
     processing_progress?: number;

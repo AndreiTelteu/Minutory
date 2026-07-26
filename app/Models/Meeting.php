@@ -18,6 +18,7 @@ class Meeting extends Model
         'video_path',
         'status',
         'duration',
+        'language',
         'meeting_at',
         'estimated_processing_time',
         'uploaded_at',

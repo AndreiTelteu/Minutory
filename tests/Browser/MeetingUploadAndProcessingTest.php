@@ -29,6 +29,7 @@ it('can complete the full meeting upload workflow', function () {
     $response = $this->post(route('meetings.store'), [
         'title' => 'Quarterly Review Meeting',
         'client_id' => $client->id,
+        'language' => 'en',
         'video' => $videoFile,
     ]);
 
@@ -36,6 +37,7 @@ it('can complete the full meeting upload workflow', function () {
     $this->assertDatabaseHas('meetings', [
         'title' => 'Quarterly Review Meeting',
         'client_id' => $client->id,
+        'language' => 'en',
         'status' => 'pending',
     ]);
 

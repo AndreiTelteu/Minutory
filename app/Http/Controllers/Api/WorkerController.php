@@ -105,6 +105,7 @@ class WorkerController extends Controller
             'title' => $meeting->title,
             'meeting_at' => $meeting->meeting_at?->utc()->toIso8601String(),
             'duration_seconds' => $meeting->duration,
+            'language' => $meeting->language,
             'status' => $meeting->status,
             'start_transcript_server' => $ingestion->start_transcript_server,
             'server_transcription_dispatched_at' => $ingestion->server_transcription_dispatched_at?->toIso8601String(),

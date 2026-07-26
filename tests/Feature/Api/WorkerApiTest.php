@@ -47,6 +47,7 @@ function workerMeetingPayload(array $overrides = []): array
         'title' => 'Worker meeting',
         'meeting_at' => '2026-07-10T13:03:47+03:00',
         'duration_seconds' => 3777,
+        'language' => 'ro',
         'start_transcript_server' => false,
     ], $overrides);
 }
@@ -166,6 +167,7 @@ it('creates metadata-only meetings and replays identical metadata idempotently',
     $first->assertCreated()
         ->assertJsonPath('data.worker_item_id', $payload['worker_item_id'])
         ->assertJsonPath('data.start_transcript_server', false)
+        ->assertJsonPath('data.language', 'ro')
         ->assertJsonPath('data.meeting_at', '2026-07-10T10:03:47+00:00');
 
     $second = $this->postJson('/api/v1/worker/meetings', $payload, workerHeaders());
@@ -174,10 +176,28 @@ it('creates metadata-only meetings and replays identical metadata idempotently',
 
     $meeting = Meeting::query()->findOrFail($first->json('data.id'));
     expect($meeting->video_path)->toBeNull()
+        ->and($meeting->language)->toBe('ro')
         ->and($meeting->workerIngestion)->not->toBeNull()
         ->and(Meeting::query()->count())->toBe(1);
 });
 
+it('stores the requested worker meeting language and rejects unsupported values', function () {
+    $response = $this->postJson('/api/v1/worker/meetings', workerMeetingPayload([
+        'language' => 'en',
+    ]), workerHeaders());
+
+    $response->assertCreated()
+        ->assertJsonPath('data.language', 'en');
+
+    expect(Meeting::query()->findOrFail($response->json('data.id'))->language)->toBe('en');
+
+    $this->postJson('/api/v1/worker/meetings', workerMeetingPayload([
+        'language' => 'fr',
+    ]), workerHeaders())
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonStructure(['error' => ['details' => ['language']]]);
+});
 it('rejects conflicting canonical metadata for a replayed worker item', function () {
     $payload = workerMeetingPayload();
     $this->postJson('/api/v1/worker/meetings', $payload, workerHeaders())->assertCreated();

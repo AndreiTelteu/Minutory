@@ -29,6 +29,7 @@ class WorkerMeetingService
             'duration' => isset($metadata['duration_seconds'])
                 ? (int) $metadata['duration_seconds']
                 : null,
+            'language' => $metadata['language'] ?? 'ro',
             'start_transcript_server' => (bool) $metadata['start_transcript_server'],
         ];
 
@@ -52,6 +53,7 @@ class WorkerMeetingService
                     'title' => $canonical['title'],
                     'meeting_at' => $canonical['meeting_at'],
                     'duration' => $canonical['duration'],
+                    'language' => $canonical['language'],
                     'video_path' => null,
                     'status' => 'pending',
                     'uploaded_at' => now(),
@@ -91,6 +93,7 @@ class WorkerMeetingService
             && $meeting->title === $canonical['title']
             && $storedMeetingAt === $requestedMeetingAt
             && $meeting->duration === $canonical['duration']
+            && $meeting->language === $canonical['language']
             && $ingestion->start_transcript_server === $canonical['start_transcript_server'];
 
         if (! $matches) {

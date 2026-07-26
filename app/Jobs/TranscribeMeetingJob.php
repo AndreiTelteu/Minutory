@@ -118,7 +118,7 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
             File::ensureDirectoryExists($modelPath);
             $device = config('services.transcribing.device', 'cpu');
             $computeType = config('services.transcribing.compute_type', 'auto');
-            $language = config('services.transcribing.language', 'ro');
+            $language = $this->meeting->language;
 
             $transcribeCmd = sprintf(
                 'KMP_DUPLICATE_LIB_OK=TRUE %s %s --audio-file %s --output-file %s --driver %s --model-dir %s --threads %d --device %s --compute-type %s --language %s 2>&1',

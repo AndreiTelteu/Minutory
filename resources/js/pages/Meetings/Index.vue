@@ -107,8 +107,8 @@
                                 class="cursor-pointer border-b border-border transition-colors duration-150 last:border-0 hover:bg-ground-subtle"
                                 @click="router.visit(route('meetings.show', meeting.id))"
                             >
-                                <td class="px-5 py-2.5 text-[13px] font-medium">{{ meeting.title }}</td>
                                 <td class="px-5 py-2.5 text-[13px] text-ink-secondary">{{ meeting.client.name }}</td>
+                                <td class="px-5 py-2.5 text-[13px] font-medium">{{ meeting.title }}</td>
                                 <td class="w-56 px-5 py-2.5">
                                     <div class="space-y-1.5">
                                         <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
@@ -253,8 +253,8 @@ const filterForm = reactive({
 });
 
 const columns = [
-    { key: 'title', label: 'Meeting', sortable: true, headerClass: '' },
     { key: 'client', label: 'Client', sortable: true, headerClass: '' },
+    { key: 'title', label: 'Meeting', sortable: true, headerClass: '' },
     { key: 'status', label: 'Status', sortable: false, headerClass: '' },
     { key: 'meeting_at', label: 'Meeting time', sortable: true, headerClass: '' },
     { key: 'duration', label: 'Duration', sortable: true, headerClass: '' },

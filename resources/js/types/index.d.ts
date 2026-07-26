@@ -45,6 +45,7 @@ export interface Meeting {
     video_path: string | null;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     duration: number | null;
+    language: 'ro' | 'en';
     meeting_at: string | null;
     uploaded_at: string | null;
     processing_started_at: string | null;

@@ -111,6 +111,7 @@ class MeetingController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'client_id' => 'required|exists:clients,id',
+            'language' => 'sometimes|string|in:ro,en',
             'meeting_at' => $this->meetingAtRules(),
             'video' => [
                 'required',
@@ -152,6 +153,7 @@ class MeetingController extends Controller
             $meeting = Meeting::create([
                 'title' => $validated['title'],
                 'client_id' => $validated['client_id'],
+                'language' => $validated['language'] ?? 'ro',
                 'status' => 'pending',
                 'meeting_at' => $this->normalizeMeetingAt($validated['meeting_at'] ?? null),
                 'uploaded_at' => now(),

@@ -29,6 +29,7 @@ class MeetingFactory extends Factory
             'video_path' => 'meetings/'.fake()->numberBetween(1, 100).'/'.fake()->numberBetween(1, 1000).'/video.mp4',
             'status' => fake()->randomElement(['pending', 'processing', 'completed', 'failed']),
             'duration' => $duration,
+            'language' => 'ro',
             'estimated_processing_time' => (int) $estimatedProcessingTime,
             'uploaded_at' => fake()->dateTimeBetween('-1 month', 'now'),
             'processing_started_at' => null,

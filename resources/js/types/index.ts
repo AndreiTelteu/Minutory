@@ -17,6 +17,7 @@ export interface Meeting {
     status: 'pending' | 'processing' | 'completed' | 'failed';
     video_path: string | null;
     duration: number | null;
+    language: 'ro' | 'en';
     meeting_at: string | null;
     uploaded_at: string | null;
     processing_started_at: string | null;

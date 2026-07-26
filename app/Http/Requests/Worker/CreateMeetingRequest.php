@@ -35,6 +35,7 @@ class CreateMeetingRequest extends WorkerFormRequest
                 },
             ],
             'duration_seconds' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'language' => ['sometimes', 'string', 'in:ro,en'],
             'start_transcript_server' => ['required', 'boolean'],
         ];
     }

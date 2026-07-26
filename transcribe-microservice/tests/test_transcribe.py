@@ -1,5 +1,6 @@
 import importlib.util
 import math
+import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,6 +57,26 @@ class NormalizationTest(unittest.TestCase):
         self.assertEqual(len(segments), 2)
         self.assertEqual(segments[0]["start"], 0.0)
         self.assertEqual(segments[-1]["end"], 6.0)
+
+    def test_parse_args_accepts_romanian_and_english_only(self) -> None:
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "transcribe.py",
+                "--audio-file",
+                "input.wav",
+                "--output-file",
+                "output.json",
+                "--language",
+                "en",
+            ]
+            self.assertEqual(transcribe.parse_args().language, "en")
+
+            sys.argv[-1] = "fr"
+            with self.assertRaises(SystemExit):
+                transcribe.parse_args()
+        finally:
+            sys.argv = original_argv
 
 
 if __name__ == "__main__":

@@ -310,7 +310,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threads", type=int, default=multiprocessing.cpu_count())
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--compute-type", default="auto")
-    parser.add_argument("--language", default="ro")
+    parser.add_argument("--language", choices=("ro", "en"), default="ro")
     parser.add_argument(
         "--model-dir",
         type=Path,

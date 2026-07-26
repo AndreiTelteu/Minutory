@@ -80,6 +80,19 @@
                     </p>
                 </div>
 
+                <!-- Language -->
+                <div>
+                    <label for="language" class="mb-1.5 block text-[13px] font-medium">Transcription language</label>
+                    <select
+                        id="language"
+                        v-model="rememberedState.language"
+                        class="w-full rounded-md border border-border-strong bg-ground-raised px-3 py-2 text-[13px] text-ink focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                    >
+                        <option value="ro">Română</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
+
                 <!-- Video -->
                 <div>
                     <label class="mb-1.5 block text-[13px] font-medium">Video</label>
@@ -387,6 +400,7 @@ const submit = () => {
         {
             title: suggestionState.title.value,
             client_id: rememberedState.clientId,
+            language: rememberedState.language,
             meeting_at: meetingAt,
             video: form.video,
         },
@@ -403,6 +417,7 @@ const submit = () => {
                 retryCount.value = 0;
                 resetMeetingSuggestionState(suggestionState);
                 rememberedState.clientId = '';
+                rememberedState.language = 'ro';
                 if (window.toast) {
                     window.toast.success('Meeting uploaded', 'Your meeting is now being processed.');
                 }

@@ -13,6 +13,7 @@ export interface MeetingSuggestionState {
 export interface MeetingCreateRememberData {
     suggestionState: MeetingSuggestionState;
     clientId: string;
+    language: 'ro' | 'en';
 }
 
 export interface RememberableMeetingCreateState extends MeetingCreateRememberData {
@@ -75,6 +76,7 @@ export const restoreMeetingCreateRememberData = (value: unknown): MeetingCreateR
         return {
             suggestionState: createMeetingSuggestionState(),
             clientId: '',
+            language: 'ro',
         };
     }
 
@@ -84,6 +86,7 @@ export const restoreMeetingCreateRememberData = (value: unknown): MeetingCreateR
             localDateTime?: unknown;
         };
         clientId?: unknown;
+        language?: unknown;
     };
 
     return {
@@ -92,6 +95,7 @@ export const restoreMeetingCreateRememberData = (value: unknown): MeetingCreateR
             localDateTime: restoreSuggestedField(candidate.suggestionState?.localDateTime),
         },
         clientId: typeof candidate.clientId === 'string' ? candidate.clientId : '',
+        language: candidate.language === 'en' ? 'en' : 'ro',
     };
 };
 
@@ -101,6 +105,7 @@ export const serializeMeetingCreateRememberData = (state: MeetingCreateRememberD
         localDateTime: { ...state.suggestionState.localDateTime },
     },
     clientId: state.clientId,
+    language: state.language,
 });
 
 export const createRememberableMeetingCreateState = (value?: unknown): RememberableMeetingCreateState => {
@@ -115,6 +120,7 @@ export const createRememberableMeetingCreateState = (value?: unknown): Remembera
             const restoredData = restoreMeetingCreateRememberData(restored);
             this.suggestionState = restoredData.suggestionState;
             this.clientId = restoredData.clientId;
+            this.language = restoredData.language;
 
             return this;
         },
