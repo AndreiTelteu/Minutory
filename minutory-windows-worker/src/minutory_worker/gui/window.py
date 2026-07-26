@@ -316,7 +316,9 @@ class ItemCard(QFrame):
         immutable = view.metadata_locked or scheduled or view.active_stage is not None
         for editable in (self.client, self.title, self.datetime, self.preset):
             editable.setEnabled(not immutable)
-        self.remove.setEnabled(not immutable)
+        self.remove.setEnabled(
+            view.removable and not scheduled and view.active_stage is None
+        )
         retry_buttons = {
             "video": self.retry_video,
             "audio": self.retry_audio,
@@ -373,6 +375,7 @@ class MainWindow(QMainWindow):
         self.start_batch = QPushButton("Start pending")
         self.start_batch.setObjectName("primary")
         self.cancel_button = QPushButton("Cancel media command")
+        self.clear_all_button = QPushButton("Clear all")
         primary_actions.addWidget(self.refresh_button)
         primary_actions.addWidget(self.preflight_button)
         primary_actions.addWidget(self.add_button)
@@ -381,6 +384,7 @@ class MainWindow(QMainWindow):
 
         secondary_actions = QHBoxLayout()
         secondary_actions.addStretch()
+        secondary_actions.addWidget(self.clear_all_button)
         secondary_actions.addWidget(self.cancel_button)
         shell.addLayout(secondary_actions)
 
@@ -409,6 +413,7 @@ class MainWindow(QMainWindow):
         self.start_batch.clicked.connect(self.start_pending)
         self.preflight_button.clicked.connect(self.preflight_unprobed)
         self.cancel_button.clicked.connect(self.cancel_media)
+        self.clear_all_button.clicked.connect(self.clear_all)
         self.refresh_button.clicked.connect(self.refresh_all)
         self.render_state()
         self.refresh_clients()
@@ -563,6 +568,47 @@ class MainWindow(QMainWindow):
             if self.coordinator.cancel_current_media()
             else "Only active compression or audio extraction can be cancelled safely.",
         )
+
+    def clear_all(self) -> None:
+        views = self.controller.views()
+        if not views:
+            self.show_notice("The queue is already empty.")
+            return
+        removable = [
+            view
+            for view in views
+            if view.removable
+            and view.active_stage is None
+            and not self.coordinator.is_scheduled(view.item.item_id)
+        ]
+        skipped = len(views) - len(removable)
+        if not removable:
+            self.show_notice(
+                "Nothing can be cleared; every item is scheduled, processing, or locked.",
+                error=True,
+            )
+            return
+        answer = QMessageBox.question(
+            self,
+            "Clear all items?",
+            f"Remove {len(removable)} item(s) from the queue?"
+            + (f" {skipped} scheduled/processing item(s) will be kept." if skipped else ""),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        errors = 0
+        for view in removable:
+            try:
+                self.controller.remove(view.item.item_id)
+            except Exception:
+                errors += 1
+        message = f"Removed {len(removable) - errors} item(s)."
+        if skipped:
+            message += f" Kept {skipped} scheduled/processing item(s)."
+        if errors:
+            message += f" {errors} item(s) could not be removed."
+        self.show_notice(message, error=bool(errors))
+        self.render_state()
 
     def remove_item(self, item_id: str) -> None:
         try:

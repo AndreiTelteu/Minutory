@@ -69,7 +69,8 @@ class FasterWhisperBackend:
                 from faster_whisper import WhisperModel
             except ImportError as exception:
                 raise RuntimeError(
-                    "faster-whisper is not installed. "
+                    "faster-whisper failed to import "
+                    f"({exception}). "
                     "Stage 4 bootstrap must install the managed ROCm runtime."
                 ) from exception
             self._model = WhisperModel(

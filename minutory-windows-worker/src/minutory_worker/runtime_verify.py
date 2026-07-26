@@ -58,6 +58,37 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
                 ),
             )
         )
+        native_dll = package_root / "ctranslate2.dll"
+        missing_imports: list[str] = []
+        if native_dll.is_file():
+            import re
+
+            data = native_dll.read_bytes()
+            imported = {
+                match.group(0).decode("ascii", "ignore").lower()
+                for match in re.finditer(rb"[A-Za-z0-9_\-]{3,40}\.dll", data)
+            }
+            runtime_imports = sorted(
+                name
+                for name in imported
+                if name.startswith(("amdhip64", "hipblas", "rocblas", "amd_comgr"))
+            )
+            missing_imports = [
+                name for name in runtime_imports if not (package_root / name).is_file()
+            ]
+        checks.append(
+            Check(
+                "CTranslate2 ROCm libraries",
+                not missing_imports,
+                "All ROCm libraries imported by ctranslate2.dll are present."
+                if not missing_imports
+                else (
+                    f"ctranslate2.dll imports missing libraries: {', '.join(missing_imports)}. "
+                    "ROCm 7 user-mode libraries (e.g. the LM Studio ROCm v6 backend) "
+                    "must be placed beside CTranslate2; re-run bootstrap."
+                ),
+            )
+        )
         device_count = int(ctranslate2.get_cuda_device_count())
         checks.append(
             Check(

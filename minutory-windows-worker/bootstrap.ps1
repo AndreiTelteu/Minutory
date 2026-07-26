@@ -165,6 +165,19 @@ function Read-AssetManifest {
     return $document
 }
 
+function Clear-ManagedPythonBytecode {
+    # Any python run without PYTHONDONTWRITEBYTECODE (ad-hoc tooling, test
+    # venvs based on the managed runtime) writes __pycache__ into libs\python
+    # and breaks the installed-tree verification. Bytecode is regenerable, so
+    # drop it before hashing instead of failing closed.
+    $managed = Join-Path $Root "libs\python"
+    if (-not (Test-Path -LiteralPath $managed -PathType Container)) { return }
+    Get-ChildItem -LiteralPath $managed -Recurse -Force -Directory -Filter "__pycache__" |
+        Remove-Item -Recurse -Force
+    Get-ChildItem -LiteralPath $managed -Recurse -Force -File -Filter "*.pyc" |
+        Remove-Item -Force
+}
+
 function Get-TreeDigest {
     param([string]$Directory)
     if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return "" }
@@ -386,6 +399,7 @@ function Assert-VenvReady {
 }
 
 try {
+    Clear-ManagedPythonBytecode
     $manifest = Read-AssetManifest $ManifestPath
     Write-Host "Manifest schema and exact layout verified: $ManifestPath"
     foreach ($asset in $manifest.assets) {
@@ -432,11 +446,49 @@ try {
         $venvPython = Join-Path $stagingVenv "Scripts\python.exe"
         $rocmWheel = Join-Path $Root `
             "$($Contracts['ctranslate2-rocm-wheel'][0])\ctranslate2-4.8.1-cp312-cp312-win_amd64.whl"
-        & $venvPython -m pip install --disable-pip-version-check --no-index $rocmWheel
+        & $venvPython -m pip install --disable-pip-version-check --no-index `
+            --find-links $wheelhouse $rocmWheel
         if ($LASTEXITCODE -ne 0) { throw "Official CTranslate2 ROCm wheel installation failed." }
         & $venvPython -m pip install --disable-pip-version-check --no-index `
             --find-links $wheelhouse -r (Join-Path $Root "requirements-runtime.txt")
         if ($LASTEXITCODE -ne 0) { throw "Offline runtime dependency installation failed." }
+        $siteCt2 = Join-Path $stagingVenv "Lib\site-packages\ctranslate2"
+        if (Test-Path -LiteralPath $siteCt2) {
+            # CTranslate2 4.8.1 Windows ROCm wheel imports amdhip64_7.dll and
+            # hipblas.dll: it requires ROCm 7 user-mode libraries (e.g. the
+            # LM Studio win-llama-rocm-vendor-v6 backend). ROCm 6 libraries
+            # (amdhip64_6.dll) are incompatible and cause cuBLAS failures.
+            $rocmCandidateDirs = @(
+                "C:\Users\Andrei\.lmstudio\extensions\backends\vendor\win-llama-rocm-vendor-v6\bin",
+                "C:\Users\Andrei\.lmstudio\extensions\backends\vendor\win-llama-rocm-vendor-v5\bin",
+                "$env:HIP_PATH\bin",
+                "C:\Program Files\AMD\ROCm\bin"
+            )
+            foreach ($dir in $rocmCandidateDirs) {
+                if (Test-Path -LiteralPath $dir) {
+                    Get-ChildItem -LiteralPath $dir | ForEach-Object {
+                        $dest = Join-Path $siteCt2 $_.Name
+                        if (-not (Test-Path -LiteralPath $dest)) {
+                            Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
+                        }
+                    }
+                    break
+                }
+            }
+            $libHipblas = Join-Path $siteCt2 "libhipblas.dll"
+            $hipblasAlias = Join-Path $siteCt2 "hipblas.dll"
+            if ((Test-Path -LiteralPath $libHipblas) -and -not (Test-Path -LiteralPath $hipblasAlias)) {
+                Copy-Item -LiteralPath $libHipblas -Destination $hipblasAlias -Force
+            }
+            $sys32Hip = "C:\Windows\System32\amdhip64_7.dll"
+            if (-not (Test-Path -LiteralPath $sys32Hip)) { $sys32Hip = "C:\Windows\System32\amdhip64_6.dll" }
+            if (Test-Path -LiteralPath $sys32Hip) {
+                $targetHip = Join-Path $siteCt2 (Split-Path -Leaf $sys32Hip)
+                if (-not (Test-Path -LiteralPath $targetHip)) {
+                    Copy-Item -LiteralPath $sys32Hip -Destination $targetHip -Force
+                }
+            }
+        }
         Assert-VenvReady $stagingVenv
         @{
             schema = $BootstrapSchema

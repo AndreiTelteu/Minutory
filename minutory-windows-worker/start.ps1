@@ -3,13 +3,16 @@ param()
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-& (Join-Path $Root "bootstrap.ps1") -Verify
+# bootstrap.ps1 ends with 'exit'; run it in a child process so a successful
+# verification returns control to this script and the GUI actually launches.
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "bootstrap.ps1") -Verify
 if ($LASTEXITCODE -ne 0) {
-    & (Join-Path $Root "bootstrap.ps1")
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "bootstrap.ps1")
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 $python = Join-Path $Root ".venv\Scripts\pythonw.exe"
 
+$env:PYTHONDONTWRITEBYTECODE = "1"
 $env:MINUTORY_ENV_FILE = Join-Path $Root ".env"
 $env:HF_HOME = Join-Path $Root "cache\huggingface"
 $env:HF_HUB_CACHE = Join-Path $Root "cache\huggingface\hub"

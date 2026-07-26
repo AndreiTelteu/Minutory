@@ -466,6 +466,18 @@ class StateStore:
             self._refuse_running(connection, item_id, "A running item cannot be removed.")
             connection.execute("DELETE FROM items WHERE item_id = ?", (item_id,))
 
+    def delete_reconciled_item(self, item_id: str) -> None:
+        with self.transaction() as connection:
+            rows = connection.execute(
+                "SELECT status FROM stages WHERE item_id = ?", (item_id,)
+            ).fetchall()
+            if not rows:
+                raise StateError(f"Unknown item {item_id}.")
+            if any(row["status"] != StageStatus.SUCCEEDED.value for row in rows):
+                raise StateError("Only fully completed items can be cleared.")
+            self._refuse_running(connection, item_id, "A running item cannot be removed.")
+            connection.execute("DELETE FROM items WHERE item_id = ?", (item_id,))
+
     def start_stage(self, item_id: str, stage: Stage) -> None:
         with self.transaction() as connection:
             status = connection.execute(

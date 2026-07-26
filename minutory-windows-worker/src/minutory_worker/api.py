@@ -395,11 +395,14 @@ class WorkerApiClient:
             if isinstance(error, dict)
             else f"http_{response.status_code}"
         )
-        message = (
-            error.get("message", "Worker API request failed.")
-            if isinstance(error, dict)
-            else "Worker API request failed."
-        )
+        if isinstance(error, dict) and error.get("message"):
+            message = str(error["message"])
+        else:
+            message = f"Worker API request failed (HTTP {response.status_code})."
+            snippet = re.sub(r"<[^>]+>", " ", response.content[:1000].decode("utf-8", "replace"))
+            snippet = re.sub(r"\s+", " ", snippet).strip()
+            if snippet:
+                message += f" Server response: {snippet[:300]}"
         retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
         transient = response.status_code == 429 or 500 <= response.status_code <= 599
         return ApiError(

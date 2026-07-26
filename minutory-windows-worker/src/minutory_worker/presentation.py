@@ -42,6 +42,7 @@ class ItemView:
     probe_summary: str
     estimated_size: str
     metadata_locked: bool
+    removable: bool
     retryable_artifacts: tuple[str, ...]
 
 
@@ -185,7 +186,10 @@ class QueueController:
         return self.store.set_compression_preset(item_id, preset)
 
     def remove(self, item_id: str) -> None:
-        self.store.delete_pre_server_item(item_id)
+        if self.view(item_id).metadata_locked:
+            self.store.delete_reconciled_item(item_id)
+        else:
+            self.store.delete_pre_server_item(item_id)
 
     def views(self) -> tuple[ItemView, ...]:
         return tuple(self.view(item.item_id) for item in self.store.list_items())
@@ -236,6 +240,11 @@ class QueueController:
                 item.server_meeting_id is not None
                 or next(stage for stage in stages if stage.stage is Stage.MEETING).attempts > 0
             ),
+            removable=(
+                item.server_meeting_id is None
+                and next(stage for stage in stages if stage.stage is Stage.MEETING).attempts == 0
+            )
+            or completed == len(STAGE_ORDER),
             retryable_artifacts=tuple(
                 name
                 for name, local_stage, upload_stage in (
