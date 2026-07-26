@@ -338,6 +338,14 @@ class ProcessingCoordinator:
                 self._current_stage = stage if status is StageStatus.RUNNING else None
             self._event_sink("stage", item_id, (stage, status))
 
+        last_percent = {"value": -1}
+
+        def progress(fraction: float) -> None:
+            percent = int(min(max(fraction, 0.0), 1.0) * 100)
+            if percent != last_percent["value"]:
+                last_percent["value"] = percent
+                self._event_sink("progress", item_id, percent)
+
         if operation == "preflight":
             return self.orchestrator.preflight(item_id, on_stage=stage_changed)
         if operation.startswith("artifact:"):
@@ -346,7 +354,12 @@ class ProcessingCoordinator:
                 operation.removeprefix("artifact:"),
                 on_stage=stage_changed,
             )
-        return self.orchestrator.process(item_id, cancel=self._cancel, on_stage=stage_changed)
+        return self.orchestrator.process(
+            item_id,
+            cancel=self._cancel,
+            on_stage=stage_changed,
+            on_progress=progress,
+        )
 
     def _done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
         try:

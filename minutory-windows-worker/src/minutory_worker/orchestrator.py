@@ -146,6 +146,7 @@ class Orchestrator:
         *,
         cancel: threading.Event | None = None,
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> WorkerItem:
         self.refresh_source(item_id)
         item = self.store.get_item(item_id)
@@ -158,7 +159,7 @@ class Orchestrator:
                 continue
             if status == StageStatus.RUNNING.value:
                 raise PipelineError(f"Stage {stage.value} is already running.")
-            self._run_stage(item_id, stage, cancel=cancel, on_stage=on_stage)
+            self._run_stage(item_id, stage, cancel=cancel, on_stage=on_stage, on_progress=on_progress)
         return self.store.get_item(item_id)
 
     def process_next_stage(
@@ -189,13 +190,14 @@ class Orchestrator:
         *,
         cancel: threading.Event | None = None,
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> None:
         self.store.start_stage(item_id, stage)
         if on_stage is not None:
             on_stage(stage, StageStatus.RUNNING)
         try:
             item = self.store.get_item(item_id)
-            self._execute(item, stage, cancel=cancel)
+            self._execute(item, stage, cancel=cancel, on_progress=on_progress)
             self.store.persist_stage_output(item, stage)
             self.store.finish_stage(item_id, stage)
             if on_stage is not None:
@@ -210,7 +212,14 @@ class Orchestrator:
                 on_stage(stage, StageStatus.FAILED)
             raise
 
-    def _execute(self, item: WorkerItem, stage: Stage, *, cancel: threading.Event | None = None) -> None:
+    def _execute(
+        self,
+        item: WorkerItem,
+        stage: Stage,
+        *,
+        cancel: threading.Event | None = None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> None:
         item_dir = self.work_dir / item.item_id
         item_dir.mkdir(parents=True, exist_ok=True)
         source = Path(item.source.path)
@@ -249,7 +258,11 @@ class Orchestrator:
             item.audio_bytes = wav.stat().st_size
         elif stage is Stage.TRANSCRIBE:
             transcript = item_dir / "transcript.json"
-            self.whisper.transcribe(Path(_required(item.wav_path, "WAV")), transcript)
+            self.whisper.transcribe(
+                Path(_required(item.wav_path, "WAV")),
+                transcript,
+                on_progress=on_progress,
+            )
             item.transcript_path = str(transcript)
             item.transcript_sha256 = stream_sha256(transcript)
             item.transcript_bytes = transcript.stat().st_size

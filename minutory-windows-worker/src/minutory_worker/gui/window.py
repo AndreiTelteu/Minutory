@@ -626,6 +626,11 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _pipeline_event(self, kind: str, item_id: str, value: object) -> None:
+        if kind == "progress":
+            card = self.cards.get(item_id)
+            if card is not None and isinstance(value, int):
+                card.status.setText(f"Processing · transcribe {value}%")
+            return
         self.render_state()
         if kind == "failed":
             self.show_notice(f"Item paused safely: {value}", error=True)

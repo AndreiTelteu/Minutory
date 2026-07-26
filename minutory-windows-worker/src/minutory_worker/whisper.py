@@ -138,19 +138,30 @@ class WhisperService:
         self.vad_filter = vad_filter
         self.vad_parameters = {"min_silence_duration_ms": vad_min_silence_ms}
 
-    def transcribe(self, audio_path: Path, destination: Path) -> dict[str, object]:
+    def transcribe(
+        self,
+        audio_path: Path,
+        destination: Path,
+        *,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> dict[str, object]:
         result = self.backend.transcribe(
             audio_path,
             language=self.language,
             vad_filter=self.vad_filter,
             vad_parameters=self.vad_parameters,
         )
-        document = normalize_transcript(result, model=self.backend.model_name)
+        document = normalize_transcript(result, model=self.backend.model_name, on_progress=on_progress)
         atomic_json(destination, document)
         return document
 
 
-def normalize_transcript(result: BackendResult, *, model: str) -> dict[str, object]:
+def normalize_transcript(
+    result: BackendResult,
+    *,
+    model: str,
+    on_progress: Callable[[float], None] | None = None,
+) -> dict[str, object]:
     if not model.strip() or len(model) > 255:
         raise TranscriptError("Transcript model is invalid.")
     language = result.language.strip()
@@ -182,6 +193,11 @@ def normalize_transcript(result: BackendResult, *, model: str) -> dict[str, obje
             raise TranscriptError(f"Segment {index} speaker is too long.")
         segments.append({"start": start, "end": end, "text": text, "speaker": speaker})
         previous_start = start
+        if on_progress is not None and duration > 0:
+            on_progress(min(max(end / duration, 0.0), 0.999))
+
+    if on_progress is not None:
+        on_progress(1.0)
 
     return {
         "driver": "faster-whisper-windows",
