@@ -303,7 +303,12 @@ class ItemCard(QFrame):
             self.client.setCurrentIndex(max(0, selected))
             self.client.blockSignals(False)
         rendered_status = "Scheduled" if scheduled and view.active_stage is None else view.status
-        self.status.setText(rendered_status)
+        status_text = (
+            f"Completed · {view.final_size}"
+            if rendered_status == "Completed" and view.final_size is not None
+            else rendered_status
+        )
+        self.status.setText(status_text)
         status_color = (
             "#4ade80"
             if rendered_status == "Completed"
@@ -659,7 +664,14 @@ class MainWindow(QMainWindow):
         if kind == "progress":
             card = self.cards.get(item_id)
             if card is not None and isinstance(value, int):
-                card.status.setText(f"Processing · transcribe {value}%")
+                stage = self.coordinator.active_stage(item_id)
+                labels = {
+                    Stage.TRANSCRIBE: "transcribing",
+                    Stage.VIDEO_UPLOAD: "uploading video",
+                    Stage.AUDIO_UPLOAD: "uploading audio",
+                    Stage.TRANSCRIPT_UPLOAD: "uploading transcript",
+                }
+                card.status.setText(f"Processing · {labels.get(stage, 'working')} {value}%")
             return
         self.render_state()
         if kind == "failed":

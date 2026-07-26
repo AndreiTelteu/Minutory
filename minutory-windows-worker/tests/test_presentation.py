@@ -180,7 +180,7 @@ class SerialOrchestrator:
         on_stage(Stage.PROBE, StageStatus.SUCCEEDED)
         return item_id
 
-    def retry_artifact(self, item_id, artifact_name, *, on_stage=None):
+    def retry_artifact(self, item_id, artifact_name, *, on_stage=None, on_progress=None):
         self.calls.append(f"{artifact_name}:{item_id}")
         on_stage(Stage.AUDIO_UPLOAD, StageStatus.RUNNING)
         on_stage(Stage.AUDIO_UPLOAD, StageStatus.SUCCEEDED)
@@ -230,7 +230,7 @@ class OverlapOrchestrator:
     def preflight(self, item_id, *, cancel=None, on_stage=None):
         return item_id
 
-    def retry_artifact(self, item_id, artifact_name, *, on_stage=None):
+    def retry_artifact(self, item_id, artifact_name, *, on_stage=None, on_progress=None):
         return item_id
 
 
@@ -267,7 +267,7 @@ class IsolatingOrchestrator:
     def preflight(self, item_id, *, cancel=None, on_stage=None):
         return item_id
 
-    def retry_artifact(self, item_id, artifact_name, *, on_stage=None):
+    def retry_artifact(self, item_id, artifact_name, *, on_stage=None, on_progress=None):
         return item_id
 
 

@@ -117,6 +117,7 @@ class Orchestrator:
         artifact_name: str,
         *,
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> WorkerItem:
         """Reconcile, then upload only the explicitly requested local artifact."""
         if artifact_name not in ARTIFACT_STAGES:
@@ -132,14 +133,14 @@ class Orchestrator:
             raise PipelineError("Artifact upload requires an existing server meeting.")
         self._reconcile(item)
         if self.store.stage(item_id, upload_stage)["status"] != StageStatus.SUCCEEDED.value:
-            self._run_stage(item_id, upload_stage, on_stage=on_stage)
+            self._run_stage(item_id, upload_stage, on_stage=on_stage, on_progress=on_progress)
         uploads = (Stage.VIDEO_UPLOAD, Stage.AUDIO_UPLOAD, Stage.TRANSCRIPT_UPLOAD)
         if all(
             self.store.stage(item_id, stage)["status"] == StageStatus.SUCCEEDED.value for stage in uploads
         ):
             final_status = self.store.stage(item_id, Stage.FINAL_RECONCILE)["status"]
             if final_status != StageStatus.SUCCEEDED.value:
-                self._run_stage(item_id, Stage.FINAL_RECONCILE, on_stage=on_stage)
+                self._run_stage(item_id, Stage.FINAL_RECONCILE, on_stage=on_stage, on_progress=on_progress)
         return self.store.get_item(item_id)
 
     def process(
@@ -287,23 +288,31 @@ class Orchestrator:
             meeting = self.api.create_meeting(item)
             item.server_meeting_id = meeting.id
         elif stage is Stage.VIDEO_UPLOAD:
-            self._upload(item, "video")
+            self._upload(item, "video", on_progress=on_progress)
         elif stage is Stage.AUDIO_UPLOAD:
-            self._upload(item, "audio")
+            self._upload(item, "audio", on_progress=on_progress)
         elif stage is Stage.TRANSCRIPT_UPLOAD:
-            self._upload(item, "transcript")
+            self._upload(item, "transcript", on_progress=on_progress)
         elif stage is Stage.FINAL_RECONCILE:
             self._reconcile(item, final_stage_running=True)
         else:  # pragma: no cover
             raise AssertionError(stage)
 
-    def _upload(self, item: WorkerItem, artifact_name: str) -> None:
+    def _upload(
+        self,
+        item: WorkerItem,
+        artifact_name: str,
+        *,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> None:
         path, expected_hash, expected_bytes, _ = self._local_artifact(item, artifact_name)
         actual_hash, actual_bytes = self._verify_local_artifact(path, expected_hash, expected_bytes)
+        upload_kwargs = {"on_progress": on_progress} if on_progress is not None else {}
         result = self.api.upload_artifact(
             _required_int(item.server_meeting_id, "server meeting"),
             artifact_name,
             path,
+            **upload_kwargs,
         )
         if result.sha256 != actual_hash or result.bytes != actual_bytes:
             raise DataIntegrityError(

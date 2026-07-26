@@ -32,6 +32,25 @@ class RequestTimeout:
     read: float
 
 
+class _ProgressReader:
+    def __init__(self, stream: Any, total: int, on_progress: Callable[[float], None]) -> None:
+        self._stream = stream
+        self._total = total
+        self._on_progress = on_progress
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._stream.read(size)
+        if chunk and self._total > 0:
+            self._on_progress(min(self._stream.tell() / self._total, 1.0))
+        return chunk
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self._stream.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._stream.tell()
+
+
 class Transport(Protocol):
     def request(
         self,
@@ -285,6 +304,7 @@ class WorkerApiClient:
         path: Path,
         *,
         replace: bool = False,
+        on_progress: Callable[[float], None] | None = None,
     ) -> ArtifactUploadResult:
         if artifact not in {"video", "audio", "transcript"}:
             raise ValueError(f"Unsupported artifact {artifact}.")
@@ -304,10 +324,15 @@ class WorkerApiClient:
             else media_types[artifact]
         )
         with path.open("rb") as stream:
+            upload_stream = (
+                _ProgressReader(stream, path.stat().st_size, on_progress)
+                if on_progress is not None
+                else stream
+            )
             response = self._request(
                 "POST",
                 f"/meetings/{meeting_id}/artifacts/{artifact}",
-                files={"file": (path.name, stream, media_type)},
+                files={"file": (path.name, upload_stream, media_type)},
                 data={"replace": "true"} if replace else None,
                 timeout=self._upload_timeout,
                 retryable=True,

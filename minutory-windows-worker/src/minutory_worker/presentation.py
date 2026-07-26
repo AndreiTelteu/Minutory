@@ -42,6 +42,7 @@ class ItemView:
     status: str
     probe_summary: str
     estimated_size: str
+    final_size: str | None
     metadata_locked: bool
     removable: bool
     retryable_artifacts: tuple[str, ...]
@@ -256,6 +257,7 @@ class QueueController:
             status=status,
             probe_summary=probe_summary,
             estimated_size=human_bytes(estimate),
+            final_size=human_bytes(item.selected_video_bytes) if item.selected_video_bytes else None,
             metadata_locked=(
                 item.server_meeting_id is not None
                 or next(stage for stage in stages if stage.stage is Stage.MEETING).attempts > 0
@@ -413,14 +415,28 @@ class ProcessingCoordinator:
                 self._io_stages[item_id] = stage if status is StageStatus.RUNNING else None
             self._event_sink("stage", item_id, (stage, status))
 
+        last_percent = {"value": -1}
+
+        def progress(fraction: float) -> None:
+            percent = int(min(max(fraction, 0.0), 1.0) * 100)
+            if percent != last_percent["value"]:
+                last_percent["value"] = percent
+                self._event_sink("progress", item_id, percent)
+
         try:
             if operation.startswith("artifact:"):
                 return self.orchestrator.retry_artifact(
                     item_id,
                     operation.removeprefix("artifact:"),
                     on_stage=stage_changed,
+                    on_progress=progress,
                 )
-            return self.orchestrator.process_stages(item_id, IO_STAGES, on_stage=stage_changed)
+            return self.orchestrator.process_stages(
+                item_id,
+                IO_STAGES,
+                on_stage=stage_changed,
+                on_progress=progress,
+            )
         finally:
             with self._lock:
                 self._io_stages.pop(item_id, None)
@@ -480,6 +496,12 @@ class ProcessingCoordinator:
     def is_scheduled(self, item_id: str) -> bool:
         with self._lock:
             return item_id in self._scheduled
+
+    def active_stage(self, item_id: str) -> Stage | None:
+        with self._lock:
+            if self._gpu_item == item_id:
+                return self._gpu_stage
+            return self._io_stages.get(item_id)
 
     def close(self) -> bool:
         with self._lock:

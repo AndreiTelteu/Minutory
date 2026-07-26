@@ -31,7 +31,7 @@ def test_main_window_constructs_offscreen(qtbot, store, item, tmp_path):
             self.calls.append(("preflight", item_id))
             return store.get_item(item_id)
 
-        def retry_artifact(self, item_id, artifact_name, *, on_stage):
+        def retry_artifact(self, item_id, artifact_name, *, on_stage, on_progress=None):
             self.calls.append((artifact_name, item_id))
             return store.get_item(item_id)
 
@@ -77,7 +77,7 @@ def test_window_add_edit_clients_and_state_render_offscreen(qtbot, store, tmp_pa
             self.preflight_release.wait(2)
             return store.get_item(item_id)
 
-        def retry_artifact(self, item_id, artifact_name, *, on_stage):
+        def retry_artifact(self, item_id, artifact_name, *, on_stage, on_progress=None):
             self.calls.append((artifact_name, item_id))
             return store.get_item(item_id)
 
