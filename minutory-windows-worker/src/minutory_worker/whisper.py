@@ -161,6 +161,8 @@ class WhisperService:
         language: str | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> dict[str, object]:
+        if on_progress is not None:
+            on_progress(0.0)
         result = self.backend.transcribe(
             audio_path,
             language=language or self.language,
@@ -169,6 +171,8 @@ class WhisperService:
         )
         document = normalize_transcript(result, model=self.backend.model_name, on_progress=on_progress)
         atomic_json(destination, document)
+        if on_progress is not None:
+            on_progress(1.0)
         return document
 
 
@@ -211,9 +215,6 @@ def normalize_transcript(
         previous_start = start
         if on_progress is not None and duration > 0:
             on_progress(min(max(end / duration, 0.0), 0.999))
-
-    if on_progress is not None:
-        on_progress(1.0)
 
     return {
         "driver": "faster-whisper-windows",

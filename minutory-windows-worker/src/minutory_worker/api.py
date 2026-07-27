@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 
 from .config import REDACTED, redact_text, validate_api_base_url
 from .domain import WorkerItem
@@ -33,7 +33,7 @@ class RequestTimeout:
 
 
 class _ProgressReader:
-    def __init__(self, stream: Any, total: int, on_progress: Callable[[float], None]) -> None:
+    def __init__(self, stream: BinaryIO, total: int, on_progress: Callable[[float], None]) -> None:
         self._stream = stream
         self._total = total
         self._on_progress = on_progress
@@ -45,7 +45,10 @@ class _ProgressReader:
         return chunk
 
     def seek(self, offset: int, whence: int = 0) -> int:
-        return self._stream.seek(offset, whence)
+        position = self._stream.seek(offset, whence)
+        if position == 0:
+            self._on_progress(0.0)
+        return position
 
     def tell(self) -> int:
         return self._stream.tell()
@@ -346,6 +349,8 @@ class WorkerApiClient:
             raise self._invalid_response("Server returned an invalid artifact hash.")
         if isinstance(byte_count, bool) or not isinstance(byte_count, int) or byte_count < 0:
             raise self._invalid_response("Server returned an invalid artifact size.")
+        if on_progress is not None:
+            on_progress(1.0)
         return ArtifactUploadResult(str(result["state"]), digest, byte_count)
 
     def _request(

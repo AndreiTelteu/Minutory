@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal
-from PySide6.QtGui import QCloseEvent, QDesktopServices, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QUrl, Signal
+from PySide6.QtGui import (
+    QCloseEvent,
+    QColor,
+    QDesktopServices,
+    QDragEnterEvent,
+    QDropEvent,
+    QGuiApplication,
+    QPainter,
+    QPainterPath,
+    QPainterPathStroker,
+    QPaintEvent,
+    QResizeEvent,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -21,6 +34,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStackedLayout,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -35,6 +49,7 @@ from ..presentation import (
     QueueController,
     diagnostic_text,
     offset_iso_to_local,
+    pipeline_progress,
 )
 
 DARK_STYLE = """
@@ -45,6 +60,7 @@ QWidget {
   font-size: 13px;
 }
 QMainWindow, QWidget#appShell, QWidget#mainSurface { background: #0f0f10; }
+QWidget#pipelineProgress, QWidget#progressCaptions, QWidget#statsOverlay { background: transparent; }
 QLabel { background: transparent; color: #ededec; }
 QLabel#brandMark {
   background: #4f46e5; color: white; border-radius: 6px;
@@ -58,6 +74,7 @@ QLabel#muted, QLabel#fieldLabel, QLabel#metricLabel { color: #c9c9d1; }
 QLabel#fieldLabel { font-size: 12px; }
 QLabel#micro { color: #b6b6bf; font-size: 11px; }
 QLabel#metricValue { font-size: 16px; font-weight: 650; }
+QLabel#overallQueueLabel { color: #c9c9d1; font-size: 15px; font-weight: 600; }
 QLabel#error { color: #f87171; }
 QLabel#notice {
   background: #171718; border: 1px solid #2a2a2d; border-radius: 6px;
@@ -101,12 +118,32 @@ QProgressBar {
   min-height: 4px; max-height: 4px; text-align: center;
 }
 QProgressBar::chunk { background: #818cf8; border-radius: 2px; }
+QProgressBar#stageProgress {
+  background: rgba(0, 0, 0, 0.44); height: 6px; min-height: 6px; max-height: 6px;
+  border-radius: 1px;
+}
+QProgressBar#stageProgress::chunk { border-radius: 1px; }
+QProgressBar#globalProgress {
+  background: rgba(129, 140, 248, 0.04); border-radius: 0;
+  min-height: 44px; max-height: 44px;
+}
+QProgressBar#globalProgress::chunk { background: rgba(129, 140, 248, 0.14); border-radius: 0; }
+QFrame#stageDivider { background: #71717a; border: 0; }
 QScrollArea { border: 0; background: #0f0f10; }
 QScrollArea > QWidget > QWidget { background: #0f0f10; }
-QScrollBar:vertical { background: transparent; width: 10px; margin: 2px; }
-QScrollBar::handle:vertical { background: #3a3a3e; border-radius: 4px; min-height: 32px; }
-QScrollBar::handle:vertical:hover { background: #52525b; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar#queueScrollbar:vertical {
+  background: #171718; border-left: 1px solid #2a2a2d; width: 12px; margin: 0;
+}
+QScrollBar#queueScrollbar::handle:vertical {
+  background: #52525b; border: 2px solid #171718; border-radius: 5px; min-height: 48px;
+}
+QScrollBar#queueScrollbar::handle:vertical:hover { background: #71717a; }
+QScrollBar#queueScrollbar::add-page:vertical, QScrollBar#queueScrollbar::sub-page:vertical {
+  background: transparent;
+}
+QScrollBar#queueScrollbar::add-line:vertical, QScrollBar#queueScrollbar::sub-line:vertical {
+  height: 0; background: transparent;
+}
 QToolTip { background: #27272a; color: #ededec; border: 1px solid #3f3f46; padding: 5px; }
 """
 
@@ -131,6 +168,129 @@ class Task(QRunnable):
 
 class EventBridge(QObject):
     pipeline_event = Signal(str, str, object)
+
+
+class OutlinedLabel(QLabel):
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        metrics = painter.fontMetrics()
+        baseline = (self.height() + metrics.ascent() - metrics.descent()) / 2
+        path = QPainterPath()
+        path.addText(0, baseline, self.font(), self.text())
+        stroker = QPainterPathStroker()
+        stroker.setWidth(5)
+        stroker.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.fillPath(stroker.createStroke(path), QColor("#1f1f21"))
+        painter.end()
+        super().paintEvent(event)
+
+
+class PipelineProgressWidget(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("pipelineProgress")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(5)
+        self._captions = QWidget()
+        self._captions.setObjectName("progressCaptions")
+        self._captions.setFixedHeight(16)
+        root.addWidget(self._captions)
+        bars = QHBoxLayout()
+        bars.setContentsMargins(0, 0, 0, 0)
+        bars.setSpacing(1)
+        root.addLayout(bars)
+        self._bars_layout = bars
+        self._segments: dict[str, tuple[QLabel, QProgressBar]] = {}
+        for key in ("audio", "compression", "transcript", "upload"):
+            label = OutlinedLabel(self._captions) if key == "audio" else QLabel(self._captions)
+            label.setObjectName("micro")
+            bar = QProgressBar()
+            bar.setObjectName("stageProgress")
+            bar.setRange(0, 100)
+            bar.setTextVisible(False)
+            bar.setMinimumWidth(0)
+            bar.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            bars.addWidget(bar)
+            self._segments[key] = (label, bar)
+        self._overall = QLabel(self._captions)
+        self._overall.setObjectName("micro")
+        self._overall.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._separators = [QFrame(self) for _ in range(3)]
+        for separator in self._separators:
+            separator.setObjectName("stageDivider")
+            separator.setFixedWidth(1)
+        self._weights: dict[str, int] = {}
+        self.setAccessibleName("Meeting pipeline progress")
+
+    def set_progress(self, view: ItemView, transient: tuple[Stage, int] | None) -> int:
+        progress = pipeline_progress(view, transient)
+        visible = {stage.key: stage for stage in progress.stages}
+        bars = cast(QVBoxLayout, self.layout()).itemAt(1).layout()
+        assert isinstance(bars, QHBoxLayout)
+        self._weights = {stage.key: stage.weight for stage in progress.stages}
+        for index, key in enumerate(("audio", "compression", "transcript", "upload")):
+            label, bar = self._segments[key]
+            stage = visible.get(key)
+            label.setVisible(stage is not None)
+            bar.setVisible(stage is not None)
+            bars.setStretch(index, stage.weight if stage is not None else 0)
+            if stage is None:
+                continue
+            suffix = f"  {round(stage.fraction * 100)}%" if stage.active and not stage.completed else ""
+            label.setText(f"{stage.label}{suffix}")
+            label.setStyleSheet("color: #4ade80;" if stage.completed else "color: #b6b6bf;")
+            bar.setValue(round(stage.fraction * 100))
+            bar.setStyleSheet(
+                "QProgressBar::chunk { background: #22c55e; }"
+                if stage.completed
+                else "QProgressBar::chunk { background: #818cf8; }"
+            )
+            bar.setAccessibleName(f"{stage.label} progress")
+        self._overall.setText(f"Overall {progress.overall_percent}%")
+        self._layout_captions()
+        return progress.overall_percent
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._layout_captions()
+
+    def _layout_captions(self) -> None:
+        if not self._weights:
+            return
+        self._bars_layout.activate()
+        width = self._captions.width()
+        self._overall.adjustSize()
+        overall_x = max(0, width - self._overall.width())
+        self._overall.move(overall_x, 0)
+        visible_keys = [
+            key
+            for key in ("audio", "compression", "transcript", "upload")
+            if key in self._weights
+        ]
+        for key in visible_keys:
+            label, bar = self._segments[key]
+            label.adjustSize()
+            center = bar.geometry().center().x()
+            x = 0 if key == "audio" else round(center - label.width() / 2)
+            max_x = width - label.width()
+            if key == "upload":
+                max_x = min(max_x, overall_x - label.width() - 8)
+            label.move(max(0, min(x, max_x)), 0)
+        for index in range(len(visible_keys) - 1):
+            left_key = visible_keys[index]
+            right_key = visible_keys[index + 1]
+            left_bar = self._segments[left_key][1]
+            right_bar = self._segments[right_key][1]
+            boundary = (left_bar.geometry().right() + right_bar.geometry().left()) // 2
+            separator = self._separators[index]
+            separator.setGeometry(boundary, max(0, left_bar.geometry().top() - 20), 1, 20)
+            separator.show()
+            separator.raise_()
+        for separator in self._separators[len(visible_keys) - 1 :]:
+            separator.hide()
+        self._captions.raise_()
 
 
 class ItemCard(QFrame):
@@ -221,15 +381,8 @@ class ItemCard(QFrame):
         metrics.addWidget(self.meeting)
         root.addLayout(metrics)
 
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.progress.setRange(0, len(STAGE_ORDER))
-        self.progress.setAccessibleName("Pipeline stage progress")
+        self.progress = PipelineProgressWidget()
         root.addWidget(self.progress)
-        self.stage_summary = QLabel()
-        self.stage_summary.setObjectName("micro")
-        self.stage_summary.setWordWrap(True)
-        root.addWidget(self.stage_summary)
         self.error = QLabel()
         self.error.setObjectName("error")
         self.error.setWordWrap(True)
@@ -259,6 +412,8 @@ class ItemCard(QFrame):
         self.open_source.setObjectName("ghost")
         self.open_work = QPushButton("Open work folder")
         self.open_work.setObjectName("ghost")
+        self.open_meeting = QPushButton("Open meeting page")
+        self.open_meeting.setObjectName("ghost")
         self.details_toggle = QToolButton()
         self.details_toggle.setText("Diagnostics")
         self.details_toggle.setCheckable(True)
@@ -268,6 +423,7 @@ class ItemCard(QFrame):
         actions.addWidget(self.remove)
         actions.addWidget(self.open_source)
         actions.addWidget(self.open_work)
+        actions.addWidget(self.open_meeting)
         actions.addStretch()
         actions.addWidget(self.copy_details)
         actions.addWidget(self.details_toggle)
@@ -295,6 +451,7 @@ class ItemCard(QFrame):
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(view.item.source.path))
         )
         self.open_work.clicked.connect(lambda: self._main_window.open_work(self.item_id))
+        self.open_meeting.clicked.connect(lambda: self._main_window.open_meeting(self.item_id))
         self.details_toggle.toggled.connect(self.details.setVisible)
         self.copy_details.clicked.connect(
             lambda: QApplication.clipboard().setText(self.details.toPlainText())
@@ -384,13 +541,9 @@ class ItemCard(QFrame):
         self.meeting.setText(
             f"Meeting #{view.item.server_meeting_id}" if view.item.server_meeting_id else "Not on server"
         )
-        self.progress.setValue(view.completed_stages)
-        self.stage_summary.setText(
-            " · ".join(
-                f"{stage.stage.value.replace('_', ' ')}: {stage.status.value}"
-                + (f" ({stage.attempts} attempts)" if stage.attempts else "")
-                for stage in view.stages
-            )
+        self.progress.set_progress(
+            view,
+            self._main_window.coordinator.item_progress(self.item_id),
         )
         failed = next((stage for stage in view.stages if stage.user_error), None)
         self.error.setText(failed.user_error if failed and failed.user_error else "")
@@ -399,9 +552,7 @@ class ItemCard(QFrame):
         immutable = view.metadata_locked or scheduled or view.active_stage is not None
         for editable in (self.client, self.title, self.datetime, self.preset, self.language):
             editable.setEnabled(not immutable)
-        self.remove.setEnabled(
-            view.removable and not scheduled and view.active_stage is None
-        )
+        self.remove.setEnabled(view.removable and not scheduled and view.active_stage is None)
         retry_buttons = {
             "video": self.retry_video,
             "audio": self.retry_audio,
@@ -417,6 +568,9 @@ class ItemCard(QFrame):
         self.start.setEnabled(
             not scheduled and view.active_stage is None and view.completed_stages < len(STAGE_ORDER)
         )
+        self.open_meeting.setVisible(
+            view.item.server_meeting_id is not None and self._main_window.controller.api_base_url is not None
+        )
 
 
 class MainWindow(QMainWindow):
@@ -430,6 +584,7 @@ class MainWindow(QMainWindow):
         self.bridge = EventBridge()
         self.bridge.pipeline_event.connect(self._pipeline_event)
         self.coordinator = ProcessingCoordinator(orchestrator, self.bridge.pipeline_event.emit)
+        self._settings = QSettings()
         self.setWindowTitle("Minutory Worker")
         self.resize(1320, 820)
         self.setMinimumSize(1080, 680)
@@ -483,12 +638,24 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self.start_batch)
         shell.addLayout(header_row)
 
-        divider = QFrame()
-        divider.setObjectName("divider")
-        divider.setFrameShape(QFrame.Shape.HLine)
-        shell.addWidget(divider)
+        stats_container = QWidget()
+        stats_container.setFixedHeight(44)
+        stats_stack = QStackedLayout(stats_container)
+        stats_stack.setContentsMargins(0, 0, 0, 0)
+        stats_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
 
-        stats = QHBoxLayout()
+        self.global_progress = QProgressBar()
+        self.global_progress.setObjectName("globalProgress")
+        self.global_progress.setRange(0, 100)
+        self.global_progress.setValue(0)
+        self.global_progress.setTextVisible(False)
+        self.global_progress.setAccessibleName("Overall queue progress")
+        stats_stack.addWidget(self.global_progress)
+
+        stats_overlay = QWidget()
+        stats_overlay.setObjectName("statsOverlay")
+        stats = QHBoxLayout(stats_overlay)
+        stats.setContentsMargins(20, 0, 20, 0)
         stats.setSpacing(28)
         self.total_value = QLabel("0")
         self.ready_value = QLabel("0")
@@ -511,12 +678,16 @@ class MainWindow(QMainWindow):
             metric.addWidget(metric_label)
             stats.addLayout(metric)
         stats.addStretch()
-        shell.addLayout(stats)
-
-        divider_two = QFrame()
-        divider_two.setObjectName("divider")
-        divider_two.setFrameShape(QFrame.Shape.HLine)
-        shell.addWidget(divider_two)
+        self.global_progress_label = QLabel()
+        self.global_progress_label.setObjectName("overallQueueLabel")
+        self.global_progress_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.global_progress_label.setTextFormat(Qt.TextFormat.RichText)
+        stats.addWidget(self.global_progress_label)
+        stats_stack.addWidget(stats_overlay)
+        stats_stack.setCurrentWidget(stats_overlay)
+        shell.addWidget(stats_container)
 
         primary_actions = QHBoxLayout()
         primary_actions.setSpacing(6)
@@ -548,7 +719,7 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidgetResizable(True)
         self.queue_widget = QWidget()
         self.queue_layout = QVBoxLayout(self.queue_widget)
-        self.queue_layout.setContentsMargins(0, 0, 8, 0)
+        self.queue_layout.setContentsMargins(0, 0, 0, 0)
         self.queue_layout.setSpacing(10)
         self.empty = QLabel("No videos queued yet. Drop several recordings here or choose Add files.")
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -557,9 +728,13 @@ class MainWindow(QMainWindow):
         self.queue_layout.addWidget(self.empty)
         self.queue_layout.addStretch()
         self.scroll_area.setWidget(self.queue_widget)
+        queue_scrollbar = self.scroll_area.verticalScrollBar()
+        queue_scrollbar.setObjectName("queueScrollbar")
+        queue_scrollbar.rangeChanged.connect(self._sync_queue_margin)
         shell.addWidget(self.scroll_area, 1)
         app_layout.addWidget(surface, 1)
         self.setCentralWidget(central)
+        self._restore_window_geometry()
 
         self.add_button.clicked.connect(self.choose_files)
         self.start_batch.clicked.connect(self.start_pending)
@@ -575,6 +750,30 @@ class MainWindow(QMainWindow):
         self.notice.setObjectName("noticeError" if error else "notice")
         self.style().unpolish(self.notice)
         self.style().polish(self.notice)
+
+    def _sync_queue_margin(self, _minimum: int = 0, _maximum: int = 0) -> None:
+        scrollbar = self.scroll_area.verticalScrollBar()
+        right = scrollbar.width() if scrollbar.maximum() > scrollbar.minimum() else 0
+        self.queue_layout.setContentsMargins(0, 0, right, 0)
+
+    @staticmethod
+    def _screen_fingerprint() -> str:
+        resolutions = sorted(
+            (screen.geometry().width(), screen.geometry().height())
+            for screen in QGuiApplication.screens()
+        )
+        return json.dumps(resolutions)
+
+    def _restore_window_geometry(self) -> None:
+        if self._settings.value("window/screen_fingerprint") != self._screen_fingerprint():
+            return
+        geometry = self._settings.value("window/geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+
+    def _save_window_geometry(self) -> None:
+        self._settings.setValue("window/screen_fingerprint", self._screen_fingerprint())
+        self._settings.setValue("window/geometry", self.saveGeometry())
 
     def choose_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -645,15 +844,27 @@ class MainWindow(QMainWindow):
         self.processing_value.setText(
             str(
                 sum(
-                    view.active_stage is not None
-                    or self.coordinator.is_scheduled(view.item.item_id)
+                    view.active_stage is not None or self.coordinator.is_scheduled(view.item.item_id)
                     for view in views
                 )
             )
         )
-        self.attention_value.setText(
-            str(sum(view.status.startswith("Needs attention") for view in views))
+        self.attention_value.setText(str(sum(view.status.startswith("Needs attention") for view in views)))
+        overall = (
+            round(
+                sum(
+                    pipeline_progress(
+                        view,
+                        self.coordinator.item_progress(view.item.item_id),
+                    ).overall_percent
+                    for view in views
+                )
+                / len(views)
+            )
+            if views
+            else 0
         )
+        self._set_global_progress(overall)
         existing = {view.item.item_id for view in views}
         for item_id in set(self.cards) - existing:
             card = self.cards.pop(item_id)
@@ -689,6 +900,12 @@ class MainWindow(QMainWindow):
                 scheduled=self.coordinator.is_scheduled(item_id),
                 force_fields=True,
             )
+
+    def _set_global_progress(self, percent: int) -> None:
+        self.global_progress.setValue(percent)
+        self.global_progress_label.setText(
+            f'Overall queue - <span style="color:#4ade80; font-weight:600">{percent}%</span>'
+        )
 
     def change_preset(self, item_id: str, preset: str) -> None:
         try:
@@ -812,18 +1029,35 @@ class MainWindow(QMainWindow):
         path.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
+    def open_meeting(self, item_id: str) -> None:
+        item = self.controller.store.get_item(item_id)
+        if item.server_meeting_id is None or self.controller.api_base_url is None:
+            return
+        QDesktopServices.openUrl(QUrl(f"{self.controller.api_base_url}/meetings/{item.server_meeting_id}"))
+
     def _pipeline_event(self, kind: str, item_id: str, value: object) -> None:
         if kind == "progress":
             card = self.cards.get(item_id)
-            if card is not None and isinstance(value, int):
-                stage = self.coordinator.active_stage(item_id)
-                labels = {
-                    Stage.TRANSCRIBE: "transcribing",
-                    Stage.VIDEO_UPLOAD: "uploading video",
-                    Stage.AUDIO_UPLOAD: "uploading audio",
-                    Stage.TRANSCRIPT_UPLOAD: "uploading transcript",
-                }
-                card.status.setText(f"  •  Processing · {labels.get(stage, 'working')} {value}%  ")
+            if card is not None and isinstance(value, tuple) and len(value) == 2:
+                stage, percent = value
+                if isinstance(stage, Stage) and isinstance(percent, int):
+                    card.progress.set_progress(self.controller.view(item_id), (stage, percent))
+                    views = self.controller.views()
+                    overall = (
+                        round(
+                            sum(
+                                pipeline_progress(
+                                    view,
+                                    self.coordinator.item_progress(view.item.item_id),
+                                ).overall_percent
+                                for view in views
+                            )
+                            / len(views)
+                        )
+                        if views
+                        else 0
+                    )
+                    self._set_global_progress(overall)
             return
         self.render_state()
         if kind == "failed":
@@ -874,4 +1108,5 @@ class MainWindow(QMainWindow):
         if not self.coordinator.close():
             event.ignore()
             return
+        self._save_window_geometry()
         event.accept()

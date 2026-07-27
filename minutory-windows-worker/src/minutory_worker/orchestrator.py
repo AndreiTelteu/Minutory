@@ -99,6 +99,7 @@ class Orchestrator:
         *,
         cancel: threading.Event | None = None,
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> WorkerItem:
         """Probe the media and eagerly extract the source WAV for review and fast start."""
         self.refresh_source(item_id)
@@ -108,7 +109,13 @@ class Orchestrator:
                 continue
             if status == StageStatus.RUNNING.value:
                 raise PipelineError(f"Stage {stage.value} is already running.")
-            self._run_stage(item_id, stage, cancel=cancel, on_stage=on_stage)
+            self._run_stage(
+                item_id,
+                stage,
+                cancel=cancel,
+                on_stage=on_stage,
+                on_progress=on_progress,
+            )
         return self.store.get_item(item_id)
 
     def retry_artifact(
@@ -263,13 +270,20 @@ class Orchestrator:
                 codec=self.video_codec,
                 fallback_codec=self.fallback_video_codec,
                 cancel=cancel,
+                on_progress=on_progress,
             )
             item.selected_video_path = str(selected)
             item.selected_video_sha256 = stream_sha256(selected)
             item.selected_video_bytes = selected.stat().st_size
         elif stage is Stage.WAV:
             wav = item_dir / "audio.wav"
-            self.media.extract_wav(source, wav, cancel=cancel)
+            self.media.extract_wav(
+                source,
+                wav,
+                duration=float(_required_int(item.duration_seconds, "media duration")),
+                cancel=cancel,
+                on_progress=on_progress,
+            )
             item.wav_path = str(wav)
             item.audio_sha256 = stream_sha256(wav)
             item.audio_bytes = wav.stat().st_size
@@ -307,12 +321,11 @@ class Orchestrator:
     ) -> None:
         path, expected_hash, expected_bytes, _ = self._local_artifact(item, artifact_name)
         actual_hash, actual_bytes = self._verify_local_artifact(path, expected_hash, expected_bytes)
-        upload_kwargs = {"on_progress": on_progress} if on_progress is not None else {}
         result = self.api.upload_artifact(
             _required_int(item.server_meeting_id, "server meeting"),
             artifact_name,
             path,
-            **upload_kwargs,
+            on_progress=on_progress,
         )
         if result.sha256 != actual_hash or result.bytes != actual_bytes:
             raise DataIntegrityError(

@@ -16,6 +16,7 @@ from minutory_worker.media import (
     MediaError,
     MediaService,
     estimate_output_bytes,
+    ffmpeg_progress_fraction,
     parse_probe_json,
     parse_rational,
     validate_pcm16_wave,
@@ -88,12 +89,20 @@ def test_compression_command_preserves_resolution_and_fps(source: Path, tmp_path
     preset = PRESETS["quality"]
     assert preset is not None
     command = service.compression_command(source, tmp_path / "out.mp4", preset, "h264_amf")
+    assert command[command.index("-progress") + 1] == "pipe:1"
+    assert "-nostats" in command
     assert "-vf" not in command
     assert "-filter:v" not in command
     assert "-r" not in command
     assert "-s" not in command
     assert command[command.index("-c:v") + 1] == "h264_amf"
     assert command[command.index("-b:v") + 1] == "8000000"
+
+
+def test_encoded_output_accepts_container_frame_rate_rounding() -> None:
+    source_probe = parse_probe_json(probe_document(frame_rate="30/1"))
+    output_probe = parse_probe_json(probe_document(frame_rate="30000/1001"))
+    MediaService._validate_encoded_output(source_probe, output_probe)
 
 
 def test_probe_command_and_errors(source: Path) -> None:
@@ -147,12 +156,24 @@ def test_extract_wav_command_and_atomic_cleanup(source: Path, tmp_path: Path) ->
 
     runner = WaveRunner()
     destination = tmp_path / "audio.wav"
-    MediaService(Path("probe"), Path("ffmpeg"), runner).extract_wav(source, destination)
+    MediaService(Path("probe"), Path("ffmpeg"), runner).extract_wav(
+        source,
+        destination,
+        duration=60,
+    )
     command = runner.commands[0]
     assert command[command.index("-acodec") + 1] == "pcm_s16le"
     assert command[command.index("-ar") + 1] == "16000"
     assert command[command.index("-ac") + 1] == "1"
+    assert command[command.index("-progress") + 1] == "pipe:1"
     validate_pcm16_wave(destination)
+
+
+def test_ffmpeg_progress_uses_encoded_media_time() -> None:
+    assert ffmpeg_progress_fraction("out_time_us=15000000", 60) == pytest.approx(0.25)
+    assert ffmpeg_progress_fraction("out_time_us=90000000", 60) == pytest.approx(0.999)
+    assert ffmpeg_progress_fraction("out_time_us=broken", 60) is None
+    assert ffmpeg_progress_fraction("progress=continue", 60) is None
 
 
 def test_compression_falls_back_and_cancellation_cleans_partial(source: Path, tmp_path: Path) -> None:

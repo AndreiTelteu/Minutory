@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from minutory_worker.presentation import (
     ProcessingCoordinator,
     QueueController,
     offset_iso_to_local,
+    pipeline_progress,
 )
 from minutory_worker.state import StateError, StateStore
 
@@ -136,6 +138,45 @@ def test_offset_iso_display_uses_configured_timezone() -> None:
     assert offset_iso_to_local("2026-07-10T10:03:47+00:00", "Europe/Bucharest") == "2026-07-10T13:03:47"
 
 
+def test_pipeline_progress_is_segmented_and_combines_upload_bytes(store, item) -> None:
+    view = controller(store).view(item.item_id)
+    compression = pipeline_progress(view, (Stage.SOURCE, 40))
+    assert [stage.key for stage in compression.stages] == [
+        "audio",
+        "compression",
+        "transcript",
+        "upload",
+    ]
+    assert compression.stages[1].fraction == pytest.approx(0.4)
+    assert compression.overall_percent == 10
+
+    view.item.selected_video_bytes = 100
+    view.item.audio_bytes = 50
+    view.item.transcript_bytes = 50
+    succeeded = {
+        Stage.PROBE,
+        Stage.SOURCE,
+        Stage.WAV,
+        Stage.TRANSCRIBE,
+        Stage.MEETING,
+        Stage.VIDEO_UPLOAD,
+    }
+    uploading = replace(
+        view,
+        stages=tuple(
+            replace(stage, status=StageStatus.SUCCEEDED) if stage.stage in succeeded else stage
+            for stage in view.stages
+        ),
+    )
+    combined = pipeline_progress(uploading, (Stage.AUDIO_UPLOAD, 50))
+    assert combined.stages[-1].fraction == pytest.approx(0.625)
+    assert combined.overall_percent == 89
+
+    uploading.item.compression_preset = "none"
+    without_compression = pipeline_progress(uploading)
+    assert [stage.key for stage in without_compression.stages] == ["audio", "transcript", "upload"]
+
+
 class FakeStore:
     def __init__(self, items):
         self._items = items
@@ -172,7 +213,7 @@ class SerialOrchestrator:
                 raise RuntimeError("retry me")
         return item_id
 
-    def preflight(self, item_id, *, cancel=None, on_stage=None):
+    def preflight(self, item_id, *, cancel=None, on_stage=None, on_progress=None):
         self.calls.append(f"preflight:{item_id}")
         on_stage(Stage.PROBE, StageStatus.RUNNING)
         self.started.set()
@@ -227,7 +268,7 @@ class OverlapOrchestrator:
             self._io_active = False
         return item_id
 
-    def preflight(self, item_id, *, cancel=None, on_stage=None):
+    def preflight(self, item_id, *, cancel=None, on_stage=None, on_progress=None):
         return item_id
 
     def retry_artifact(self, item_id, artifact_name, *, on_stage=None, on_progress=None):
@@ -264,7 +305,7 @@ class IsolatingOrchestrator:
                 raise RuntimeError("upload 503")
         return item_id
 
-    def preflight(self, item_id, *, cancel=None, on_stage=None):
+    def preflight(self, item_id, *, cancel=None, on_stage=None, on_progress=None):
         return item_id
 
     def retry_artifact(self, item_id, artifact_name, *, on_stage=None, on_progress=None):

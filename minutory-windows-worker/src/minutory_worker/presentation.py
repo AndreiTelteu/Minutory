@@ -49,6 +49,107 @@ class ItemView:
 
 
 @dataclass(frozen=True)
+class PipelineStageProgress:
+    key: str
+    label: str
+    weight: int
+    fraction: float
+    active: bool
+    completed: bool
+
+
+@dataclass(frozen=True)
+class PipelineProgress:
+    stages: tuple[PipelineStageProgress, ...]
+    overall_percent: int
+
+
+def pipeline_progress(
+    view: ItemView,
+    transient: tuple[Stage, int] | None = None,
+) -> PipelineProgress:
+    statuses = {stage.stage: stage.status for stage in view.stages}
+    active_stage, active_percent = transient or (view.active_stage, 0)
+    active_fraction = min(max(active_percent / 100, 0.0), 1.0)
+
+    def stage_fraction(stage: Stage) -> float:
+        if statuses[stage] is StageStatus.SUCCEEDED:
+            return 1.0
+        return active_fraction if active_stage is stage else 0.0
+
+    audio_fraction = stage_fraction(Stage.WAV)
+    upload_sizes = {
+        Stage.VIDEO_UPLOAD: view.item.selected_video_bytes or 0,
+        Stage.AUDIO_UPLOAD: view.item.audio_bytes or 0,
+        Stage.TRANSCRIPT_UPLOAD: view.item.transcript_bytes or 0,
+    }
+    upload_total = sum(upload_sizes.values())
+    uploaded = float(
+        sum(size for stage, size in upload_sizes.items() if statuses[stage] is StageStatus.SUCCEEDED)
+    )
+    if active_stage in upload_sizes:
+        uploaded += upload_sizes[active_stage] * active_fraction
+    uploads_succeeded = all(statuses[stage] is StageStatus.SUCCEEDED for stage in upload_sizes)
+    upload_fraction = uploaded / upload_total if upload_total else 0.0
+    if statuses[Stage.FINAL_RECONCILE] is StageStatus.SUCCEEDED:
+        upload_fraction = 1.0
+    elif uploads_succeeded:
+        upload_fraction = min(upload_fraction, 0.99)
+
+    stages = [
+        PipelineStageProgress(
+            "audio",
+            "Audio convert",
+            5,
+            audio_fraction,
+            active_stage in {Stage.PROBE, Stage.WAV},
+            statuses[Stage.WAV] is StageStatus.SUCCEEDED,
+        )
+    ]
+    if view.item.compression_preset != "none":
+        stages.append(
+            PipelineStageProgress(
+                "compression",
+                "Compression",
+                25,
+                stage_fraction(Stage.SOURCE),
+                active_stage is Stage.SOURCE,
+                statuses[Stage.SOURCE] is StageStatus.SUCCEEDED,
+            )
+        )
+    stages.extend(
+        (
+            PipelineStageProgress(
+                "transcript",
+                "Transcript",
+                40,
+                stage_fraction(Stage.TRANSCRIBE),
+                active_stage is Stage.TRANSCRIBE,
+                statuses[Stage.TRANSCRIBE] is StageStatus.SUCCEEDED,
+            ),
+            PipelineStageProgress(
+                "upload",
+                "Upload ingestion",
+                30,
+                upload_fraction,
+                active_stage
+                in {
+                    Stage.MEETING,
+                    Stage.VIDEO_UPLOAD,
+                    Stage.AUDIO_UPLOAD,
+                    Stage.TRANSCRIPT_UPLOAD,
+                    Stage.FINAL_RECONCILE,
+                },
+                statuses[Stage.FINAL_RECONCILE] is StageStatus.SUCCEEDED,
+            ),
+        )
+    )
+    total_weight = sum(stage.weight for stage in stages)
+    overall = round(sum(stage.weight * stage.fraction for stage in stages) / total_weight * 100)
+    return PipelineProgress(tuple(stages), overall)
+
+
+@dataclass(frozen=True)
 class AddResult:
     added: tuple[str, ...]
     existing: tuple[str, ...]
@@ -104,6 +205,7 @@ class QueueController:
         default_preset: str = "crf22",
         default_language: str = "ro",
         work_dir: Path | None = None,
+        api_base_url: str | None = None,
     ) -> None:
         self.store = store
         self.api = api
@@ -111,6 +213,7 @@ class QueueController:
         self.default_preset = default_preset
         self.default_language = default_language
         self.work_dir = work_dir
+        self.api_base_url = api_base_url.rstrip("/") if api_base_url else None
 
     def add_paths(self, paths: Iterable[str | Path]) -> AddResult:
         added: list[str] = []
@@ -312,6 +415,7 @@ class ProcessingCoordinator:
         self._gpu_item: str | None = None
         self._gpu_stage: Stage | None = None
         self._io_stages: dict[str, Stage | None] = {}
+        self._progress: dict[str, tuple[Stage, int]] = {}
         self._cancel = threading.Event()
         self._closed = False
 
@@ -381,6 +485,12 @@ class ProcessingCoordinator:
         def stage_changed(stage: Stage, status: StageStatus) -> None:
             with self._lock:
                 self._gpu_stage = stage if status is StageStatus.RUNNING else None
+                if status is StageStatus.RUNNING:
+                    self._progress[item_id] = (stage, 0)
+                else:
+                    current = self._progress.get(item_id)
+                    if current is not None and current[0] is stage:
+                        self._progress.pop(item_id, None)
             self._event_sink("stage", item_id, (stage, status))
 
         last_percent = {"value": -1}
@@ -389,11 +499,21 @@ class ProcessingCoordinator:
             percent = int(min(max(fraction, 0.0), 1.0) * 100)
             if percent != last_percent["value"]:
                 last_percent["value"] = percent
-                self._event_sink("progress", item_id, percent)
+                with self._lock:
+                    stage = self._gpu_stage
+                    if stage is not None:
+                        self._progress[item_id] = (stage, percent)
+                if stage is not None:
+                    self._event_sink("progress", item_id, (stage, percent))
 
         try:
             if operation == "preflight":
-                return self.orchestrator.preflight(item_id, cancel=cancel, on_stage=stage_changed)
+                return self.orchestrator.preflight(
+                    item_id,
+                    cancel=cancel,
+                    on_stage=stage_changed,
+                    on_progress=progress,
+                )
             return self.orchestrator.process_stages(
                 item_id,
                 GPU_STAGES,
@@ -413,6 +533,12 @@ class ProcessingCoordinator:
         def stage_changed(stage: Stage, status: StageStatus) -> None:
             with self._lock:
                 self._io_stages[item_id] = stage if status is StageStatus.RUNNING else None
+                if status is StageStatus.RUNNING:
+                    self._progress[item_id] = (stage, 0)
+                else:
+                    current = self._progress.get(item_id)
+                    if current is not None and current[0] is stage:
+                        self._progress.pop(item_id, None)
             self._event_sink("stage", item_id, (stage, status))
 
         last_percent = {"value": -1}
@@ -421,7 +547,12 @@ class ProcessingCoordinator:
             percent = int(min(max(fraction, 0.0), 1.0) * 100)
             if percent != last_percent["value"]:
                 last_percent["value"] = percent
-                self._event_sink("progress", item_id, percent)
+                with self._lock:
+                    stage = self._io_stages.get(item_id)
+                    if stage is not None:
+                        self._progress[item_id] = (stage, percent)
+                if stage is not None:
+                    self._event_sink("progress", item_id, (stage, percent))
 
         try:
             if operation.startswith("artifact:"):
@@ -502,6 +633,10 @@ class ProcessingCoordinator:
             if self._gpu_item == item_id:
                 return self._gpu_stage
             return self._io_stages.get(item_id)
+
+    def item_progress(self, item_id: str) -> tuple[Stage, int] | None:
+        with self._lock:
+            return self._progress.get(item_id)
 
     def close(self) -> bool:
         with self._lock:

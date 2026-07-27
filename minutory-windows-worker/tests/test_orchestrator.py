@@ -124,9 +124,11 @@ class FakeApi:
             artifacts={},
         )
 
-    def upload_artifact(self, meeting_id, artifact, path, *, replace=False):
+    def upload_artifact(self, meeting_id, artifact, path, *, replace=False, on_progress=None):
         assert meeting_id == self.meeting_id
         assert not replace
+        if on_progress is not None:
+            on_progress(0.5)
         self.uploads.append(artifact)
         if artifact == "audio" and self.fail_audio_once:
             self.fail_audio_once = False
@@ -139,6 +141,8 @@ class FakeApi:
             self.drop_after_upload = None
         if self.response_mismatch == artifact:
             return ArtifactUploadResult("uploaded", "f" * 64, byte_count + 1)
+        if on_progress is not None:
+            on_progress(1.0)
         return ArtifactUploadResult("uploaded", digest, byte_count)
 
     def reconcile(self, meeting_id):

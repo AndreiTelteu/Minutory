@@ -36,6 +36,7 @@ def main() -> int:
         default_preset=config.compression_preset,
         default_language=config.language,
         work_dir=orchestrator.work_dir,
+        api_base_url=config.api_base_url,
     )
     window = MainWindow(controller, orchestrator)
     window.show()

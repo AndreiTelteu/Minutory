@@ -7,10 +7,11 @@ import struct
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, TextIO
 
 from .atomic import atomic_copy, atomic_output
 from .domain import stream_sha256
@@ -33,13 +34,23 @@ class CommandResult:
 
 class Runner(Protocol):
     def run(
-        self, command: list[str], *, timeout: float | None = None, cancel: threading.Event | None = None
+        self,
+        command: list[str],
+        *,
+        timeout: float | None = None,
+        cancel: threading.Event | None = None,
+        on_stdout_line: Callable[[str], None] | None = None,
     ) -> CommandResult: ...
 
 
 class SubprocessRunner:
     def run(
-        self, command: list[str], *, timeout: float | None = None, cancel: threading.Event | None = None
+        self,
+        command: list[str],
+        *,
+        timeout: float | None = None,
+        cancel: threading.Event | None = None,
+        on_stdout_line: Callable[[str], None] | None = None,
     ) -> CommandResult:
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         process = subprocess.Popen(
@@ -47,34 +58,61 @@ class SubprocessRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,
             creationflags=creationflags,
         )
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def drain(stream: TextIO, output: list[str], callback: Callable[[str], None] | None = None) -> None:
+            for line in stream:
+                output.append(line)
+                if callback is not None:
+                    callback(line.rstrip("\r\n"))
+
+        assert process.stdout is not None
+        assert process.stderr is not None
+        stdout_thread = threading.Thread(
+            target=drain,
+            args=(process.stdout, stdout_lines, on_stdout_line),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=drain,
+            args=(process.stderr, stderr_lines),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
         started = time.monotonic()
         try:
             while True:
                 try:
-                    stdout, stderr = process.communicate(timeout=0.1)
+                    process.wait(timeout=0.1)
                     break
                 except subprocess.TimeoutExpired:
                     pass
                 if cancel is not None and cancel.is_set():
                     process.terminate()
                     try:
-                        process.communicate(timeout=5)
+                        process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
                         process.kill()
-                        process.communicate()
+                        process.wait()
                     raise Cancelled("Media operation was cancelled.")
                 if timeout is not None and time.monotonic() - started > timeout:
                     process.kill()
-                    process.communicate()
+                    process.wait()
                     raise MediaError("Media command timed out.")
         except BaseException:
             if process.poll() is None:
                 process.kill()
-                process.communicate()
+                process.wait()
             raise
-        return CommandResult(process.returncode, stdout, stderr)
+        finally:
+            stdout_thread.join()
+            stderr_thread.join()
+        return CommandResult(process.returncode, "".join(stdout_lines), "".join(stderr_lines))
 
 
 @dataclass(frozen=True)
@@ -214,6 +252,7 @@ class MediaService:
         codec: str,
         fallback_codec: str | None = None,
         cancel: threading.Event | None = None,
+        on_progress: Callable[[float], None] | None = None,
     ) -> Path:
         preset = PRESETS.get(preset_name)
         if preset_name not in PRESETS:
@@ -226,12 +265,19 @@ class MediaService:
             raise MediaError("Compressed video destination must use the .mp4 extension.")
         source_probe = self.probe(source)
 
+        def progress_line(line: str) -> None:
+            fraction = ffmpeg_progress_fraction(line, source_probe.duration)
+            if fraction is not None and on_progress is not None:
+                on_progress(fraction)
+
         def run(temporary: Path) -> None:
             command = self.compression_command(source, temporary, preset, codec)
-            result = self.runner.run(command, cancel=cancel)
+            result = self.runner.run(command, cancel=cancel, on_stdout_line=progress_line)
             if result.returncode and fallback_codec and fallback_codec != codec:
+                if on_progress is not None:
+                    on_progress(0.0)
                 command = self.compression_command(source, temporary, preset, fallback_codec)
-                fallback_result = self.runner.run(command, cancel=cancel)
+                fallback_result = self.runner.run(command, cancel=cancel, on_stdout_line=progress_line)
                 if fallback_result.returncode:
                     raise MediaError(
                         "FFmpeg compression failed with both configured codecs: "
@@ -242,6 +288,8 @@ class MediaService:
                 raise MediaError(f"FFmpeg compression failed: {result.stderr.strip()[:2000]}")
             output_probe = self.probe(temporary)
             self._validate_encoded_output(source_probe, output_probe)
+            if on_progress is not None:
+                on_progress(1.0)
 
         atomic_output(destination, run)
         return destination
@@ -260,10 +308,13 @@ class MediaService:
         if source_fps != output_fps and not math.isclose(
             float(source_fps),
             float(output_fps),
-            rel_tol=1e-6,
-            abs_tol=1e-6,
+            rel_tol=5e-3,
+            abs_tol=1e-2,
         ):
-            raise MediaError("Encoded output frame rate differs from the source.")
+            raise MediaError(
+                "Encoded output frame rate differs from the source "
+                f"({float(source_fps):.3f} FPS to {float(output_fps):.3f} FPS)."
+            )
 
     def compression_command(
         self, source: Path, destination: Path, preset: CompressionPreset, codec: str
@@ -272,6 +323,9 @@ class MediaService:
             str(self.ffmpeg),
             "-hide_banner",
             "-nostdin",
+            "-nostats",
+            "-progress",
+            "pipe:1",
             "-y",
             "-i",
             str(source),
@@ -309,12 +363,28 @@ class MediaService:
         ]
         return command
 
-    def extract_wav(self, source: Path, destination: Path, *, cancel: threading.Event | None = None) -> Path:
+    def extract_wav(
+        self,
+        source: Path,
+        destination: Path,
+        *,
+        duration: float,
+        cancel: threading.Event | None = None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> Path:
+        def progress_line(line: str) -> None:
+            fraction = ffmpeg_progress_fraction(line, duration)
+            if fraction is not None and on_progress is not None:
+                on_progress(fraction)
+
         def run(temporary: Path) -> None:
             command = [
                 str(self.ffmpeg),
                 "-hide_banner",
                 "-nostdin",
+                "-nostats",
+                "-progress",
+                "pipe:1",
                 "-y",
                 "-i",
                 str(source),
@@ -329,13 +399,25 @@ class MediaService:
                 "wav",
                 str(temporary),
             ]
-            result = self.runner.run(command, cancel=cancel)
+            result = self.runner.run(command, cancel=cancel, on_stdout_line=progress_line)
             if result.returncode:
                 raise MediaError(f"FFmpeg WAV extraction failed: {result.stderr.strip()[:2000]}")
             validate_pcm16_wave(temporary)
+            if on_progress is not None:
+                on_progress(1.0)
 
         atomic_output(destination, run)
         return destination
+
+
+def ffmpeg_progress_fraction(line: str, duration: float) -> float | None:
+    if duration <= 0 or not line.startswith("out_time_us="):
+        return None
+    try:
+        elapsed = int(line.partition("=")[2]) / 1_000_000
+    except ValueError:
+        return None
+    return min(max(elapsed / duration, 0.0), 0.999)
 
 
 def validate_pcm16_wave(path: Path) -> None:
