@@ -77,8 +77,51 @@ def test_config_requires_and_redacts_token(tmp_path: Path) -> None:
     assert token not in repr(config)
     assert config.safe_dict()["api_token"] == REDACTED
     assert redact_text(f"Bearer {token}", token) == f"Bearer {REDACTED}"
-    with pytest.raises(ConfigError, match="required"):
-        load_config(environ={"MINUTORY_API_TOKEN": REDACTED})
+    config_without_token = load_config(environ={"MINUTORY_API_TOKEN": REDACTED})
+    assert config_without_token.api_token == ""
+
+
+def test_config_allows_an_unauthenticated_api_connection() -> None:
+    config = load_config(environ={})
+    assert config.api_token == ""
+    assert config.api_basic_auth_username is None
+    assert config.api_custom_header_key is None
+
+
+def test_config_accepts_and_redacts_basic_auth_and_custom_header() -> None:
+    config = load_config(
+        environ={
+            "MINUTORY_API_BASIC_AUTH_USERNAME": "worker-user",
+            "MINUTORY_API_BASIC_AUTH_PASSWORD": "worker-password",
+            "MINUTORY_API_CUSTOM_HEADER_KEY": "X-Worker-Secret",
+            "MINUTORY_API_CUSTOM_HEADER_VALUE": "header-secret",
+        }
+    )
+    assert config.api_token == ""
+    assert config.api_basic_auth_username == "worker-user"
+    assert config.api_basic_auth_password == "worker-password"
+    assert config.api_custom_header_key == "X-Worker-Secret"
+    assert config.api_custom_header_value == "header-secret"
+    rendered = repr(config)
+    assert "worker-password" not in rendered
+    assert "header-secret" not in rendered
+    assert config.safe_dict()["api_basic_auth_password"] == REDACTED
+    assert config.safe_dict()["api_custom_header_value"] == REDACTED
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {"MINUTORY_API_BASIC_AUTH_USERNAME": "worker-user"},
+        {"MINUTORY_API_BASIC_AUTH_PASSWORD": "worker-password"},
+        {"MINUTORY_API_CUSTOM_HEADER_KEY": "X-Worker-Secret"},
+        {"MINUTORY_API_CUSTOM_HEADER_VALUE": "header-secret"},
+        {"MINUTORY_API_CUSTOM_HEADER_KEY": "X-Worker\nSecret", "MINUTORY_API_CUSTOM_HEADER_VALUE": "value"},
+    ],
+)
+def test_config_rejects_incomplete_or_unsafe_optional_auth(environ: dict[str, str]) -> None:
+    with pytest.raises(ConfigError):
+        load_config(environ=environ)
 
 
 def test_config_validates_url_timeouts_boolean_and_preset() -> None:

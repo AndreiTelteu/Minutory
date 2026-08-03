@@ -4,6 +4,7 @@ import json
 import re
 import time
 import uuid
+from base64 import b64encode
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -169,16 +170,32 @@ class WorkerApiClient:
         token: str,
         transport: Transport,
         *,
+        basic_auth_username: str | None = None,
+        basic_auth_password: str | None = None,
+        custom_header_key: str | None = None,
+        custom_header_value: str | None = None,
         connect_timeout: float = 10,
         read_timeout: float = 120,
         upload_timeout: float = 3600,
         max_attempts: int = 3,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
-        if not token:
-            raise ValueError("Bearer token is required.")
+        if (basic_auth_username is None) != (basic_auth_password is None):
+            raise ValueError("Basic-auth username and password must be set together.")
+        if (custom_header_key is None) != (custom_header_value is None):
+            raise ValueError("Custom-header key and value must be set together.")
+        for name, value in (
+            ("Custom-header key", custom_header_key),
+            ("Custom-header value", custom_header_value),
+        ):
+            if value and ("\r" in value or "\n" in value):
+                raise ValueError(f"{name} must not contain line breaks.")
         self._base_url = f"{validate_api_base_url(base_url)}/api/v1/worker"
         self._token = token
+        self._basic_auth_username = basic_auth_username
+        self._basic_auth_password = basic_auth_password
+        self._custom_header_key = custom_header_key
+        self._custom_header_value = custom_header_value
         self._transport = transport
         self._connect_timeout = connect_timeout
         self._read_timeout = read_timeout
@@ -187,7 +204,7 @@ class WorkerApiClient:
         self._sleeper = sleeper
 
     def __repr__(self) -> str:
-        return f"WorkerApiClient(base_url={self._base_url!r}, token={REDACTED!r})"
+        return f"WorkerApiClient(base_url={self._base_url!r}, credentials={REDACTED!r})"
 
     def list_clients(self) -> list[dict[str, object]]:
         data = self._request("GET", "/clients")
@@ -364,7 +381,14 @@ class WorkerApiClient:
         timeout: float | None = None,
         retryable: bool = True,
     ) -> dict[str, object]:
-        headers = {"Authorization": f"Bearer {self._token}", "Accept": "application/json"}
+        headers = {"Accept": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        if self._basic_auth_username is not None and self._basic_auth_password is not None:
+            credentials = f"{self._basic_auth_username}:{self._basic_auth_password}".encode()
+            headers["Authorization"] = f"Basic {b64encode(credentials).decode('ascii')}"
+        if self._custom_header_key is not None and self._custom_header_value is not None:
+            headers[self._custom_header_key] = self._custom_header_value
         last_error: ApiError | None = None
         for attempt in range(1, self._max_attempts + 1):
             if files:
@@ -397,14 +421,14 @@ class WorkerApiClient:
             except TransportFailure as exception:
                 last_error = ApiError(
                     "transport_error",
-                    redact_text(str(exception), self._token),
+                    redact_text(str(exception), *self._secrets()),
                     None,
                     transient=True,
                 )
             except (json.JSONDecodeError, UnicodeDecodeError) as exception:
                 last_error = ApiError(
                     "invalid_response",
-                    redact_text(f"Server returned invalid JSON: {exception}", self._token),
+                    redact_text(f"Server returned invalid JSON: {exception}", *self._secrets()),
                     None,
                     transient=False,
                 )
@@ -438,7 +462,7 @@ class WorkerApiClient:
         transient = response.status_code == 429 or 500 <= response.status_code <= 599
         return ApiError(
             str(code),
-            redact_text(str(message), self._token),
+            redact_text(str(message), *self._secrets()),
             response.status_code,
             transient=transient,
             retry_after=retry_after,
@@ -448,6 +472,18 @@ class WorkerApiClient:
     @staticmethod
     def _invalid_response(message: str) -> ApiError:
         return ApiError("invalid_response", message, None, transient=False)
+
+    def _secrets(self) -> tuple[str, ...]:
+        return tuple(
+            secret
+            for secret in (
+                self._token,
+                self._basic_auth_username,
+                self._basic_auth_password,
+                self._custom_header_value,
+            )
+            if secret
+        )
 
 
 def _retry_after_seconds(value: str | None, *, now: datetime | None = None) -> float | None:

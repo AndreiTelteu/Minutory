@@ -11,10 +11,20 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .domain import COMPRESSION_PRESETS
 
 REDACTED = "[REDACTED]"
+_SECRET_CONFIG_FIELDS = {"api_token", "api_basic_auth_password", "api_custom_header_value"}
 
 
 class ConfigError(ValueError):
     pass
+
+
+def _optional_value(value: str, name: str) -> str | None:
+    normalized = value.strip()
+    if not normalized or normalized == REDACTED:
+        return None
+    if "\r" in normalized or "\n" in normalized:
+        raise ConfigError(f"{name} must not contain line breaks.")
+    return normalized
 
 
 def _boolean(value: str, name: str) -> bool:
@@ -85,6 +95,10 @@ def validate_api_base_url(value: str) -> str:
 class WorkerConfig:
     api_base_url: str
     api_token: str
+    api_basic_auth_username: str | None
+    api_basic_auth_password: str | None
+    api_custom_header_key: str | None
+    api_custom_header_value: str | None
     ffmpeg_path: Path
     ffprobe_path: Path
     model_dir: Path
@@ -108,13 +122,13 @@ class WorkerConfig:
     def __repr__(self) -> str:
         values = []
         for field in fields(self):
-            value = REDACTED if field.name == "api_token" else getattr(self, field.name)
+            value = REDACTED if field.name in _SECRET_CONFIG_FIELDS else getattr(self, field.name)
             values.append(f"{field.name}={value!r}")
         return f"WorkerConfig({', '.join(values)})"
 
     def safe_dict(self) -> dict[str, object]:
         return {
-            field.name: REDACTED if field.name == "api_token" else getattr(self, field.name)
+            field.name: REDACTED if field.name in _SECRET_CONFIG_FIELDS else getattr(self, field.name)
             for field in fields(self)
         }
 
@@ -143,10 +157,27 @@ def load_config(
 
     base_url = validate_api_base_url(get("MINUTORY_API_BASE_URL", "http://localhost:8000"))
 
-    token = get("MINUTORY_API_TOKEN", "")
-    if require_token and (not token or token == REDACTED):
-        raise ConfigError("MINUTORY_API_TOKEN is required at runtime.")
-
+    token = _optional_value(get("MINUTORY_API_TOKEN", ""), "MINUTORY_API_TOKEN") or ""
+    basic_auth_username = _optional_value(
+        get("MINUTORY_API_BASIC_AUTH_USERNAME", ""), "MINUTORY_API_BASIC_AUTH_USERNAME"
+    )
+    basic_auth_password = _optional_value(
+        get("MINUTORY_API_BASIC_AUTH_PASSWORD", ""), "MINUTORY_API_BASIC_AUTH_PASSWORD"
+    )
+    if (basic_auth_username is None) != (basic_auth_password is None):
+        raise ConfigError(
+            "MINUTORY_API_BASIC_AUTH_USERNAME and MINUTORY_API_BASIC_AUTH_PASSWORD must be set together."
+        )
+    custom_header_key = _optional_value(
+        get("MINUTORY_API_CUSTOM_HEADER_KEY", ""), "MINUTORY_API_CUSTOM_HEADER_KEY"
+    )
+    custom_header_value = _optional_value(
+        get("MINUTORY_API_CUSTOM_HEADER_VALUE", ""), "MINUTORY_API_CUSTOM_HEADER_VALUE"
+    )
+    if (custom_header_key is None) != (custom_header_value is None):
+        raise ConfigError(
+            "MINUTORY_API_CUSTOM_HEADER_KEY and MINUTORY_API_CUSTOM_HEADER_VALUE must be set together."
+        )
     preset = get("MINUTORY_COMPRESSION_PRESET", "crf22").lower()
     if preset not in COMPRESSION_PRESETS:
         raise ConfigError("MINUTORY_COMPRESSION_PRESET is invalid.")
@@ -160,6 +191,10 @@ def load_config(
     return WorkerConfig(
         api_base_url=base_url,
         api_token=token,
+        api_basic_auth_username=basic_auth_username,
+        api_basic_auth_password=basic_auth_password,
+        api_custom_header_key=custom_header_key,
+        api_custom_header_value=custom_header_value,
         ffmpeg_path=Path(get("MINUTORY_FFMPEG_PATH", "ffmpeg")),
         ffprobe_path=Path(get("MINUTORY_FFPROBE_PATH", "ffprobe")),
         model_dir=Path(get("MINUTORY_MODEL_DIR", "./models")),
@@ -185,5 +220,8 @@ def load_config(
     )
 
 
-def redact_text(value: str, token: str) -> str:
-    return value.replace(token, REDACTED) if token else value
+def redact_text(value: str, *secrets: str | None) -> str:
+    for secret in secrets:
+        if secret:
+            value = value.replace(secret, REDACTED)
+    return value

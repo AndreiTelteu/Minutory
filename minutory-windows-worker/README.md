@@ -11,7 +11,14 @@ delegate ASR to Laravel.
 
 ## Windows operator setup
 
-1. Copy `.env.example` to the ignored `.env` and set the Worker API URL/token.
+1. Copy `.env.example` to the ignored `.env` and set the Worker API URL and authentication.
+   The existing Bearer token, optional HTTP Basic credentials
+   (`MINUTORY_API_BASIC_AUTH_USERNAME` / `MINUTORY_API_BASIC_AUTH_PASSWORD`),
+   and optional arbitrary header (`MINUTORY_API_CUSTOM_HEADER_KEY` /
+   `MINUTORY_API_CUSTOM_HEADER_VALUE`) are supported. Basic Auth replaces the
+   Bearer `Authorization` header; the custom header is additive. When no
+   authentication variable is configured, requests are sent without auth. Never
+   commit actual secret values.
 2. Obtain a release-approved `manifests/runtime-assets.local.json` containing
    verified immutable HTTPS URLs, archive SHA-256 values, and normalized
    installed-tree SHA-256 values.

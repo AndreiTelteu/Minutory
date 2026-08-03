@@ -87,6 +87,77 @@ def test_exact_paths_payload_auth_and_forced_false(item) -> None:
     assert "secret-test-token" not in repr(client)
 
 
+def test_optional_basic_auth_and_custom_header_apply_to_every_request(item) -> None:
+    transport = RecordingTransport(
+        [
+            response(200, {"data": [{"id": 1, "name": "Client"}]}),
+            response(201, meeting_response(item)),
+        ]
+    )
+    client = WorkerApiClient(
+        "https://example.test",
+        "unused-bearer-token",
+        transport,
+        basic_auth_username="worker-user",
+        basic_auth_password="worker-password",
+        custom_header_key="X-Api-Key",
+        custom_header_value="custom-secret",
+    )
+    client.list_clients()
+    client.create_meeting(item)
+    expected_basic = "Basic d29ya2VyLXVzZXI6d29ya2VyLXBhc3N3b3Jk"
+    for call in transport.calls:
+        assert call["headers"]["Authorization"] == expected_basic
+        assert call["headers"]["X-Api-Key"] == "custom-secret"
+    assert "unused-bearer-token" not in repr(client)
+    assert "worker-password" not in repr(client)
+
+
+def test_unauthenticated_requests_are_allowed() -> None:
+    transport = RecordingTransport([response(200, {"data": []})])
+    client = WorkerApiClient("https://example.test", "", transport)
+    assert client.list_clients() == []
+    assert "Authorization" not in transport.calls[0]["headers"]
+
+
+def test_custom_header_auth_works_without_bearer_token() -> None:
+    transport = RecordingTransport([response(200, {"data": []})])
+    client = WorkerApiClient(
+        "https://example.test",
+        "",
+        transport,
+        custom_header_key="X-Gateway-Token",
+        custom_header_value="custom-secret",
+    )
+    assert client.list_clients() == []
+    assert "Authorization" not in transport.calls[0]["headers"]
+    assert transport.calls[0]["headers"]["X-Gateway-Token"] == "custom-secret"
+
+
+def test_optional_auth_values_are_redacted_from_errors() -> None:
+    basic_user = "worker-user"
+    basic_password = "worker-password"
+    header_value = "custom-secret"
+    transport = RecordingTransport(
+        [TransportFailure(f"failed {basic_user} {basic_password} {header_value}")] * 3
+    )
+    client = WorkerApiClient(
+        "https://example.test",
+        "",
+        transport,
+        basic_auth_username=basic_user,
+        basic_auth_password=basic_password,
+        custom_header_key="X-Gateway-Token",
+        custom_header_value=header_value,
+        sleeper=lambda _: None,
+    )
+    with pytest.raises(ApiError) as caught:
+        client.list_clients()
+    assert basic_user not in str(caught.value)
+    assert basic_password not in str(caught.value)
+    assert header_value not in str(caught.value)
+
+
 def test_artifact_upload_retries_stream_from_start(tmp_path: Path) -> None:
     path = tmp_path / "audio.wav"
     path.write_bytes(b"artifact")
