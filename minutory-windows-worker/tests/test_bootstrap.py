@@ -185,6 +185,11 @@ def test_bootstrap_and_launchers_are_credential_free_and_local_transcription_onl
     assert "Test-AssetFileSnapshot" in bootstrap
     assert "last_write_utc_ticks" in bootstrap
     assert "Write-AssetMarker" in bootstrap
+    assert "Test-RuntimeVerifiedToday" in bootstrap
+    assert "Write-RuntimeVerificationMarker" in bootstrap
+    assert '$RuntimeVerificationMarker = ".minutory-runtime-verified.json"' in bootstrap
+    assert 'Get-Date -Format "yyyy-MM-dd"' in bootstrap
+    assert "Daily runtime verification is already current." in bootstrap
     assert "Assert-NoReparsePoints" in bootstrap
     assert '$marker.PSObject.Properties["schema"]' in bootstrap
     assert "[IO.Path]::GetFullPath((Join-Path $Directory $AssetMarker))" in bootstrap

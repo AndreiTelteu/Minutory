@@ -14,6 +14,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $BootstrapSchema = "minutory-bootstrap-v2"
 $AssetMarker = ".minutory-asset.json"
 $ReadyMarker = ".minutory-ready.json"
+$RuntimeVerificationMarker = ".minutory-runtime-verified.json"
+$RuntimeVerificationSchema = "minutory-runtime-verification-v1"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $env:PYTHONDONTWRITEBYTECODE = "1"
 $env:PIP_DISABLE_PIP_VERSION_CHECK = "1"
@@ -67,6 +69,52 @@ function Get-ReadinessFingerprint {
         Get-FileHash -LiteralPath (Join-Path $Root "requirements-runtime.txt") -Algorithm SHA256
     ).Hash.ToLowerInvariant()
     return (Get-Sha256Text "$BootstrapSchema|$manifestHash|$requirementsHash")
+}
+
+function Get-RuntimeVerificationFingerprint {
+    param([string]$Venv)
+    $readyMarker = Join-Path $Venv $ReadyMarker
+    $python = Join-Path $Venv "Scripts\python.exe"
+    $ctranslate2Package = Join-Path $Venv "Lib\site-packages\ctranslate2\__init__.py"
+    $ctranslate2Native = Join-Path $Venv "Lib\site-packages\ctranslate2\ctranslate2.dll"
+    foreach ($path in @($readyMarker, $python, $ctranslate2Package)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Runtime verification input is missing: $path"
+        }
+    }
+    $readyHash = (Get-FileHash -LiteralPath $readyMarker -Algorithm SHA256).Hash.ToLowerInvariant()
+    $pythonHash = (Get-FileHash -LiteralPath $python -Algorithm SHA256).Hash.ToLowerInvariant()
+    $ctranslate2PackageHash = (Get-FileHash -LiteralPath $ctranslate2Package -Algorithm SHA256).Hash.ToLowerInvariant()
+    $ctranslate2NativeHash = if (Test-Path -LiteralPath $ctranslate2Native -PathType Leaf) {
+        (Get-FileHash -LiteralPath $ctranslate2Native -Algorithm SHA256).Hash.ToLowerInvariant()
+    } else {
+        "missing"
+    }
+    return (Get-Sha256Text `
+        "$RuntimeVerificationSchema|$readyHash|$pythonHash|$ctranslate2PackageHash|$ctranslate2NativeHash")
+}
+
+function Test-RuntimeVerifiedToday {
+    param([string]$Venv, [string]$Fingerprint)
+    $marker = Join-Path $Venv $RuntimeVerificationMarker
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { return $false }
+    try {
+        $document = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
+        return $document.schema -ceq $RuntimeVerificationSchema `
+            -and $document.date -ceq (Get-Date -Format "yyyy-MM-dd") `
+            -and $document.fingerprint -ceq $Fingerprint
+    } catch {
+        return $false
+    }
+}
+
+function Write-RuntimeVerificationMarker {
+    param([string]$Venv, [string]$Fingerprint)
+    @{
+        schema = $RuntimeVerificationSchema
+        date = Get-Date -Format "yyyy-MM-dd"
+        fingerprint = $Fingerprint
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Venv $RuntimeVerificationMarker) -Encoding UTF8
 }
 
 function Assert-SafeRelativePath {
@@ -502,7 +550,14 @@ try {
                 -or $ready.fingerprint -cne (Get-ReadinessFingerprint)) {
             throw "Managed venv readiness marker is stale."
         }
-        Assert-VenvReady $venv
+        $runtimeFingerprint = Get-RuntimeVerificationFingerprint $venv
+        if (Test-RuntimeVerifiedToday $venv $runtimeFingerprint) {
+            Write-Host "Daily runtime verification is already current."
+        } else {
+            Assert-VenvReady $venv
+            Write-RuntimeVerificationMarker $venv $runtimeFingerprint
+            Write-Host "Daily runtime verification completed."
+        }
         Write-Host "Minutory Worker runtime is verified and ready."
         exit 0
     }
@@ -570,6 +625,8 @@ try {
             schema = $BootstrapSchema
             fingerprint = (Get-ReadinessFingerprint)
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stagingVenv $ReadyMarker) -Encoding UTF8
+        $runtimeFingerprint = Get-RuntimeVerificationFingerprint $stagingVenv
+        Write-RuntimeVerificationMarker $stagingVenv $runtimeFingerprint
         Move-Atomically $stagingVenv $venv
     } finally {
         if (Test-Path -LiteralPath $stagingVenv) {
