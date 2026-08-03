@@ -181,6 +181,13 @@ def test_bootstrap_and_launchers_are_credential_free_and_local_transcription_onl
     assert "Expand-Archive" not in bootstrap
     assert ".venv.installing-" in bootstrap
     assert "installed_tree_sha256" in bootstrap
+    assert "Get-AssetFileSnapshot" in bootstrap
+    assert "Test-AssetFileSnapshot" in bootstrap
+    assert "last_write_utc_ticks" in bootstrap
+    assert "Write-AssetMarker" in bootstrap
+    assert "Assert-NoReparsePoints" in bootstrap
+    assert '$marker.PSObject.Properties["schema"]' in bootstrap
+    assert "[IO.Path]::GetFullPath((Join-Path $Directory $AssetMarker))" in bootstrap
     assert "PYTHONDONTWRITEBYTECODE" in bootstrap
     assert "[[string]" not in bootstrap
     assert "$RequiredExpectedFiles = @{" in bootstrap

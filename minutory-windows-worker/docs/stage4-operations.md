@@ -74,12 +74,19 @@ Items can be removed only before a server meeting attempt and while neither
 scheduled nor running. This refuses unsafe local deletion after remote history
 may have been created.
 
-Every launch first runs non-mutating `bootstrap.ps1 -Verify`. Full bootstrap
-builds dependencies in a fresh staging venv, runs runtime verification, writes
-the manifest/requirements/schema readiness marker only on success, and atomically
-promotes it. Failed staging is removed while an earlier ready venv remains intact.
-The launcher forces offline model resolution, so missing or modified model
-content cannot fall back to the network.
+Every launch first runs non-mutating `bootstrap.ps1 -Verify`. The first
+verification after installation, a legacy marker, or a detected file change
+computes the complete installed-tree SHA-256. A successful verification stores a
+per-file path, byte-count, and UTC last-write-tick snapshot in the asset marker.
+Unchanged later launches compare that metadata instead of rereading the entire
+Large v3 model; any difference forces a complete SHA-256 verification and marker
+refresh. This is a launch-performance integrity check, not protection against an
+attacker who can modify files while preserving their size and timestamps. Full
+bootstrap builds dependencies in a fresh staging venv, runs runtime
+verification, writes the manifest/requirements/schema readiness marker only on
+success, and atomically promotes it. Failed staging is removed while an earlier
+ready venv remains intact. The launcher forces offline model resolution, so
+missing or modified model content cannot fall back to the network.
 
 ## Verification and current limits
 

@@ -95,16 +95,16 @@ def validate_api_base_url(value: str) -> str:
 class WorkerConfig:
     api_base_url: str
     api_token: str
-    api_basic_auth_username: str | None
-    api_basic_auth_password: str | None
-    api_custom_header_key: str | None
-    api_custom_header_value: str | None
     ffmpeg_path: Path
     ffprobe_path: Path
     model_dir: Path
     runtime_dir: Path
     work_dir: Path
     state_db: Path
+    api_basic_auth_username: str | None = None
+    api_basic_auth_password: str | None = None
+    api_custom_header_key: str | None = None
+    api_custom_header_value: str | None = None
     connect_timeout: float = 10.0
     read_timeout: float = 120.0
     upload_timeout: float = 3600.0

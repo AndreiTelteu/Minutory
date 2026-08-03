@@ -182,8 +182,10 @@ function Get-TreeDigest {
     param([string]$Directory)
     if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return "" }
     $directoryPrefix = [IO.Path]::GetFullPath($Directory).TrimEnd("\") + "\"
+    $markerPath = [IO.Path]::GetFullPath((Join-Path $Directory $AssetMarker))
+    Assert-NoReparsePoints $Directory
     [string[]]$records = @(Get-ChildItem -LiteralPath $Directory -Recurse -Force -File |
-        Where-Object { $_.Name -cne $AssetMarker } |
+        Where-Object { [IO.Path]::GetFullPath($_.FullName) -cne $markerPath } |
         ForEach-Object {
             $fullName = [IO.Path]::GetFullPath($_.FullName)
             if (-not $fullName.StartsWith($directoryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
@@ -195,6 +197,70 @@ function Get-TreeDigest {
         })
     [Array]::Sort($records, [StringComparer]::Ordinal)
     return (Get-Sha256Text ($records -join "`n"))
+}
+
+function Assert-NoReparsePoints {
+    param([string]$Directory)
+    $reparse = Get-ChildItem -LiteralPath $Directory -Recurse -Force |
+        Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 } |
+        Select-Object -First 1
+    if ($null -ne $reparse) {
+        throw "Installed asset contains unsupported reparse point '$($reparse.FullName)'."
+    }
+}
+
+function Get-AssetFileSnapshot {
+    param([string]$Directory)
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return @{} }
+    $directoryPrefix = [IO.Path]::GetFullPath($Directory).TrimEnd("\") + "\"
+    $markerPath = [IO.Path]::GetFullPath((Join-Path $Directory $AssetMarker))
+    Assert-NoReparsePoints $Directory
+    $files = @{}
+    Get-ChildItem -LiteralPath $Directory -Recurse -Force -File |
+        Where-Object { [IO.Path]::GetFullPath($_.FullName) -cne $markerPath } |
+        ForEach-Object {
+            $fullName = [IO.Path]::GetFullPath($_.FullName)
+            if (-not $fullName.StartsWith($directoryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Installed asset file escapes its managed directory."
+            }
+            $relative = $fullName.Substring($directoryPrefix.Length).Replace("\", "/")
+            $files[$relative] = @{
+                bytes = [Int64]$_.Length
+                last_write_utc_ticks = $_.LastWriteTimeUtc.Ticks
+            }
+        }
+    return $files
+}
+
+function Test-AssetFileSnapshot {
+    param([object]$Snapshot, [string]$Directory)
+    if ($null -eq $Snapshot) { return $false }
+    $current = Get-AssetFileSnapshot $Directory
+    $cachedNames = @($Snapshot.PSObject.Properties.Name)
+    if ($cachedNames.Count -ne $current.Count) { return $false }
+    foreach ($name in $cachedNames) {
+        if (-not $current.ContainsKey($name)) { return $false }
+        $cached = $Snapshot.$name
+        if ($null -eq $cached) { return $false }
+        $bytes = $cached.PSObject.Properties["bytes"]
+        $ticks = $cached.PSObject.Properties["last_write_utc_ticks"]
+        if ($null -eq $bytes -or $null -eq $ticks) { return $false }
+        if ([Int64]$bytes.Value -ne [Int64]$current[$name].bytes `
+                -or [Int64]$ticks.Value -ne [Int64]$current[$name].last_write_utc_ticks) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Write-AssetMarker {
+    param([string]$Destination, [object]$Asset, [string]$Tree)
+    @{
+        schema = 2
+        archive_sha256 = $Asset.sha256
+        tree_sha256 = $Tree
+        files = Get-AssetFileSnapshot $Destination
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $Destination $AssetMarker) -Encoding UTF8
 }
 
 function Assert-ExpectedFiles {
@@ -223,9 +289,23 @@ function Test-InstalledAsset {
         $markerPath = Join-Path $destination $AssetMarker
         if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { return $false }
         $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
-        return $marker.archive_sha256 -ceq $Asset.sha256 `
-            -and $marker.tree_sha256 -ceq $Asset.installed_tree_sha256 `
-            -and $Asset.installed_tree_sha256 -ceq (Get-TreeDigest $destination)
+        if ($marker.archive_sha256 -cne $Asset.sha256 `
+                -or $marker.tree_sha256 -cne $Asset.installed_tree_sha256) {
+            return $false
+        }
+        $schemaProperty = $marker.PSObject.Properties["schema"]
+        $filesProperty = $marker.PSObject.Properties["files"]
+        if ($null -ne $schemaProperty -and $schemaProperty.Value -eq 2 `
+                -and $null -ne $filesProperty -and (Test-AssetFileSnapshot $filesProperty.Value $destination)) {
+            return $true
+        }
+        $tree = Get-TreeDigest $destination
+        if ($Asset.installed_tree_sha256 -cne $tree) { return $false }
+        # Existing v1 markers get a complete SHA-256 validation exactly once;
+        # subsequent launches use this path/size/mtime snapshot and avoid
+        # rereading the multi-gigabyte model.
+        Write-AssetMarker $destination $Asset $tree
+        return $true
     } catch {
         return $false
     }
@@ -365,11 +445,7 @@ function Install-Asset {
         if ($tree -cne $Asset.installed_tree_sha256) {
             throw "Installed-tree SHA-256 mismatch for '$($Asset.id)'."
         }
-        @{
-            schema = $BootstrapSchema
-            archive_sha256 = $Asset.sha256
-            tree_sha256 = $tree
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging $AssetMarker) -Encoding UTF8
+        Write-AssetMarker $staging $Asset $tree
         Move-Atomically $staging $destination
     } finally {
         if (Test-Path -LiteralPath $staging) { Remove-Item $staging -Recurse -Force }
