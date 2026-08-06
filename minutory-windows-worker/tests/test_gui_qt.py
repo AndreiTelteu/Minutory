@@ -70,16 +70,17 @@ def test_window_add_edit_clients_and_state_render_offscreen(qtbot, store, tmp_pa
             self.api = Api()
             self.work_dir = tmp_path / "work"
             self.calls = []
-            self.preflight_entered = threading.Event()
-            self.preflight_release = threading.Event()
+            self.pipeline_entered = threading.Event()
+            self.pipeline_release = threading.Event()
 
         def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
+            self.calls.append(("pipeline", item_id))
+            self.pipeline_entered.set()
+            self.pipeline_release.wait(2)
             return store.get_item(item_id)
 
         def preflight(self, item_id, *, cancel=None, on_stage, on_progress=None):
             self.calls.append(("preflight", item_id))
-            self.preflight_entered.set()
-            self.preflight_release.wait(2)
             return store.get_item(item_id)
 
         def retry_artifact(self, item_id, artifact_name, *, on_stage, on_progress=None):
@@ -108,11 +109,38 @@ def test_window_add_edit_clients_and_state_render_offscreen(qtbot, store, tmp_pa
     card = window.cards[added_id]
     assert card.client.itemText(1) == "Acme & Partners"
     assert "unsupported video type" in window.notice.text()
-    assert orchestrator.preflight_entered.wait(1)
+    assert not orchestrator.pipeline_entered.wait(0.1)
+    assert card.status.text().strip() == "•  New"
+    assert card.title.isEnabled()
+    assert card.preset.isEnabled()
+    assert card.remove.isEnabled()
+    card.client.setCurrentIndex(1)
+    card.start.click()
+    assert orchestrator.pipeline_entered.wait(1)
     assert not card.title.isEnabled()
     assert not card.preset.isEnabled()
     assert not card.remove.isEnabled()
-    orchestrator.preflight_release.set()
+
+    dropped = tmp_path / "Dropped meeting.mp4"
+    dropped.write_bytes(b"video")
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(dropped))])
+    event = QDropEvent(
+        QPointF(10, 10),
+        Qt.DropAction.CopyAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    window.dropEvent(event)
+    qtbot.waitUntil(lambda: len(window.cards) == 3)
+    dropped_card = next(card for card in window.cards.values() if card.name.text() == dropped.name)
+    assert dropped_card.status.text().strip() == "•  New"
+    assert dropped_card.title.isEnabled()
+    assert dropped_card.preset.isEnabled()
+    assert dropped_card.remove.isEnabled()
+
+    orchestrator.pipeline_release.set()
     qtbot.waitUntil(lambda: not window.coordinator.busy)
     window.render_state()
     assert card.title.isEnabled()
@@ -160,22 +188,7 @@ def test_window_add_edit_clients_and_state_render_offscreen(qtbot, store, tmp_pa
     card.title.editingFinished.emit()
     assert store.get_item(added_id).title == "Manual review"
     assert store.get_item(added_id).client_id == 7
-    assert ("preflight", added_id) in orchestrator.calls
-
-    dropped = tmp_path / "Dropped meeting.mp4"
-    dropped.write_bytes(b"video")
-    mime = QMimeData()
-    mime.setUrls([QUrl.fromLocalFile(str(dropped))])
-    event = QDropEvent(
-        QPointF(10, 10),
-        Qt.DropAction.CopyAction,
-        mime,
-        Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier,
-    )
-    window.dropEvent(event)
-    qtbot.waitUntil(lambda: len(window.cards) == 3)
-    assert any(card.name.text() == dropped.name for card in window.cards.values())
+    assert ("pipeline", added_id) in orchestrator.calls
 
     store.reconcile_success(added_id, Stage.PROBE)
     store.reconcile_success(added_id, Stage.SOURCE)

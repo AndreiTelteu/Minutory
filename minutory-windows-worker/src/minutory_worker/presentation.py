@@ -335,7 +335,7 @@ class QueueController:
         elif failed is not None:
             status = f"Needs attention · {failed.stage.value.replace('_', ' ')}"
         else:
-            status = "Ready"
+            status = "New"
         probe_summary = "Waiting for media probe"
         if item.probe_width and item.probe_height and item.probe_fps is not None:
             minutes, seconds = divmod(item.duration_seconds or 0, 60)

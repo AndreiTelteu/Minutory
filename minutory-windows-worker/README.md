@@ -73,11 +73,12 @@ HTTPS; plain HTTP is accepted only for loopback development endpoints.
 ## Queue and shutdown behavior
 
 Drop MP4, MOV, AVI, or WebM files, or use **Add files**. Canonical paths are
-deduplicated and the queue is restored from SQLite after restart. New files run
-probe-only preflight in the serialized background lane; restored unprobed files
-can use **Preflight unprobed**. Review duration/resolution/FPS and the size
-estimate, choose a client, edit the suggested title/date, and select a compression
-preset before starting.
+deduplicated and the queue is restored from SQLite after restart. A newly added
+file remains **New** and fully editable: choose a client, review or edit the
+suggested title/date, and select a compression preset before pressing **Start
+processing**. That explicit action schedules its pipeline; if another item is
+already using the GPU lane, this item shows **Scheduled** until it begins.
+**Preflight unprobed** remains available for an explicit probe-only check.
 Metadata and presets become immutable as soon as meeting creation is attempted,
 because a lost response may hide a committed server row. This preserves the API
 idempotency contract.

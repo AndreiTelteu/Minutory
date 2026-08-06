@@ -96,6 +96,10 @@ def test_metadata_ownership_nullable_datetime_and_post_meeting_refusal(
     assert store.get_item(item.item_id).title == "Manual title"
 
 
+def test_new_item_renders_as_new(store: StateStore, item: WorkerItem) -> None:
+    assert controller(store).view(item.item_id).status == "New"
+
+
 def test_client_loading_queue_restore_and_state_render(tmp_path: Path, source: Path) -> None:
     path = tmp_path / "state.sqlite3"
     state = StateStore(path)

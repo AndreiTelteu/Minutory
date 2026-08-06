@@ -64,10 +64,11 @@ conservatively refused after the first meeting attempt because a lost response
 may hide a committed server row; the operator must create a new item.
 A preset change preserves probe metadata while transactionally invalidating
 `source` and its true dependency closure.
-Metadata and preset changes are also refused while any stage is running. The
-coordinator exposes scheduled state so Qt disables metadata, preset, and removal
-during executor queue time, then re-enables pre-server controls after probe-only
-preflight.
+Metadata and preset changes are refused while any stage is running. Newly added
+items stay editable with the `New` status until the operator explicitly starts
+their pipeline. The coordinator exposes per-item scheduled state, so only the
+item submitted for preflight, processing, or retry becomes immutable during its
+executor queue time; another newly dropped item remains `New` and editable.
 
 ## Atomic artifacts
 
@@ -116,8 +117,8 @@ through one lazily loaded model instance. `Orchestrator.process_next_stage` also
 exposes a safe stage-sized integration seam, while normal GUI runs retain the
 Stage 3 resume loop.
 
-New items schedule only `probe`; this never flows into `source` without explicit
-operator start. Artifact retry commands validate the durable local prerequisite,
+New items remain `New` and run no background work until an explicit operator
+start. Artifact retry commands validate the durable local prerequisite,
 reconcile remote state, and upload only the named missing artifact without
 replacement. If all upload stages are complete, final reconciliation runs.
 

@@ -794,8 +794,6 @@ class MainWindow(QMainWindow):
 
     def add_paths(self, paths: list[str]) -> None:
         result = self.controller.add_paths(paths)
-        for item_id in result.added:
-            self.coordinator.preflight(item_id)
         messages = []
         if result.added:
             messages.append(f"Added {len(result.added)} video(s).")
@@ -835,7 +833,7 @@ class MainWindow(QMainWindow):
             str(
                 sum(
                     view.active_stage is None
-                    and view.status in {"Ready", "Completed"}
+                    and view.status in {"New", "Completed"}
                     and not self.coordinator.is_scheduled(view.item.item_id)
                     for view in views
                 )
