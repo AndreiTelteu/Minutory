@@ -74,8 +74,8 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 interface Transcription {
     id: number;
-    speaker: string;
-    text: string;
+    speaker: string | null;
+    text: string | null;
     start_time: number;
     end_time: number;
     confidence: number;
@@ -107,7 +107,7 @@ const filteredTranscriptions = computed(() => {
         return props.transcriptions;
     }
     const query = searchQuery.value.toLowerCase();
-    return props.transcriptions.filter((t) => t.text.toLowerCase().includes(query) || t.speaker.toLowerCase().includes(query));
+    return props.transcriptions.filter((t) => (t.text ?? '').toLowerCase().includes(query) || (t.speaker ?? '').toLowerCase().includes(query));
 });
 
 const currentSegment = computed(() => {
@@ -129,8 +129,11 @@ const setTranscriptionRef = (id: number, el: any) => {
     }
 };
 
-const onTimestampClick = (time: number) => {
-    emit('timestampClick', time);
+const onTimestampClick = (time: number | string) => {
+    const timestamp = Number(time);
+    if (Number.isFinite(timestamp)) {
+        emit('timestampClick', timestamp);
+    }
 };
 
 const scrollToCurrentSegment = async () => {
@@ -168,20 +171,29 @@ const onAutoScrollToggle = () => {
     }
 };
 
-const scrollToPrevious = () => {
-    if (hasPrevious.value) {
-        currentSegmentIndex.value--;
-        const transcription = filteredTranscriptions.value[currentSegmentIndex.value];
-        onTimestampClick(transcription.start_time);
+const navigateToSegment = (index: number): number | null => {
+    const transcription = filteredTranscriptions.value[index];
+    if (!transcription) return null;
+
+    currentSegmentIndex.value = index;
+    onTimestampClick(transcription.start_time);
+    if (autoScroll.value) {
+        scrollToCurrentSegment();
     }
+
+    return transcription.start_time;
 };
 
-const scrollToNext = () => {
-    if (hasNext.value) {
-        currentSegmentIndex.value++;
-        const transcription = filteredTranscriptions.value[currentSegmentIndex.value];
-        onTimestampClick(transcription.start_time);
-    }
+const scrollToPrevious = (): number | null => {
+    const currentIndex = currentSegmentIndex.value;
+    const index = currentIndex > 0 ? currentIndex - 1 : 0;
+    return navigateToSegment(index);
+};
+
+const scrollToNext = (): number | null => {
+    const currentIndex = currentSegmentIndex.value;
+    const index = currentIndex >= 0 ? Math.min(currentIndex + 1, filteredTranscriptions.value.length - 1) : 0;
+    return navigateToSegment(index);
 };
 
 const formatTime = (seconds: number): string => {
@@ -194,11 +206,12 @@ const formatTime = (seconds: number): string => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
-const highlightSearchTerm = (text: string): string => {
-    if (!searchQuery.value.trim()) return text;
+const highlightSearchTerm = (text: string | null): string => {
+    const normalizedText = text ?? '';
+    if (!searchQuery.value.trim()) return normalizedText;
     const query = searchQuery.value.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${query})`, 'gi');
-    return text.replace(regex, '<mark>$1</mark>');
+    return normalizedText.replace(regex, '<mark>$1</mark>');
 };
 
 watch(currentSegment, (newSegment) => {

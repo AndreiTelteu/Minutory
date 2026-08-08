@@ -1,5 +1,6 @@
 <template>
     <AppLayout>
+        <Head :title="`${meeting.title} - ${meeting.client.name}`" />
         <div class="px-6 py-8 lg:px-10">
             <!-- Header -->
             <div class="mb-6">
@@ -69,14 +70,14 @@
                         <div class="flex gap-1.5">
                             <button
                                 @click="goToPrevious"
-                                :disabled="!transcriptionViewerRef?.hasPrevious"
+                                :disabled="!meeting.transcriptions?.length"
                                 class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                             >
                                 ← Prev
                             </button>
                             <button
                                 @click="goToNext"
-                                :disabled="!transcriptionViewerRef?.hasNext"
+                                :disabled="!meeting.transcriptions?.length"
                                 class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                             >
                                 Next →
@@ -175,7 +176,7 @@ import { formatBrowserDateTime } from '@/lib/browserDateTime';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
 import TranscriptionViewer from '@/lib/TranscriptionViewer.vue';
 import VideoPlayer from '@/lib/VideoPlayer.vue';
-import { Link } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 interface Client {
@@ -259,22 +260,27 @@ const onVideoError = (error: Event) => {
     console.error('Video playback error:', error);
 };
 
-const onTranscriptionTimestampClick = (time: number) => {
-    videoCurrentTime.value = time;
+const onTranscriptionTimestampClick = (time: number | string) => {
+    const timestamp = Number(time);
+    if (!Number.isFinite(timestamp)) return;
+
     if (videoPlayerRef.value) {
-        videoPlayerRef.value.seekTo(time);
+        videoPlayerRef.value.seekTo(timestamp);
     }
+    videoCurrentTime.value = timestamp;
 };
 
 const goToPrevious = () => {
-    if (transcriptionViewerRef.value) {
-        transcriptionViewerRef.value.scrollToPrevious();
+    const time = transcriptionViewerRef.value?.scrollToPrevious();
+    if (time !== null && time !== undefined) {
+        onTranscriptionTimestampClick(time);
     }
 };
 
 const goToNext = () => {
-    if (transcriptionViewerRef.value) {
-        transcriptionViewerRef.value.scrollToNext();
+    const time = transcriptionViewerRef.value?.scrollToNext();
+    if (time !== null && time !== undefined) {
+        onTranscriptionTimestampClick(time);
     }
 };
 
