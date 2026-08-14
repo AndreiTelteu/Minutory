@@ -173,7 +173,7 @@ def test_window_add_edit_clients_and_state_render_offscreen(qtbot, store, tmp_pa
     assert all(separator.height() == 20 for separator in card.progress._separators)
     visible_bars = [
         card.progress._segments[key][1]
-        for key in ("audio", "compression", "transcript", "upload")
+        for key in ("audio", "compression", "transcript", "speakerid", "upload")
     ]
     for index, separator in enumerate(card.progress._separators):
         left_bar = visible_bars[index]
