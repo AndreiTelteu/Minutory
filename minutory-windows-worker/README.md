@@ -121,5 +121,12 @@ The resolver pins and exports the audited `pyannote-onnx-extended` commit into
 Do not put that token in `.env`; bootstrap and normal worker startup never read
 or contact Hugging Face.
 
+`resolve-assets.ps1` caches successful wheelhouse, Large-v3, and ONNX export
+builds for the rest of the local calendar day in `cache/resolve/daily/`. A
+second run that day reuses the recorded archive and installed-tree SHA-256
+values without downloading, extracting, or rehashing the large files. A change
+to `requirements-runtime.txt` invalidates only the wheelhouse cache. Delete a
+specific daily marker to force an immediate rebuild.
+
 See [Architecture](docs/architecture.md), [Stage 3 notes](docs/stage3-operations.md),
 and [Stage 4 Windows operations](docs/stage4-operations.md).

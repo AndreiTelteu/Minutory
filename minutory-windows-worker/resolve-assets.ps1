@@ -87,6 +87,44 @@ function Get-TreeDigest {
     return (Get-Sha256Text ($records -join "`n"))
 }
 
+# Resolver builds can be multi-gigabyte. A successful build is immutable for
+# the rest of the calendar day: reuse its recorded archive/tree checksums and
+# avoid both network traffic and repeated full-file hashing. Delete the marker
+# below cache\resolve\daily to force an immediate rebuild.
+function Get-DailyBuildCache {
+    param([string]$Id, [string]$Archive, [string]$InputFingerprint = "")
+    $marker = Join-Path $CacheDir "daily\$Id.json"
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf) -or -not (Test-Path -LiteralPath $Archive -PathType Leaf)) {
+        return $null
+    }
+    try {
+        $saved = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
+        if ($saved.date -cne (Get-Date -Format "yyyy-MM-dd") -or $saved.input_fingerprint -cne $InputFingerprint) {
+            return $null
+        }
+        if ([string]::IsNullOrWhiteSpace($saved.sha256) -or [string]::IsNullOrWhiteSpace($saved.installed_tree_sha256)) {
+            return $null
+        }
+        Write-Host "  [daily cache] Reusing validated $Id archive; no download, extraction, or rehash today."
+        return @{
+            zipPath = $Archive; sha256 = [string]$saved.sha256
+            installed_tree_sha256 = [string]$saved.installed_tree_sha256
+            source_subdir = [string]$saved.source_subdir
+        }
+    } catch { return $null }
+}
+
+function Save-DailyBuildCache {
+    param([string]$Id, [hashtable]$Build, [string]$InputFingerprint = "")
+    $directory = Join-Path $CacheDir "daily"
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    @{
+        date = Get-Date -Format "yyyy-MM-dd"; input_fingerprint = $InputFingerprint
+        sha256 = $Build["sha256"]; installed_tree_sha256 = $Build["installed_tree_sha256"]
+        source_subdir = $Build["source_subdir"]
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory "$Id.json") -Encoding UTF8
+}
+
 # ---------------------------------------------------------------------------
 #  Download helper
 # ---------------------------------------------------------------------------
@@ -223,6 +261,11 @@ function Resolve-DownloadAsset {
 
 function Build-Wheelhouse {
     Write-Host "`n=== runtime-wheelhouse (building) ==="
+    $zipPath = Join-Path $DownloadsDir "runtime-wheelhouse-2026.07.zip"
+    $reqFile = Join-Path $Root "requirements-runtime.txt"
+    $fingerprint = (Get-FileHash -LiteralPath $reqFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    $cached = Get-DailyBuildCache "runtime-wheelhouse" $zipPath $fingerprint
+    if ($null -ne $cached) { return $cached }
     $wheelhouseStaging = Join-Path $StagingBase "wheelhouse-build"
     if (Test-Path $wheelhouseStaging) { Remove-Item $wheelhouseStaging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $wheelhouseStaging | Out-Null
@@ -251,7 +294,6 @@ function Build-Wheelhouse {
     }
     Write-Host "  Using: $(if ($pipMode -eq 'python-m-pip') { "$pythonExe -m pip" } else { $pipExe })"
 
-    $reqFile = Join-Path $Root "requirements-runtime.txt"
     Write-Host "  Downloading wheels for requirements-runtime.txt ..."
 
     # Download all wheels including transitive dependencies
@@ -304,7 +346,6 @@ function Build-Wheelhouse {
     Write-Host "  Wheelhouse contains $fileCount files"
 
     # Create ZIP in bootstrap's download cache so bootstrap skips the download step
-    $zipPath = Join-Path $DownloadsDir "runtime-wheelhouse-2026.07.zip"
     Write-Host "  Creating wheelhouse ZIP ..."
     New-ZipFromDirectory $wheelhouseStaging "wheelhouse" $zipPath
 
@@ -315,12 +356,14 @@ function Build-Wheelhouse {
     $tree = Get-TreeDigest $wheelhouseStaging
     Write-Host "  Tree SHA-256:    $tree"
 
-    return @{
+    $result = @{
         zipPath                = $zipPath
         sha256                 = $sha256
         installed_tree_sha256  = $tree
         source_subdir          = "wheelhouse"
     }
+    Save-DailyBuildCache "runtime-wheelhouse" $result $fingerprint
+    return $result
 }
 
 # ---------------------------------------------------------------------------
@@ -329,6 +372,9 @@ function Build-Wheelhouse {
 
 function Build-DiarizationModelPackage {
     Write-Host "`n=== pyannote-diarization-3.1-onnx (building) ==="
+    $zipPath = Join-Path $DownloadsDir "pyannote-diarization-3.1-onnx-3.1-onnx.zip"
+    $cached = Get-DailyBuildCache "pyannote-diarization-3.1-onnx" $zipPath
+    if ($null -ne $cached) { return $cached }
     $modelStaging = Join-Path $StagingBase "pyannote-3.1-onnx-build"
     if (Test-Path $modelStaging) { Remove-Item $modelStaging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $modelStaging | Out-Null
@@ -363,18 +409,22 @@ subprocess.check_call([sys.executable, r"$modelStaging/repo/export_onnx.py", "--
     Remove-Item -LiteralPath (Join-Path $modelStaging "repo") -Recurse -Force
     # Keep the staged archive name aligned with bootstrap.ps1's deterministic
     # cache convention: <asset-id>-<version>.zip.
-    $zipPath = Join-Path $DownloadsDir "pyannote-diarization-3.1-onnx-3.1-onnx.zip"
     New-ZipFromDirectory $modelStaging "pyannote-diarization-3.1-onnx" $zipPath
-    return @{
+    $result = @{
         zipPath = $zipPath
         sha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
         installed_tree_sha256 = Get-TreeDigest $modelStaging
         source_subdir = "pyannote-diarization-3.1-onnx"
     }
+    Save-DailyBuildCache "pyannote-diarization-3.1-onnx" $result
+    return $result
 }
 
 function Build-ModelPackage {
     Write-Host "`n=== faster-whisper-large-v3 (building) ==="
+    $zipPath = Join-Path $DownloadsDir "faster-whisper-large-v3-large-v3.zip"
+    $cached = Get-DailyBuildCache "faster-whisper-large-v3" $zipPath
+    if ($null -ne $cached) { return $cached }
     $modelStaging = Join-Path $StagingBase "model-build"
     if (Test-Path $modelStaging) { Remove-Item $modelStaging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $modelStaging | Out-Null
@@ -403,7 +453,6 @@ function Build-ModelPackage {
     Write-Host "  All model files downloaded"
 
     # Create ZIP in bootstrap's download cache so bootstrap skips the download step
-    $zipPath = Join-Path $DownloadsDir "faster-whisper-large-v3-large-v3.zip"
     Write-Host "  Creating model ZIP (this may take a while for ~3 GB) ..."
     New-ZipFromDirectory $modelStaging "large-v3" $zipPath
 
@@ -413,12 +462,14 @@ function Build-ModelPackage {
     $tree = Get-TreeDigest $modelStaging
     Write-Host "  Tree SHA-256:    $tree"
 
-    return @{
+    $result = @{
         zipPath                = $zipPath
         sha256                 = $sha256
         installed_tree_sha256  = $tree
         source_subdir          = "large-v3"
     }
+    Save-DailyBuildCache "faster-whisper-large-v3" $result
+    return $result
 }
 
 # ---------------------------------------------------------------------------
