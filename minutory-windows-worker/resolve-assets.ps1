@@ -328,6 +328,10 @@ function Build-DiarizationModelPackage {
     if ([string]::IsNullOrWhiteSpace($token)) {
         throw "Set MINUTORY_DIARIZATION_TOKEN in the environment before resolving the gated pyannote model."
     }
+    & $python -c "from huggingface_hub import snapshot_download" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "huggingface_hub is required by the asset resolver. Install it into '$python' with: $python -m pip install --upgrade huggingface_hub"
+    }
     @"
 from huggingface_hub import snapshot_download
 snapshot_download(
