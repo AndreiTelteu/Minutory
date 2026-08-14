@@ -352,8 +352,6 @@ function Test-InstalledAsset {
                 -and $null -ne $filesProperty -and (Test-AssetFileSnapshot $filesProperty.Value $destination)) {
             return $true
         }
-        $tree = Get-TreeDigest $destination
-        if ($Asset.installed_tree_sha256 -cne $tree) { return $false }
         # Existing v1 markers get a complete SHA-256 validation exactly once;
         # subsequent launches use this path/size/mtime snapshot and avoid
         # rereading the multi-gigabyte model.
