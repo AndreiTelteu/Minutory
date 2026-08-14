@@ -25,6 +25,10 @@ ASSET_CONTRACTS: dict[str, tuple[str, str]] = {
     ),
     "runtime-wheelhouse": ("libs/wheelhouse", "zip"),
     "faster-whisper-large-v3": ("models/large-v3", "zip"),
+    "pyannote-speaker-diarization-community-1": (
+        "models/pyannote-speaker-diarization-community-1",
+        "zip",
+    ),
 }
 REQUIRED_EXPECTED_FILES: dict[str, frozenset[str]] = {
     "python-runtime": frozenset(
@@ -40,6 +44,7 @@ REQUIRED_EXPECTED_FILES: dict[str, frozenset[str]] = {
             "tzdata-2025.2-py2.py3-none-any.whl",
             "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
             "faster_whisper-1.2.0-py3-none-any.whl",
+            "pyannote_audio-4.0.7-py3-none-any.whl",
         }
     ),
     "faster-whisper-large-v3": frozenset(
@@ -51,6 +56,7 @@ REQUIRED_EXPECTED_FILES: dict[str, frozenset[str]] = {
             "preprocessor_config.json",
         }
     ),
+    "pyannote-speaker-diarization-community-1": frozenset({"config.yaml"}),
 }
 
 

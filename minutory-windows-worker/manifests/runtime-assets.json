@@ -67,7 +67,8 @@
         "python_dotenv-1.1.1-py3-none-any.whl",
         "tzdata-2025.2-py2.py3-none-any.whl",
         "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
-        "faster_whisper-1.2.0-py3-none-any.whl"
+        "faster_whisper-1.2.0-py3-none-any.whl",
+        "pyannote_audio-4.0.7-py3-none-any.whl"
       ],
       "status": "unresolved",
       "notes": "Offline CPython 3.12 win_amd64 wheels matching requirements-runtime.txt, excluding every CTranslate2 wheel."
@@ -90,6 +91,21 @@
       ],
       "status": "unresolved",
       "notes": "Create an immutable archive of the complete official Systran faster-whisper-large-v3 snapshot and record its verified digest."
+    },
+    {
+      "id": "pyannote-speaker-diarization-community-1",
+      "version": "community-1",
+      "url": null,
+      "sha256": null,
+      "installed_tree_sha256": null,
+      "destination": "models/pyannote-speaker-diarization-community-1",
+      "archive": "zip",
+      "source_subdir": "pyannote-speaker-diarization-community-1",
+      "expected_files": [
+        "config.yaml"
+      ],
+      "status": "unresolved",
+      "notes": "Create an immutable archive of the accepted gated pyannote/speaker-diarization-community-1 snapshot and record its verified digest."
     }
   ]
 }
