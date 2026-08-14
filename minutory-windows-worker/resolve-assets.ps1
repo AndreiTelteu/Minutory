@@ -391,19 +391,27 @@ function Build-DiarizationModelPackage {
         throw "huggingface_hub is required by the asset resolver. Install it into '$python' with: $python -m pip install --upgrade huggingface_hub"
     }
     @"
-import subprocess, sys
+import pathlib, subprocess, sys
 repo = r"$modelStaging/repo"
+token = r"$token"
 subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/samson6460/pyannote-onnx-extended.git", repo])
 subprocess.check_call(["git", "-C", repo, "-c", "advice.detachedHead=false", "checkout", "edb7dbc1f6fa5c586064665c016947fc0057a32c"])
 subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", repo + "/requirements.txt"])
-subprocess.check_call([sys.executable, repo + "/export_onnx.py", "--use_auth_token", r"$token"], cwd=repo)
+# The upstream exporter accesses private Pipeline internals from pyannote 3.1.
+# Do not let its unpinned requirements silently select an incompatible v4 API.
+subprocess.check_call([sys.executable, "-m", "pip", "install", "pyannote.audio==3.1.1"])
+completed = subprocess.run([sys.executable, repo + "/export_onnx.py", "--use_auth_token", token], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+log = pathlib.Path(repo) / "export.log"
+log.write_text(completed.stdout.replace(token, "[REDACTED]"), encoding="utf-8")
+if completed.returncode:
+    raise SystemExit("ONNX exporter failed; inspect " + str(log))
 "@ | & $python -
     if ($LASTEXITCODE -ne 0) { throw "Could not export the gated pyannote/speaker-diarization-3.1 ONNX bundle. Verify terms acceptance without printing the token." }
     $exportedModels = Join-Path $modelStaging "repo\models_onnx"
     foreach ($file in @("segmentation.onnx", "embedding.onnx")) {
         $exported = Join-Path $exportedModels $file
         if (-not (Test-Path -LiteralPath $exported -PathType Leaf)) {
-            throw "ONNX exporter completed without '$file'. Check the gated-model acceptance and exporter output; the token is redacted."
+            throw "ONNX exporter completed without '$file'. Inspect '$modelStaging\repo\export.log' for the redacted exporter error."
         }
         Copy-Item -LiteralPath $exported -Destination (Join-Path $modelStaging $file)
     }
