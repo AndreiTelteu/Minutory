@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import traceback
 from collections.abc import Callable, Iterable
@@ -7,13 +8,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .api import ApiError, WorkerApiClient
-from .diarization import SpeakerDiarizationService
+from .atomic import atomic_json
+from .diarization import SpeakerDiarizationService, merge_transcript
 from .domain import (
     STAGE_ORDER,
     SourceIdentity,
     Stage,
     StageStatus,
     WorkerItem,
+    dependent_stages,
     stream_sha256,
 )
 from .media import MediaService
@@ -40,7 +43,7 @@ class RemoteArtifactMissing(PipelineError):
 ARTIFACT_STAGES: dict[str, tuple[Stage, Stage]] = {
     "video": (Stage.SOURCE, Stage.VIDEO_UPLOAD),
     "audio": (Stage.WAV, Stage.AUDIO_UPLOAD),
-    "transcript": (Stage.TRANSCRIBE, Stage.TRANSCRIPT_UPLOAD),
+    "transcript": (Stage.MERGE, Stage.TRANSCRIPT_UPLOAD),
     "speakers": (Stage.DIARIZE, Stage.SPEAKERS_UPLOAD),
 }
 
@@ -157,6 +160,11 @@ class Orchestrator:
             final_status = self.store.stage(item_id, Stage.FINAL_RECONCILE)["status"]
             if final_status != StageStatus.SUCCEEDED.value:
                 self._run_stage(item_id, Stage.FINAL_RECONCILE, on_stage=on_stage, on_progress=on_progress)
+        return self.store.get_item(item_id)
+
+    def retry_diarization(self, item_id: str) -> WorkerItem:
+        """Invalidate only diarization, merge, and their dependent uploads."""
+        self.store.invalidate(item_id, dependent_stages(Stage.DIARIZE))
         return self.store.get_item(item_id)
 
     def process(
@@ -319,6 +327,19 @@ class Orchestrator:
             item.speakers_path = str(speakers)
             item.speakers_sha256 = stream_sha256(speakers)
             item.speakers_bytes = speakers.stat().st_size
+        elif stage is Stage.MERGE:
+            if item.transcript_path is None or item.speakers_path is None:
+                raise PipelineError("Transcript merge requires ASR and speaker artifacts.")
+            with Path(item.transcript_path).open(encoding="utf-8") as stream:
+                transcript = json.load(stream)
+            with Path(item.speakers_path).open(encoding="utf-8") as stream:
+                speakers = json.load(stream)
+            merged = merge_transcript(transcript, speakers)
+            merged_path = item_dir / "transcript.json"
+            atomic_json(merged_path, merged)
+            item.transcript_path = str(merged_path)
+            item.transcript_sha256 = stream_sha256(merged_path)
+            item.transcript_bytes = merged_path.stat().st_size
         elif stage is Stage.MEETING:
             meeting = self.api.create_meeting(item)
             item.server_meeting_id = meeting.id

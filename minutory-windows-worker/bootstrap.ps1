@@ -37,7 +37,7 @@ $Contracts = @{
     )
     "runtime-wheelhouse" = @("libs/wheelhouse", "zip")
     "faster-whisper-large-v3" = @("models/large-v3", "zip")
-    "pyannote-speaker-diarization-community-1" = @("models/pyannote-speaker-diarization-community-1", "zip")
+    "pyannote-diarization-3.1-onnx" = @("models/pyannote-diarization-3.1-onnx", "zip")
 }
 $RequiredExpectedFiles = @{
     "python-runtime" = @("python.exe", "pythonw.exe", "Lib/venv/__init__.py", "Lib/ensurepip/__init__.py")
@@ -51,13 +51,14 @@ $RequiredExpectedFiles = @{
         "requirements-runtime.txt", "httpx-0.28.1-py3-none-any.whl",
         "python_dotenv-1.1.1-py3-none-any.whl", "tzdata-2025.2-py2.py3-none-any.whl",
         "PySide6-6.9.1-cp39-abi3-win_amd64.whl", "faster_whisper-1.2.0-py3-none-any.whl",
-        "pyannote_audio-4.0.7-py3-none-any.whl"
+        "onnxruntime_directml-1.22.0-cp312-cp312-win_amd64.whl",
+        "numpy-2.2.6-cp312-cp312-win_amd64.whl"
     )
     "faster-whisper-large-v3" = @(
         "model.bin", "config.json", "tokenizer.json", "vocabulary.json", "preprocessor_config.json"
     )
-    "pyannote-speaker-diarization-community-1" = @(
-        "config.yaml"
+    "pyannote-diarization-3.1-onnx" = @(
+        "segmentation.onnx", "embedding.onnx", "metadata.json"
     )
 }
 

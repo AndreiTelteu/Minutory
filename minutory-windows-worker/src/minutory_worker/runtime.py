@@ -12,7 +12,7 @@ from .whisper import FasterWhisperBackend, WhisperService
 def build_orchestrator(config: WorkerConfig) -> Orchestrator:
     """Assemble production services without starting work or loading the ASR model."""
     local_model = config.model_dir / config.whisper_model
-    local_diarization_model = config.model_dir / "pyannote-speaker-diarization-community-1"
+    local_diarization_model = config.model_dir / "pyannote-diarization-3.1-onnx"
     required_model_files = (
         "model.bin",
         "config.json",
@@ -26,9 +26,14 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
             f"Verified local model {local_model} is incomplete (missing {', '.join(missing)}). "
             "Run bootstrap verification; network model downloads are disabled."
         )
-    if not (local_diarization_model / "config.yaml").is_file():
+    required_diarization_files = ("segmentation.onnx", "embedding.onnx", "metadata.json")
+    missing_diarization = [
+        name for name in required_diarization_files if not (local_diarization_model / name).is_file()
+    ]
+    if missing_diarization:
         raise RuntimeError(
-            f"Verified local SpeakerID model {local_diarization_model} is incomplete (missing config.yaml). "
+            f"Verified local ONNX SpeakerID model {local_diarization_model} is incomplete "
+            f"(missing {', '.join(missing_diarization)}). "
             "Run bootstrap verification; network model downloads are disabled."
         )
     store = StateStore(config.state_db)
@@ -64,7 +69,7 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
         config.work_dir,
         diarization=SpeakerDiarizationService(
             local_diarization_model,
-            threads=config.speaker_id_threads,
+            device_id=config.dml_device_id,
         ),
         video_codec=config.video_codec,
         fallback_video_codec=config.fallback_video_codec,

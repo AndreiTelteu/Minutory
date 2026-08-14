@@ -74,10 +74,11 @@
         "tzdata-2025.2-py2.py3-none-any.whl",
         "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
         "faster_whisper-1.2.0-py3-none-any.whl",
-        "pyannote_audio-4.0.7-py3-none-any.whl"
+            "onnxruntime_directml-1.22.0-cp312-cp312-win_amd64.whl",
+            "numpy-2.2.6-cp312-cp312-win_amd64.whl"
       ],
       "status": "unresolved",
-      "notes": "Offline CPython 3.12 win_amd64 wheels matching requirements-runtime.txt, excluding every CTranslate2 wheel."
+      "notes": "Offline CPython 3.12 win_amd64 wheels matching requirements-runtime.txt, including onnxruntime-directml and excluding every CTranslate2 wheel."
     },
     {
       "id": "faster-whisper-large-v3",
@@ -99,19 +100,21 @@
       "notes": "Create an immutable archive of the complete official Systran faster-whisper-large-v3 snapshot and record its verified digest."
     },
     {
-      "id": "pyannote-speaker-diarization-community-1",
-      "version": "community-1",
+      "id": "pyannote-diarization-3.1-onnx",
+      "version": "3.1-onnx",
       "url": null,
       "sha256": null,
       "installed_tree_sha256": null,
-      "destination": "models/pyannote-speaker-diarization-community-1",
+      "destination": "models/pyannote-diarization-3.1-onnx",
       "archive": "zip",
-      "source_subdir": "pyannote-speaker-diarization-community-1",
+      "source_subdir": "pyannote-diarization-3.1-onnx",
       "expected_files": [
-        "config.yaml"
+        "segmentation.onnx",
+        "embedding.onnx",
+        "metadata.json"
       ],
       "status": "unresolved",
-      "notes": "Create an immutable archive of the accepted gated pyannote/speaker-diarization-community-1 snapshot and record its verified digest."
+      "notes": "After accepting pyannote/speaker-diarization-3.1, use resolve-assets.ps1 with a session-only token to export the audited ONNX bundle; record verified archive and installed-tree digests."
     }
   ]
 }

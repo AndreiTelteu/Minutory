@@ -95,6 +95,15 @@ requested artifact when needed, and finalize when all remote artifacts match.
 
 ## Runtime boundary
 
+After WAV conversion, HIP Faster-Whisper transcription and DirectML speaker
+diarization begin concurrently in bounded one-item lanes. The worker waits for
+both, merges temporal speaker evidence into `transcript.json`, then uploads the
+final transcript with `start_transcript_server=false`. The ONNX adapter uses the
+RX 7900 XTX `MINUTORY_DML_DEVICE_ID` (normally `0`) through
+`DmlExecutionProvider`; if DirectML initialization or inference fails, it
+retries the same local ONNX bundle with `CPUExecutionProvider`. If both fail,
+the transcript is still uploaded with `speaker: "Unknown"` and failure metadata.
+
 The production ASR backend is `faster-whisper` 1.2.0 Large v3 through the official
 CTranslate2 ROCm/HIP Windows wheel pinned to 4.8.1. The CTranslate2 API uses
 `device="cuda"` for HIP and `compute_type="float16"`. `faster-whisper` is imported
@@ -103,6 +112,14 @@ lazily, and one model object remains alive for the worker process lifetime.
 Production always loads the verified local `models/large-v3` directory. Launchers
 force `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`; a missing model is an
 actionable startup error, never a network download.
+
+For diarization assets, first accept the gated
+`pyannote/speaker-diarization-3.1` terms in Hugging Face. In a single PowerShell
+session only, set `MINUTORY_DIARIZATION_TOKEN` and run `./resolve-assets.ps1`.
+The resolver pins and exports the audited `pyannote-onnx-extended` commit into
+`models/pyannote-diarization-3.1-onnx` and builds the offline DirectML wheelhouse.
+Do not put that token in `.env`; bootstrap and normal worker startup never read
+or contact Hugging Face.
 
 See [Architecture](docs/architecture.md), [Stage 3 notes](docs/stage3-operations.md),
 and [Stage 4 Windows operations](docs/stage4-operations.md).

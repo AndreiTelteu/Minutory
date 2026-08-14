@@ -34,7 +34,7 @@ def test_tracked_manifest_is_explicitly_unresolved_and_fails_closed() -> None:
         "ctranslate2-rocm-wheel",
         "runtime-wheelhouse",
         "faster-whisper-large-v3",
-        "pyannote-speaker-diarization-community-1",
+        "pyannote-diarization-3.1-onnx",
     }
     assert all(asset["status"] == "unresolved" for asset in document["assets"])
     assert all(asset["sha256"] is None for asset in document["assets"])

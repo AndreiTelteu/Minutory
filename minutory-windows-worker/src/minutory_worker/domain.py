@@ -13,6 +13,7 @@ class Stage(StrEnum):
     WAV = "wav"
     TRANSCRIBE = "transcribe"
     DIARIZE = "diarize"
+    MERGE = "merge"
     MEETING = "meeting"
     VIDEO_UPLOAD = "video_upload"
     AUDIO_UPLOAD = "audio_upload"
@@ -28,10 +29,11 @@ STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     Stage.WAV: (Stage.PROBE,),
     Stage.TRANSCRIBE: (Stage.WAV,),
     Stage.DIARIZE: (Stage.WAV,),
+    Stage.MERGE: (Stage.TRANSCRIBE, Stage.DIARIZE),
     Stage.MEETING: (Stage.PROBE,),
     Stage.VIDEO_UPLOAD: (Stage.SOURCE, Stage.MEETING),
     Stage.AUDIO_UPLOAD: (Stage.WAV, Stage.MEETING),
-    Stage.TRANSCRIPT_UPLOAD: (Stage.TRANSCRIBE, Stage.MEETING),
+    Stage.TRANSCRIPT_UPLOAD: (Stage.MERGE, Stage.MEETING),
     Stage.SPEAKERS_UPLOAD: (Stage.DIARIZE, Stage.MEETING),
     Stage.FINAL_RECONCILE: (
         Stage.VIDEO_UPLOAD,
@@ -41,8 +43,8 @@ STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     ),
 }
 
-GPU_STAGES = (Stage.PROBE, Stage.SOURCE, Stage.WAV, Stage.TRANSCRIBE)
-CPU_STAGES = (Stage.DIARIZE,)
+GPU_STAGES = (Stage.PROBE, Stage.SOURCE, Stage.WAV, Stage.TRANSCRIBE, Stage.DIARIZE)
+CPU_STAGES: tuple[Stage, ...] = ()
 IO_STAGES = (
     Stage.MEETING,
     Stage.VIDEO_UPLOAD,

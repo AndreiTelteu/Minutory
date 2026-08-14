@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Protocol
 
 from .domain import (
-    CPU_STAGES,
     IO_STAGES,
     STAGE_ORDER,
     SourceIdentity,
@@ -416,7 +415,7 @@ EventSink = Callable[[str, str, object | None], None]
 
 
 class ProcessingCoordinator:
-    """Two execution lanes: a sequential GPU lane and a concurrent IO lane.
+    """Bounded ASR, DirectML diarization, and IO lanes.
 
     The GPU lane runs probe/source/wav/transcribe for one item at a time so only
     one ASR model lives in VRAM. As soon as an item finishes transcribing, the GPU
@@ -428,7 +427,7 @@ class ProcessingCoordinator:
         self.orchestrator = orchestrator
         self._event_sink = event_sink or (lambda _kind, _item_id, _value: None)
         self._gpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-gpu")
-        self._cpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-speakerid")
+        self._cpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-directml")
         self._io_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="minutory-io")
         self._lock = threading.RLock()
         self._scheduled: dict[str, str] = {}
@@ -541,9 +540,8 @@ class ProcessingCoordinator:
                     on_stage=stage_changed,
                     on_progress=progress,
                 )
-            # WAV is derived directly from the original source, not the compressed
-            # video. Start SpeakerID on CPU immediately after WAV so it overlaps
-            # both AMF compression and subsequent Whisper work on the GPU.
+            # Both GPU APIs start from exactly the extracted WAV. The bounded
+            # DirectML lane starts now and deliberately overlaps HIP ASR.
             self.orchestrator.process_stages(
                 item_id,
                 (Stage.PROBE, Stage.WAV),
@@ -575,7 +573,7 @@ class ProcessingCoordinator:
             self._event_sink("progress", item_id, (Stage.DIARIZE, percent))
 
         return self.orchestrator.process_stages(
-            item_id, CPU_STAGES, on_stage=stage_changed, on_progress=progress
+            item_id, (Stage.DIARIZE,), on_stage=stage_changed, on_progress=progress
         )
 
     def _run_io(self, item_id: str, operation: str) -> WorkerItem:
@@ -621,7 +619,6 @@ class ProcessingCoordinator:
                         Stage.MEETING,
                         Stage.VIDEO_UPLOAD,
                         Stage.AUDIO_UPLOAD,
-                        Stage.TRANSCRIPT_UPLOAD,
                     ),
                     on_stage=stage_changed,
                     on_progress=progress,
@@ -632,7 +629,7 @@ class ProcessingCoordinator:
                     diarization.result()
                 return self.orchestrator.process_stages(
                     item_id,
-                    (Stage.SPEAKERS_UPLOAD, Stage.FINAL_RECONCILE),
+                    (Stage.MERGE, Stage.TRANSCRIPT_UPLOAD, Stage.SPEAKERS_UPLOAD, Stage.FINAL_RECONCILE),
                     on_stage=stage_changed,
                     on_progress=progress,
                 )

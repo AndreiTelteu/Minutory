@@ -21,7 +21,7 @@ from .domain import (
     dependent_stages,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 STAGE_OUTPUT_COLUMNS: dict[Stage, tuple[str, ...]] = {
     Stage.PROBE: (
@@ -39,6 +39,7 @@ STAGE_OUTPUT_COLUMNS: dict[Stage, tuple[str, ...]] = {
     Stage.WAV: ("wav_path", "audio_sha256", "audio_bytes"),
     Stage.TRANSCRIBE: ("transcript_path", "transcript_sha256", "transcript_bytes"),
     Stage.DIARIZE: ("speakers_path", "speakers_sha256", "speakers_bytes"),
+    Stage.MERGE: ("transcript_path", "transcript_sha256", "transcript_bytes"),
     Stage.MEETING: ("server_meeting_id",),
     Stage.VIDEO_UPLOAD: (),
     Stage.AUDIO_UPLOAD: (),
@@ -77,7 +78,7 @@ class _ProcessLock:
             else:
                 import fcntl
 
-                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
         except (OSError, ImportError) as exception:
             stream.close()
             raise StateOwnershipError(
@@ -99,7 +100,7 @@ class _ProcessLock:
             else:
                 import fcntl
 
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
         finally:
             stream.close()
             self._stream = None
@@ -264,9 +265,7 @@ class StateStore:
                     str(row["name"]) for row in connection.execute("PRAGMA table_info(items)")
                 }
                 if "language" not in existing_columns:
-                    connection.execute(
-                        "ALTER TABLE items ADD COLUMN language TEXT NOT NULL DEFAULT 'ro'"
-                    )
+                    connection.execute("ALTER TABLE items ADD COLUMN language TEXT NOT NULL DEFAULT 'ro'")
                 connection.execute("PRAGMA user_version = 4")
             version = 4
         if version == 4:
@@ -294,6 +293,23 @@ class StateStore:
                 )
                 connection.execute("PRAGMA user_version = 5")
             version = 5
+        if version == 5:
+            with self.transaction() as connection:
+                connection.executemany(
+                    "INSERT OR IGNORE INTO stages (item_id, stage, status) VALUES (?, ?, ?)",
+                    [
+                        (row["item_id"], Stage.MERGE.value, StageStatus.PENDING.value)
+                        for row in connection.execute("SELECT item_id FROM items")
+                    ],
+                )
+                # Existing raw transcripts predate speaker-aware merging. They must be
+                # regenerated locally before another upload can be trusted.
+                connection.execute(
+                    "UPDATE stages SET status = ? WHERE stage IN (?, ?)",
+                    (StageStatus.PENDING.value, Stage.MERGE.value, Stage.TRANSCRIPT_UPLOAD.value),
+                )
+                connection.execute("PRAGMA user_version = 6")
+            version = 6
 
     def add_item(self, item: WorkerItem) -> None:
         with self.transaction() as connection:
@@ -513,9 +529,7 @@ class StateStore:
 
     def delete_reconciled_item(self, item_id: str) -> None:
         with self.transaction() as connection:
-            rows = connection.execute(
-                "SELECT status FROM stages WHERE item_id = ?", (item_id,)
-            ).fetchall()
+            rows = connection.execute("SELECT status FROM stages WHERE item_id = ?", (item_id,)).fetchall()
             if not rows:
                 raise StateError(f"Unknown item {item_id}.")
             if any(row["status"] != StageStatus.SUCCEEDED.value for row in rows):

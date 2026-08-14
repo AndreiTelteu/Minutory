@@ -160,13 +160,13 @@ def test_config_parses_model_beam_and_batch_knobs() -> None:
             "MINUTORY_MODEL_NAME": "large-v3-turbo",
             "MINUTORY_BEAM_SIZE": "1",
             "MINUTORY_BATCH_SIZE": "8",
-            "MINUTORY_SPEAKERID_THREADS": "12",
+            "MINUTORY_DML_DEVICE_ID": "2",
         }
     )
     assert config.whisper_model == "large-v3-turbo"
     assert config.beam_size == 1
     assert config.batch_size == 8
-    assert config.speaker_id_threads == 12
+    assert config.dml_device_id == 2
 
 
 def test_config_model_name_falls_back_to_whisper_model() -> None:
@@ -184,7 +184,7 @@ def test_config_rejects_invalid_beam_and_batch() -> None:
     for override in (
         {"MINUTORY_BEAM_SIZE": "0"},
         {"MINUTORY_BATCH_SIZE": "-1"},
-        {"MINUTORY_SPEAKERID_THREADS": "0"},
+        {"MINUTORY_DML_DEVICE_ID": "-1"},
         {"MINUTORY_BEAM_SIZE": "wide"},
     ):
         with pytest.raises(ConfigError):

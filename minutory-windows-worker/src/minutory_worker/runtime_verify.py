@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import gc
 import os
 import platform
 import shutil
 import subprocess
 import sys
-import tempfile
-import wave
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,13 +78,9 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
                 for match in re.finditer(rb"[A-Za-z0-9_\-]{3,40}\.dll", data)
             }
             runtime_imports = sorted(
-                name
-                for name in imported
-                if name.startswith(("amdhip64", "hipblas", "rocblas", "amd_comgr"))
+                name for name in imported if name.startswith(("amdhip64", "hipblas", "rocblas", "amd_comgr"))
             )
-            missing_imports = [
-                name for name in runtime_imports if not (package_root / name).is_file()
-            ]
+            missing_imports = [name for name in runtime_imports if not (package_root / name).is_file()]
         checks.append(
             Check(
                 "CTranslate2 ROCm libraries",
@@ -145,34 +138,6 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
         )
     elif require_windows_gpu:
         checks.append(Check("RX 7900 XTX", False, "Hardware verification must run on Windows 11."))
-    audio_path: Path | None = None
-    decoder: object | None = None
-    try:
-        from torchcodec.decoders import AudioDecoder
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
-            audio_path = Path(audio_file.name)
-        with wave.open(str(audio_path), "wb") as wav:
-            wav.setnchannels(1)
-            wav.setsampwidth(2)
-            wav.setframerate(16_000)
-            wav.writeframes(b"\x00\x00" * 160)
-        decoder = AudioDecoder(str(audio_path))
-        _ = decoder.metadata
-        checks.append(Check("TorchCodec FFmpeg", True, "FFmpeg shared libraries loaded successfully."))
-    except Exception as exception:
-        checks.append(
-            Check(
-                "TorchCodec FFmpeg",
-                False,
-                f"{exception}. Install the managed FFmpeg full shared build and re-run bootstrap.",
-            )
-        )
-    finally:
-        decoder = None
-        gc.collect()
-        if audio_path is not None:
-            audio_path.unlink(missing_ok=True)
     model = Path(__file__).resolve().parents[2] / "models/large-v3"
     model_files = (
         "model.bin",
@@ -191,20 +156,24 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
             else f"Missing {', '.join(missing)} under {model}. Re-run bootstrap.",
         )
     )
-    diarization_model = (
-        Path(__file__).resolve().parents[2] / "models/pyannote-speaker-diarization-community-1"
-    )
+    diarization_model = Path(__file__).resolve().parents[2] / "models/pyannote-diarization-3.1-onnx"
     try:
-        from pyannote.audio import Pipeline
+        import onnxruntime as ort  # type: ignore[import-untyped]
 
-        Pipeline.from_pretrained(diarization_model)
-        checks.append(Check("SpeakerID model", True, "Complete local pyannote model snapshot loaded on CPU."))
+        from .diarization import windows_discrete_adapter
+
+        adapter_id, adapter = windows_discrete_adapter()
+        providers = [("DmlExecutionProvider", {"device_id": adapter_id})]
+        session = ort.InferenceSession(str(diarization_model / "segmentation.onnx"), providers=providers)
+        checks.append(
+            Check("SpeakerID ONNX DirectML", "DmlExecutionProvider" in session.get_providers(), adapter)
+        )
     except Exception as exception:
         checks.append(
             Check(
-                "SpeakerID model",
+                "SpeakerID ONNX DirectML",
                 False,
-                f"{exception}. Re-run managed bootstrap; network model downloads are disabled.",
+                f"{exception}. Re-run managed bootstrap; inference never downloads models.",
             )
         )
     return tuple(checks)

@@ -15,7 +15,7 @@
     Skip the ~3 GB faster-whisper-large-v3 model download.
 
 .PARAMETER SkipDiarizationModel
-    Skip the gated pyannote speaker-diarization-community-1 model snapshot.
+    Skip the gated pyannote speaker-diarization-3.1 ONNX export bundle.
 
 .PARAMETER SkipWheelhouse
     Skip building the runtime wheelhouse (requires pip).
@@ -289,7 +289,8 @@ function Build-Wheelhouse {
         "tzdata-2025.2-py2.py3-none-any.whl",
         "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
         "faster_whisper-1.2.0-py3-none-any.whl",
-        "pyannote_audio-4.0.7-py3-none-any.whl"
+        "onnxruntime_directml-1.22.0-cp312-cp312-win_amd64.whl",
+        "numpy-2.2.6-cp312-cp312-win_amd64.whl"
     )
     foreach ($expected in $expectedWheels) {
         $target = Join-Path $wheelhouseStaging $expected
@@ -327,43 +328,48 @@ function Build-Wheelhouse {
 # ---------------------------------------------------------------------------
 
 function Build-DiarizationModelPackage {
-    Write-Host "`n=== pyannote-speaker-diarization-community-1 (building) ==="
-    $modelStaging = Join-Path $StagingBase "pyannote-community-1-build"
+    Write-Host "`n=== pyannote-diarization-3.1-onnx (building) ==="
+    $modelStaging = Join-Path $StagingBase "pyannote-3.1-onnx-build"
     if (Test-Path $modelStaging) { Remove-Item $modelStaging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $modelStaging | Out-Null
 
     $python = if (Get-Command "python" -ErrorAction SilentlyContinue) { "python" }
               elseif (Get-Command "python3" -ErrorAction SilentlyContinue) { "python3" }
-              else { throw "Python with huggingface_hub is required to snapshot the gated pyannote model." }
+              else { throw "Python is required to export the accepted gated pyannote model." }
     $token = $env:MINUTORY_DIARIZATION_TOKEN
     if ([string]::IsNullOrWhiteSpace($token)) {
-        throw "Set MINUTORY_DIARIZATION_TOKEN in the environment before resolving the gated pyannote model."
+        throw "Accept pyannote/speaker-diarization-3.1 terms, then set MINUTORY_DIARIZATION_TOKEN only for this resolver session. The token is never written to a manifest, .env, archive, or log."
     }
     & $python -c "from huggingface_hub import snapshot_download" 2>$null
     if ($LASTEXITCODE -ne 0) {
         throw "huggingface_hub is required by the asset resolver. Install it into '$python' with: $python -m pip install --upgrade huggingface_hub"
     }
     @"
-from huggingface_hub import snapshot_download
-snapshot_download(
-    repo_id="pyannote/speaker-diarization-community-1",
-    local_dir=r"$modelStaging",
-    token=r"$token",
-)
+import subprocess, sys
+subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/samson6460/pyannote-onnx-extended.git", r"$modelStaging/repo"])
+subprocess.check_call(["git", "-C", r"$modelStaging/repo", "checkout", "edb7dbc1f6fa5c586064665c016947fc0057a32c"])
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", r"$modelStaging/repo/requirements.txt"])
+subprocess.check_call([sys.executable, r"$modelStaging/repo/export_onnx.py", "--use_auth_token", r"$token"], cwd=r"$modelStaging")
 "@ | & $python -
-    if ($LASTEXITCODE -ne 0) { throw "Could not snapshot pyannote/speaker-diarization-community-1." }
-    if (-not (Test-Path -LiteralPath (Join-Path $modelStaging "config.yaml") -PathType Leaf)) {
-        throw "pyannote snapshot is incomplete: config.yaml is missing."
+    if ($LASTEXITCODE -ne 0) { throw "Could not export the gated pyannote/speaker-diarization-3.1 ONNX bundle. Verify terms acceptance without printing the token." }
+    Copy-Item (Join-Path $modelStaging "models_onnx\segmentation.onnx") (Join-Path $modelStaging "segmentation.onnx")
+    Copy-Item (Join-Path $modelStaging "models_onnx\embedding.onnx") (Join-Path $modelStaging "embedding.onnx")
+    '{"engine":"pyannote-onnx-extended","model":"pyannote/speaker-diarization-3.1","upstream_commit":"edb7dbc1f6fa5c586064665c016947fc0057a32c"}' | Set-Content (Join-Path $modelStaging "metadata.json") -Encoding UTF8
+    foreach ($file in @("segmentation.onnx", "embedding.onnx", "metadata.json")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $modelStaging $file) -PathType Leaf)) { throw "ONNX diarization bundle is incomplete: $file is missing." }
     }
+    # The exported models and metadata are the managed asset. Do not ship the
+    # exporter clone, its token-bearing cache, or its PyTorch dependencies.
+    Remove-Item -LiteralPath (Join-Path $modelStaging "repo") -Recurse -Force
     # Keep the staged archive name aligned with bootstrap.ps1's deterministic
     # cache convention: <asset-id>-<version>.zip.
-    $zipPath = Join-Path $DownloadsDir "pyannote-speaker-diarization-community-1-community-1.zip"
-    New-ZipFromDirectory $modelStaging "pyannote-speaker-diarization-community-1" $zipPath
+    $zipPath = Join-Path $DownloadsDir "pyannote-diarization-3.1-onnx-3.1-onnx.zip"
+    New-ZipFromDirectory $modelStaging "pyannote-diarization-3.1-onnx" $zipPath
     return @{
         zipPath = $zipPath
         sha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
         installed_tree_sha256 = Get-TreeDigest $modelStaging
-        source_subdir = "pyannote-speaker-diarization-community-1"
+        source_subdir = "pyannote-diarization-3.1-onnx"
     }
 }
 
@@ -500,7 +506,8 @@ function Write-LocalManifest {
                 "tzdata-2025.2-py2.py3-none-any.whl",
                 "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
                 "faster_whisper-1.2.0-py3-none-any.whl",
-                "pyannote_audio-4.0.7-py3-none-any.whl"
+                "onnxruntime_directml-1.22.0-cp312-cp312-win_amd64.whl",
+                "numpy-2.2.6-cp312-cp312-win_amd64.whl"
             )
             status                 = "resolved"
         }
@@ -521,7 +528,8 @@ function Write-LocalManifest {
                 "tzdata-2025.2-py2.py3-none-any.whl",
                 "PySide6-6.9.1-cp39-abi3-win_amd64.whl",
                 "faster_whisper-1.2.0-py3-none-any.whl",
-                "pyannote_audio-4.0.7-py3-none-any.whl"
+                "onnxruntime_directml-1.22.0-cp312-cp312-win_amd64.whl",
+                "numpy-2.2.6-cp312-cp312-win_amd64.whl"
             )
             status                 = "unresolved"
             notes                  = "Skipped by -SkipWheelhouse."
@@ -567,33 +575,33 @@ function Write-LocalManifest {
         }
     }
 
-    # pyannote speaker-diarization-community-1
-    if ($Results.ContainsKey("pyannote-speaker-diarization-community-1")) {
-        $diarization = $Results["pyannote-speaker-diarization-community-1"]
+    # pyannote speaker-diarization-3.1 ONNX bundle
+    if ($Results.ContainsKey("pyannote-diarization-3.1-onnx")) {
+        $diarization = $Results["pyannote-diarization-3.1-onnx"]
         $manifest.assets += [ordered]@{
-            id                     = "pyannote-speaker-diarization-community-1"
-            version                = "community-1"
+            id                     = "pyannote-diarization-3.1-onnx"
+            version                = "3.1-onnx"
             # The archive is pre-staged by this resolver. Bootstrap never receives a Hugging Face token.
-            url                    = "https://localhost/.minutory-local-build/pyannote-speaker-diarization-community-1.zip"
+            url                    = "https://localhost/.minutory-local-build/pyannote-diarization-3.1-onnx.zip"
             sha256                 = $diarization["sha256"]
             installed_tree_sha256  = $diarization["installed_tree_sha256"]
-            destination            = "models/pyannote-speaker-diarization-community-1"
+            destination            = "models/pyannote-diarization-3.1-onnx"
             archive                = "zip"
             source_subdir          = $diarization["source_subdir"]
-            expected_files         = @("config.yaml")
+            expected_files         = @("segmentation.onnx", "embedding.onnx", "metadata.json")
             status                 = "resolved"
         }
     } else {
         $manifest.assets += [ordered]@{
-            id                     = "pyannote-speaker-diarization-community-1"
-            version                = "community-1"
+            id                     = "pyannote-diarization-3.1-onnx"
+            version                = "3.1-onnx"
             url                    = $null
             sha256                 = $null
             installed_tree_sha256  = $null
-            destination            = "models/pyannote-speaker-diarization-community-1"
+            destination            = "models/pyannote-diarization-3.1-onnx"
             archive                = "zip"
-            source_subdir          = "pyannote-speaker-diarization-community-1"
-            expected_files         = @("config.yaml")
+            source_subdir          = "pyannote-diarization-3.1-onnx"
+            expected_files         = @("segmentation.onnx", "embedding.onnx", "metadata.json")
             status                 = "unresolved"
             notes                  = "Skipped by -SkipDiarizationModel."
         }
@@ -711,9 +719,9 @@ if (-not $SkipModel) {
 
 # ---- 6. pyannote speaker diarization model ----
 if (-not $SkipDiarizationModel) {
-    $results["pyannote-speaker-diarization-community-1"] = Build-DiarizationModelPackage
+    $results["pyannote-diarization-3.1-onnx"] = Build-DiarizationModelPackage
 } else {
-    Write-Host "`n=== pyannote-speaker-diarization-community-1 === SKIPPED (-SkipDiarizationModel)"
+    Write-Host "`n=== pyannote-diarization-3.1-onnx === SKIPPED (-SkipDiarizationModel)"
 }
 
 # ---- Generate manifest ----
@@ -723,7 +731,7 @@ $manifestPath = Write-LocalManifest $results
 Write-Host "`n============================================"
 Write-Host " Summary"
 Write-Host "============================================"
-foreach ($id in @("python-runtime", "ffmpeg", "ctranslate2-rocm-wheel", "runtime-wheelhouse", "faster-whisper-large-v3", "pyannote-speaker-diarization-community-1")) {
+foreach ($id in @("python-runtime", "ffmpeg", "ctranslate2-rocm-wheel", "runtime-wheelhouse", "faster-whisper-large-v3", "pyannote-diarization-3.1-onnx")) {
     if ($results.ContainsKey($id)) {
         Write-Host "  [RESOLVED] $id"
     } else {
@@ -732,7 +740,7 @@ foreach ($id in @("python-runtime", "ffmpeg", "ctranslate2-rocm-wheel", "runtime
 }
 Write-Host ""
 Write-Host "Local manifest: $manifestPath"
-$unresolved = @(@("python-runtime", "ffmpeg", "ctranslate2-rocm-wheel", "runtime-wheelhouse", "faster-whisper-large-v3", "pyannote-speaker-diarization-community-1") |
+$unresolved = @(@("python-runtime", "ffmpeg", "ctranslate2-rocm-wheel", "runtime-wheelhouse", "faster-whisper-large-v3", "pyannote-diarization-3.1-onnx") |
     Where-Object { -not $results.ContainsKey($_) })
 if ($unresolved.Count -gt 0) {
     Write-Host ""

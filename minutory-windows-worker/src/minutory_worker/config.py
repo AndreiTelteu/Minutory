@@ -121,7 +121,7 @@ class WorkerConfig:
     vad_min_silence_ms: int = 500
     beam_size: int = 5
     batch_size: int = 0
-    speaker_id_threads: int = 16
+    dml_device_id: int = 0
     timezone: str = "Europe/Bucharest"
 
     def __repr__(self) -> str:
@@ -193,12 +193,6 @@ def load_config(
     except ZoneInfoNotFoundError as exception:
         raise ConfigError("MINUTORY_TIMEZONE must be a valid IANA timezone.") from exception
 
-    # pyannote runs on the CPU. Its default may include both SMT siblings, which
-    # is slower on memory-bound inference and leaves no capacity for the UI/IO.
-    # Cap the automatic default at 16 physical-ish cores while allowing smaller
-    # machines to use every available logical CPU.
-    speaker_id_threads_default = max(1, min(16, os.cpu_count() or 1))
-
     return WorkerConfig(
         api_base_url=base_url,
         api_token=token,
@@ -227,10 +221,7 @@ def load_config(
         ),
         beam_size=_positive_int(get("MINUTORY_BEAM_SIZE", "5"), "MINUTORY_BEAM_SIZE"),
         batch_size=_non_negative_int(get("MINUTORY_BATCH_SIZE", "0"), "MINUTORY_BATCH_SIZE"),
-        speaker_id_threads=_positive_int(
-            get("MINUTORY_SPEAKERID_THREADS", str(speaker_id_threads_default)),
-            "MINUTORY_SPEAKERID_THREADS",
-        ),
+        dml_device_id=_non_negative_int(get("MINUTORY_DML_DEVICE_ID", "0"), "MINUTORY_DML_DEVICE_ID"),
         timezone=timezone,
     )
 
