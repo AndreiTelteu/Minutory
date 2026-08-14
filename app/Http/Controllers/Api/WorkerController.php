@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Worker\AudioUploadRequest;
 use App\Http\Requests\Worker\CreateMeetingRequest;
+use App\Http\Requests\Worker\SpeakersUploadRequest;
 use App\Http\Requests\Worker\TranscriptUploadRequest;
 use App\Http\Requests\Worker\VideoUploadRequest;
 use App\Models\Client;
@@ -88,6 +89,18 @@ class WorkerController extends Controller
         ));
     }
 
+    public function speakers(
+        SpeakersUploadRequest $request,
+        Meeting $meeting,
+        WorkerArtifactService $service,
+    ): JsonResponse {
+        return $this->artifactResponse($service->storeSpeakers(
+            $meeting,
+            $request->file('file'),
+            $request->boolean('replace'),
+        ));
+    }
+
     private function artifactResponse(array $artifact): JsonResponse
     {
         return response()->json(['data' => $artifact]);
@@ -127,6 +140,11 @@ class WorkerController extends Controller
                     $ingestion,
                     'transcript',
                     Storage::disk('public')->exists($this->relativeArtifactPath($meeting, 'transcript.json')),
+                ),
+                'speakers' => $this->artifactData(
+                    $ingestion,
+                    'speakers',
+                    Storage::disk('public')->exists($this->relativeArtifactPath($meeting, 'speakers.json')),
                 ),
             ];
         }

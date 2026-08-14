@@ -275,7 +275,7 @@ class WorkerApiClient:
         if require_artifacts and not isinstance(raw_artifacts, dict):
             raise self._invalid_response("Server returned invalid reconciliation state.")
         if isinstance(raw_artifacts, dict):
-            for name in ("video", "audio", "transcript"):
+            for name in ("video", "audio", "transcript", "speakers"):
                 artifact = raw_artifacts.get(name)
                 if not isinstance(artifact, dict):
                     raise self._invalid_response(f"Server omitted {name} state.")
@@ -326,11 +326,12 @@ class WorkerApiClient:
         replace: bool = False,
         on_progress: Callable[[float], None] | None = None,
     ) -> ArtifactUploadResult:
-        if artifact not in {"video", "audio", "transcript"}:
+        if artifact not in {"video", "audio", "transcript", "speakers"}:
             raise ValueError(f"Unsupported artifact {artifact}.")
         media_types = {
             "audio": "audio/wav",
             "transcript": "application/json",
+            "speakers": "application/json",
         }
         video_media_types = {
             ".mp4": "video/mp4",

@@ -48,6 +48,8 @@ return [
         'language' => env('TRANSCRIBING_LANGUAGE', 'ro'),
         'device' => env('TRANSCRIBING_DEVICE', 'cpu'),
         'compute_type' => env('TRANSCRIBING_COMPUTE_TYPE', 'auto'),
+        'diarization_enabled' => env('TRANSCRIBING_DIARIZATION_ENABLED', false),
+        'diarization_model' => env('TRANSCRIBING_DIARIZATION_MODEL', 'pyannote/speaker-diarization-community-1'),
     ],
 
     'worker' => [
@@ -92,6 +94,14 @@ return [
                 'max_segments' => (int) env('WORKER_TRANSCRIPT_MAX_SEGMENTS', 100_000),
                 'max_text_length' => (int) env('WORKER_TRANSCRIPT_MAX_TEXT_LENGTH', 10_000),
                 'max_speaker_length' => (int) env('WORKER_TRANSCRIPT_MAX_SPEAKER_LENGTH', 255),
+            ],
+            'speakers' => [
+                'max_bytes' => (int) env('WORKER_SPEAKERS_MAX_BYTES', 52_428_800),
+                'mime_types' => [
+                    'application/json',
+                    'text/json',
+                    'text/plain',
+                ],
             ],
         ],
     ],

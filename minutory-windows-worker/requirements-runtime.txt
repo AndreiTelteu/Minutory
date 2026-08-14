@@ -3,4 +3,5 @@ python-dotenv==1.1.1
 tzdata==2025.2
 PySide6==6.9.1
 faster-whisper==1.2.0
+pyannote.audio==4.0.7
 requests==2.32.5

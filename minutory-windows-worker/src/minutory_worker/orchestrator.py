@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .api import ApiError, WorkerApiClient
+from .diarization import SpeakerDiarizationService
 from .domain import (
     STAGE_ORDER,
     SourceIdentity,
@@ -40,6 +41,7 @@ ARTIFACT_STAGES: dict[str, tuple[Stage, Stage]] = {
     "video": (Stage.SOURCE, Stage.VIDEO_UPLOAD),
     "audio": (Stage.WAV, Stage.AUDIO_UPLOAD),
     "transcript": (Stage.TRANSCRIBE, Stage.TRANSCRIPT_UPLOAD),
+    "speakers": (Stage.DIARIZE, Stage.SPEAKERS_UPLOAD),
 }
 
 
@@ -52,12 +54,14 @@ class Orchestrator:
         api: WorkerApiClient,
         work_dir: Path,
         *,
+        diarization: SpeakerDiarizationService | None = None,
         video_codec: str = "h264_amf",
         fallback_video_codec: str = "libx264",
     ) -> None:
         self.store = store
         self.media = media
         self.whisper = whisper
+        self.diarization = diarization
         self.api = api
         self.work_dir = work_dir
         self.video_codec = video_codec
@@ -141,7 +145,12 @@ class Orchestrator:
         self._reconcile(item)
         if self.store.stage(item_id, upload_stage)["status"] != StageStatus.SUCCEEDED.value:
             self._run_stage(item_id, upload_stage, on_stage=on_stage, on_progress=on_progress)
-        uploads = (Stage.VIDEO_UPLOAD, Stage.AUDIO_UPLOAD, Stage.TRANSCRIPT_UPLOAD)
+        uploads = (
+            Stage.VIDEO_UPLOAD,
+            Stage.AUDIO_UPLOAD,
+            Stage.TRANSCRIPT_UPLOAD,
+            Stage.SPEAKERS_UPLOAD,
+        )
         if all(
             self.store.stage(item_id, stage)["status"] == StageStatus.SUCCEEDED.value for stage in uploads
         ):
@@ -298,6 +307,18 @@ class Orchestrator:
             item.transcript_path = str(transcript)
             item.transcript_sha256 = stream_sha256(transcript)
             item.transcript_bytes = transcript.stat().st_size
+        elif stage is Stage.DIARIZE:
+            speakers = item_dir / "speakers.json"
+            if self.diarization is None:
+                raise PipelineError("SpeakerID service is not configured.")
+            self.diarization.diarize(
+                Path(_required(item.wav_path, "WAV")),
+                speakers,
+                on_progress=on_progress,
+            )
+            item.speakers_path = str(speakers)
+            item.speakers_sha256 = stream_sha256(speakers)
+            item.speakers_bytes = speakers.stat().st_size
         elif stage is Stage.MEETING:
             meeting = self.api.create_meeting(item)
             item.server_meeting_id = meeting.id
@@ -307,6 +328,8 @@ class Orchestrator:
             self._upload(item, "audio", on_progress=on_progress)
         elif stage is Stage.TRANSCRIPT_UPLOAD:
             self._upload(item, "transcript", on_progress=on_progress)
+        elif stage is Stage.SPEAKERS_UPLOAD:
+            self._upload(item, "speakers", on_progress=on_progress)
         elif stage is Stage.FINAL_RECONCILE:
             self._reconcile(item, final_stage_running=True)
         else:  # pragma: no cover
@@ -346,9 +369,16 @@ class Orchestrator:
             raise ArtifactConflict("Server meeting time or duration conflicts with local state.")
         all_uploaded = True
         missing: list[tuple[str, Stage]] = []
-        for artifact_name in ("video", "audio", "transcript"):
-            _, local_hash, local_bytes, stage = self._local_artifact(item, artifact_name)
+        for artifact_name in ("video", "audio", "transcript", "speakers"):
             artifact = remote.artifacts[artifact_name]
+            if artifact_name == "speakers" and item.speakers_path is None:
+                # SpeakerID is an independent producer; it can legitimately finish
+                # after the meeting and raw transcript already reached the server.
+                if not artifact.uploaded:
+                    all_uploaded = False
+                    continue
+                raise ArtifactConflict("Server has speakers artifact missing from local state.")
+            _, local_hash, local_bytes, stage = self._local_artifact(item, artifact_name)
             if not artifact.uploaded:
                 all_uploaded = False
                 missing.append((artifact_name, stage))
@@ -396,6 +426,12 @@ class Orchestrator:
                 item.transcript_sha256,
                 item.transcript_bytes,
                 Stage.TRANSCRIPT_UPLOAD,
+            ),
+            "speakers": (
+                item.speakers_path,
+                item.speakers_sha256,
+                item.speakers_bytes,
+                Stage.SPEAKERS_UPLOAD,
             ),
         }
         path, digest, byte_count, stage = values[artifact_name]

@@ -11,7 +11,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .domain import COMPRESSION_PRESETS
 
 REDACTED = "[REDACTED]"
-_SECRET_CONFIG_FIELDS = {"api_token", "api_basic_auth_password", "api_custom_header_value"}
+_SECRET_CONFIG_FIELDS = {
+    "api_token",
+    "api_basic_auth_password",
+    "api_custom_header_value",
+}
 
 
 class ConfigError(ValueError):

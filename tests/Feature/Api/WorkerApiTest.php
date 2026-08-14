@@ -93,7 +93,11 @@ function workerVideo(string $name = 'video.mp4', string $marker = 'video'): Uplo
     $brand = $extension === 'mov' ? 'qt  ' : 'mp42';
     $content = pack('N', 24).'ftyp'.$brand.pack('N', 0).$marker;
 
-    return UploadedTestFile::fake()->createWithContent($name, $content);
+    return UploadedTestFile::fake()->createWithContent(
+        $name,
+        $content,
+        $extension === 'mov' ? 'video/quicktime' : 'video/mp4',
+    );
 }
 
 class WorkerApiMutationOnEnsureFilesystem extends AtomicFilesystem

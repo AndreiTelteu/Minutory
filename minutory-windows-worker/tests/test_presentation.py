@@ -149,19 +149,22 @@ def test_pipeline_progress_is_segmented_and_combines_upload_bytes(store, item) -
         "audio",
         "compression",
         "transcript",
+        "speakerid",
         "upload",
     ]
     assert compression.stages[1].fraction == pytest.approx(0.4)
-    assert compression.overall_percent == 10
+    assert compression.overall_percent == 9
 
     view.item.selected_video_bytes = 100
     view.item.audio_bytes = 50
     view.item.transcript_bytes = 50
+    view.item.speakers_bytes = 20
     succeeded = {
         Stage.PROBE,
         Stage.SOURCE,
         Stage.WAV,
         Stage.TRANSCRIBE,
+        Stage.DIARIZE,
         Stage.MEETING,
         Stage.VIDEO_UPLOAD,
     }
@@ -173,12 +176,17 @@ def test_pipeline_progress_is_segmented_and_combines_upload_bytes(store, item) -
         ),
     )
     combined = pipeline_progress(uploading, (Stage.AUDIO_UPLOAD, 50))
-    assert combined.stages[-1].fraction == pytest.approx(0.625)
-    assert combined.overall_percent == 89
+    assert combined.stages[-1].fraction == pytest.approx(125 / 220)
+    assert combined.overall_percent == 90
 
     uploading.item.compression_preset = "none"
     without_compression = pipeline_progress(uploading)
-    assert [stage.key for stage in without_compression.stages] == ["audio", "transcript", "upload"]
+    assert [stage.key for stage in without_compression.stages] == [
+        "audio",
+        "transcript",
+        "speakerid",
+        "upload",
+    ]
 
 
 class FakeStore:
@@ -327,8 +335,8 @@ def test_dual_lane_serializes_transcription_and_overlaps_uploads(item: WorkerIte
     orchestrator.io_release.set()
     wait_until(lambda: not coordinator.busy)
     assert orchestrator.maximum_concurrent == 1
-    assert orchestrator.calls.count(item.item_id) == 2
-    assert orchestrator.calls.count(second.item_id) == 2
+    assert orchestrator.calls.count(item.item_id) == 5
+    assert orchestrator.calls.count(second.item_id) == 5
     assert coordinator.close()
 
 
@@ -358,10 +366,10 @@ def test_gpu_lane_failure_skips_io_and_retry_recovers(item: WorkerItem) -> None:
     coordinator = ProcessingCoordinator(orchestrator)
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
-    assert orchestrator.calls.count(item.item_id) == 1
+    assert orchestrator.calls.count(item.item_id) == 3
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
-    assert orchestrator.calls.count(item.item_id) == 3
+    assert orchestrator.calls.count(item.item_id) == 8
     assert coordinator.close()
 
 

@@ -12,4 +12,5 @@ Route::prefix('v1/worker')
         Route::post('meetings/{meeting}/artifacts/video', [WorkerController::class, 'video']);
         Route::post('meetings/{meeting}/artifacts/audio', [WorkerController::class, 'audio']);
         Route::post('meetings/{meeting}/artifacts/transcript', [WorkerController::class, 'transcript']);
+        Route::post('meetings/{meeting}/artifacts/speakers', [WorkerController::class, 'speakers']);
     });

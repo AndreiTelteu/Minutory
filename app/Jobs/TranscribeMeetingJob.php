@@ -73,6 +73,7 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
             $storageDir = dirname(Storage::disk('public')->path($this->meeting->video_path));
             $wavPath = $storageDir.DIRECTORY_SEPARATOR.'audio.wav';
             $transcriptPath = $storageDir.DIRECTORY_SEPARATOR.'transcript.json';
+            $speakersPath = $storageDir.DIRECTORY_SEPARATOR.'speakers.json';
 
             // Ensure the meeting directory exists before writing generated artifacts.
             if (! File::exists($storageDir)) {
@@ -134,8 +135,28 @@ class TranscribeMeetingJob implements ShouldBeUnique, ShouldQueue
             Log::info("Running {$driver} transcription for meeting {$meetingId}");
             $this->runShell($transcribeCmd, $this->timeout - 120);
 
-            // 3) Parse and save transcription segments
+            // 3) Import raw ASR transcript. Server SpeakerID is optional and does not
+            // affect the availability of a usable transcript.
             $segmentCount = $this->importTranscript($transcriptImporter, $transcriptPath);
+            if (config('services.transcribing.diarization_enabled')) {
+                $diarizeCmd = sprintf(
+                    '%s %s --audio-file %s --output-file %s --model %s',
+                    escapeshellarg($this->pythonPath),
+                    escapeshellarg(base_path('transcribe-microservice/diarize.py')),
+                    escapeshellarg($wavPath),
+                    escapeshellarg($speakersPath),
+                    escapeshellarg(config('services.transcribing.diarization_model')),
+                );
+                try {
+                    $this->runShell($diarizeCmd, $this->timeout - 120);
+                    app(\App\Services\SpeakerAssignmentService::class)->apply(
+                        $this->meeting,
+                        app(\App\Services\SpeakerTurnsImporter::class)->validateFile($speakersPath),
+                    );
+                } catch (\Throwable $diarizationError) {
+                    Log::warning("SpeakerID failed for meeting {$meetingId}; retaining raw transcript: {$diarizationError->getMessage()}");
+                }
+            }
             Log::info("Saved {$segmentCount} transcription segments for meeting {$this->meeting->id}");
 
             // Update meeting status to completed

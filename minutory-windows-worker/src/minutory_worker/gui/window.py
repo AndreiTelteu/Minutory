@@ -203,7 +203,7 @@ class PipelineProgressWidget(QWidget):
         root.addLayout(bars)
         self._bars_layout = bars
         self._segments: dict[str, tuple[QLabel, QProgressBar]] = {}
-        for key in ("audio", "compression", "transcript", "upload"):
+        for key in ("audio", "compression", "transcript", "speakerid", "upload"):
             label = OutlinedLabel(self._captions) if key == "audio" else QLabel(self._captions)
             label.setObjectName("micro")
             bar = QProgressBar()
@@ -217,7 +217,7 @@ class PipelineProgressWidget(QWidget):
         self._overall = QLabel(self._captions)
         self._overall.setObjectName("micro")
         self._overall.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._separators = [QFrame(self) for _ in range(3)]
+        self._separators = [QFrame(self) for _ in range(4)]
         for separator in self._separators:
             separator.setObjectName("stageDivider")
             separator.setFixedWidth(1)
@@ -230,7 +230,7 @@ class PipelineProgressWidget(QWidget):
         bars = cast(QVBoxLayout, self.layout()).itemAt(1).layout()
         assert isinstance(bars, QHBoxLayout)
         self._weights = {stage.key: stage.weight for stage in progress.stages}
-        for index, key in enumerate(("audio", "compression", "transcript", "upload")):
+        for index, key in enumerate(("audio", "compression", "transcript", "speakerid", "upload")):
             label, bar = self._segments[key]
             stage = visible.get(key)
             label.setVisible(stage is not None)
@@ -266,7 +266,7 @@ class PipelineProgressWidget(QWidget):
         self._overall.move(overall_x, 0)
         visible_keys = [
             key
-            for key in ("audio", "compression", "transcript", "upload")
+            for key in ("audio", "compression", "transcript", "speakerid", "upload")
             if key in self._weights
         ]
         for key in visible_keys:
@@ -396,6 +396,7 @@ class ItemCard(QFrame):
         self.retry_video = QPushButton("Retry video")
         self.retry_audio = QPushButton("Retry audio")
         self.retry_transcript = QPushButton("Retry transcript")
+        self.retry_speakers = QPushButton("Retry SpeakerID")
         retry_actions = QHBoxLayout()
         retry_actions.setSpacing(6)
         self.retry_label = QLabel("Recovery options")
@@ -404,6 +405,7 @@ class ItemCard(QFrame):
         retry_actions.addWidget(self.retry_video)
         retry_actions.addWidget(self.retry_audio)
         retry_actions.addWidget(self.retry_transcript)
+        retry_actions.addWidget(self.retry_speakers)
         retry_actions.addStretch()
         root.addLayout(retry_actions)
         self.remove = QPushButton("Remove")
@@ -445,6 +447,9 @@ class ItemCard(QFrame):
         self.retry_audio.clicked.connect(lambda: self._main_window.retry_artifact(self.item_id, "audio"))
         self.retry_transcript.clicked.connect(
             lambda: self._main_window.retry_artifact(self.item_id, "transcript")
+        )
+        self.retry_speakers.clicked.connect(
+            lambda: self._main_window.retry_artifact(self.item_id, "speakers")
         )
         self.remove.clicked.connect(lambda: self._main_window.remove_item(self.item_id))
         self.open_source.clicked.connect(
@@ -557,6 +562,7 @@ class ItemCard(QFrame):
             "video": self.retry_video,
             "audio": self.retry_audio,
             "transcript": self.retry_transcript,
+            "speakers": self.retry_speakers,
         }
         self.retry_label.setVisible(bool(view.retryable_artifacts))
         for name, button in retry_buttons.items():

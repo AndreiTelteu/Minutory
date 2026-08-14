@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .api import HttpxTransport, WorkerApiClient
 from .config import WorkerConfig
+from .diarization import SpeakerDiarizationService
 from .media import MediaService, SubprocessRunner
 from .orchestrator import Orchestrator
 from .state import StateStore
@@ -11,6 +12,7 @@ from .whisper import FasterWhisperBackend, WhisperService
 def build_orchestrator(config: WorkerConfig) -> Orchestrator:
     """Assemble production services without starting work or loading the ASR model."""
     local_model = config.model_dir / config.whisper_model
+    local_diarization_model = config.model_dir / "pyannote-speaker-diarization-community-1"
     required_model_files = (
         "model.bin",
         "config.json",
@@ -22,6 +24,11 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
     if missing:
         raise RuntimeError(
             f"Verified local model {local_model} is incomplete (missing {', '.join(missing)}). "
+            "Run bootstrap verification; network model downloads are disabled."
+        )
+    if not (local_diarization_model / "config.yaml").is_file():
+        raise RuntimeError(
+            f"Verified local SpeakerID model {local_diarization_model} is incomplete (missing config.yaml). "
             "Run bootstrap verification; network model downloads are disabled."
         )
     store = StateStore(config.state_db)
@@ -55,6 +62,7 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
         whisper,
         api,
         config.work_dir,
+        diarization=SpeakerDiarizationService(local_diarization_model),
         video_codec=config.video_codec,
         fallback_video_codec=config.fallback_video_codec,
     )

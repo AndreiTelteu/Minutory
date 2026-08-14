@@ -9,7 +9,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from .domain import GPU_STAGES, IO_STAGES, STAGE_ORDER, SourceIdentity, Stage, StageStatus, WorkerItem
+from .domain import (
+    CPU_STAGES,
+    IO_STAGES,
+    STAGE_ORDER,
+    SourceIdentity,
+    Stage,
+    StageStatus,
+    WorkerItem,
+)
 from .filename_parser import local_datetime_to_offset_iso, parse_meeting_filename
 from .media import PRESETS, estimate_output_bytes
 from .orchestrator import Orchestrator
@@ -82,6 +90,7 @@ def pipeline_progress(
         Stage.VIDEO_UPLOAD: view.item.selected_video_bytes or 0,
         Stage.AUDIO_UPLOAD: view.item.audio_bytes or 0,
         Stage.TRANSCRIPT_UPLOAD: view.item.transcript_bytes or 0,
+        Stage.SPEAKERS_UPLOAD: view.item.speakers_bytes or 0,
     }
     upload_total = sum(upload_sizes.values())
     uploaded = float(
@@ -111,7 +120,7 @@ def pipeline_progress(
             PipelineStageProgress(
                 "compression",
                 "Compression",
-                25,
+                23,
                 stage_fraction(Stage.SOURCE),
                 active_stage is Stage.SOURCE,
                 statuses[Stage.SOURCE] is StageStatus.SUCCEEDED,
@@ -122,15 +131,23 @@ def pipeline_progress(
             PipelineStageProgress(
                 "transcript",
                 "Transcript",
-                40,
+                39,
                 stage_fraction(Stage.TRANSCRIBE),
                 active_stage is Stage.TRANSCRIBE,
                 statuses[Stage.TRANSCRIBE] is StageStatus.SUCCEEDED,
             ),
             PipelineStageProgress(
+                "speakerid",
+                "SpeakerID",
+                9,
+                stage_fraction(Stage.DIARIZE),
+                active_stage is Stage.DIARIZE,
+                statuses[Stage.DIARIZE] is StageStatus.SUCCEEDED,
+            ),
+            PipelineStageProgress(
                 "upload",
-                "Upload ingestion",
-                30,
+                "Upload",
+                24,
                 upload_fraction,
                 active_stage
                 in {
@@ -138,6 +155,7 @@ def pipeline_progress(
                     Stage.VIDEO_UPLOAD,
                     Stage.AUDIO_UPLOAD,
                     Stage.TRANSCRIPT_UPLOAD,
+                    Stage.SPEAKERS_UPLOAD,
                     Stage.FINAL_RECONCILE,
                 },
                 statuses[Stage.FINAL_RECONCILE] is StageStatus.SUCCEEDED,
@@ -376,6 +394,7 @@ class QueueController:
                     ("video", Stage.SOURCE, Stage.VIDEO_UPLOAD),
                     ("audio", Stage.WAV, Stage.AUDIO_UPLOAD),
                     ("transcript", Stage.TRANSCRIBE, Stage.TRANSCRIPT_UPLOAD),
+                    ("speakers", Stage.DIARIZE, Stage.SPEAKERS_UPLOAD),
                 )
                 if item.server_meeting_id is not None
                 and next(stage for stage in stages if stage.stage is local_stage).status
@@ -409,12 +428,14 @@ class ProcessingCoordinator:
         self.orchestrator = orchestrator
         self._event_sink = event_sink or (lambda _kind, _item_id, _value: None)
         self._gpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-gpu")
+        self._cpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-speakerid")
         self._io_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="minutory-io")
         self._lock = threading.RLock()
         self._scheduled: dict[str, str] = {}
         self._gpu_item: str | None = None
         self._gpu_stage: Stage | None = None
         self._io_stages: dict[str, Stage | None] = {}
+        self._cpu_futures: dict[str, Future[WorkerItem]] = {}
         self._progress: dict[str, tuple[Stage, int]] = {}
         self._cancel = threading.Event()
         self._closed = False
@@ -426,7 +447,7 @@ class ProcessingCoordinator:
         return self._submit(item_id, "preflight")
 
     def retry_artifact(self, item_id: str, artifact_name: str) -> bool:
-        if artifact_name not in {"video", "audio", "transcript"}:
+        if artifact_name not in {"video", "audio", "transcript", "speakers"}:
             raise ValueError(f"Unsupported artifact {artifact_name!r}.")
         return self._submit(item_id, f"artifact:{artifact_name}")
 
@@ -446,6 +467,12 @@ class ProcessingCoordinator:
     def _submit_gpu(self, item_id: str, operation: str) -> None:
         future = self._gpu_executor.submit(self._run_gpu, item_id, operation)
         future.add_done_callback(lambda result: self._gpu_done(item_id, operation, result))
+
+    def _submit_cpu(self, item_id: str) -> None:
+        future = self._cpu_executor.submit(self._run_cpu, item_id)
+        with self._lock:
+            self._cpu_futures[item_id] = future
+        future.add_done_callback(lambda result: self._cpu_done(item_id, result))
 
     def _submit_io(self, item_id: str, operation: str) -> None:
         with self._lock:
@@ -514,9 +541,20 @@ class ProcessingCoordinator:
                     on_stage=stage_changed,
                     on_progress=progress,
                 )
+            # WAV is derived directly from the original source, not the compressed
+            # video. Start SpeakerID on CPU immediately after WAV so it overlaps
+            # both AMF compression and subsequent Whisper work on the GPU.
+            self.orchestrator.process_stages(
+                item_id,
+                (Stage.PROBE, Stage.WAV),
+                cancel=cancel,
+                on_stage=stage_changed,
+                on_progress=progress,
+            )
+            self._submit_cpu(item_id)
             return self.orchestrator.process_stages(
                 item_id,
-                GPU_STAGES,
+                (Stage.SOURCE, Stage.TRANSCRIBE),
                 cancel=cancel,
                 on_stage=stage_changed,
                 on_progress=progress,
@@ -525,6 +563,20 @@ class ProcessingCoordinator:
             with self._lock:
                 self._gpu_item = None
                 self._gpu_stage = None
+
+    def _run_cpu(self, item_id: str) -> WorkerItem:
+        def stage_changed(stage: Stage, status: StageStatus) -> None:
+            self._event_sink("stage", item_id, (stage, status))
+
+        def progress(fraction: float) -> None:
+            percent = int(min(max(fraction, 0.0), 1.0) * 100)
+            with self._lock:
+                self._progress[item_id] = (Stage.DIARIZE, percent)
+            self._event_sink("progress", item_id, (Stage.DIARIZE, percent))
+
+        return self.orchestrator.process_stages(
+            item_id, CPU_STAGES, on_stage=stage_changed, on_progress=progress
+        )
 
     def _run_io(self, item_id: str, operation: str) -> WorkerItem:
         if operation.startswith("artifact:"):
@@ -562,6 +614,28 @@ class ProcessingCoordinator:
                     on_stage=stage_changed,
                     on_progress=progress,
                 )
+            if operation == "pipeline-io":
+                self.orchestrator.process_stages(
+                    item_id,
+                    (
+                        Stage.MEETING,
+                        Stage.VIDEO_UPLOAD,
+                        Stage.AUDIO_UPLOAD,
+                        Stage.TRANSCRIPT_UPLOAD,
+                    ),
+                    on_stage=stage_changed,
+                    on_progress=progress,
+                )
+                with self._lock:
+                    diarization = self._cpu_futures.get(item_id)
+                if diarization is not None:
+                    diarization.result()
+                return self.orchestrator.process_stages(
+                    item_id,
+                    (Stage.SPEAKERS_UPLOAD, Stage.FINAL_RECONCILE),
+                    on_stage=stage_changed,
+                    on_progress=progress,
+                )
             return self.orchestrator.process_stages(
                 item_id,
                 IO_STAGES,
@@ -582,6 +656,11 @@ class ProcessingCoordinator:
             self._submit_io(item_id, "pipeline-io")
             return
         self._finalize(item_id, "preflight_completed", result)
+
+    def _cpu_done(self, item_id: str, future: Future[WorkerItem]) -> None:
+        # The IO lane owns final completion; it observes this future before speakers upload.
+        with self._lock:
+            self._cpu_futures[item_id] = future
 
     def _io_done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
         try:
@@ -646,6 +725,7 @@ class ProcessingCoordinator:
             if self._gpu_item is not None:
                 self._cancel.set()
         self._gpu_executor.shutdown(wait=True, cancel_futures=True)
+        self._cpu_executor.shutdown(wait=True, cancel_futures=True)
         self._io_executor.shutdown(wait=True, cancel_futures=True)
         return True
 

@@ -1,54 +1,52 @@
 #!/usr/bin/env python3
-"""
-Speaker diarization using pyannote.audio directly.
-"""
+"""Emit pyannote temporal speaker turns as a standalone artifact."""
+from __future__ import annotations
+
+import argparse
+import json
+import math
 import os
-import torch
-
-# Configure environment variables for HuggingFace
-os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
-os.environ["TRUST_REMOTE_CODE"] = "1"
-
-# Use HuggingFace token from environment variable if available
-hf_token = os.environ.get("HF_API_KEY", "")
+import tempfile
+import time
+from pathlib import Path
+from typing import Any
 
 
-def diarize_transcript(audio_file, transcript, device="cpu", model_name="pyannote/speaker-diarization-3.1"):
-    """
-    Performs speaker diarization on a transcript, splitting segments by speaker changes.
-    Uses pyannote.audio directly instead of whisperx.
-    """
-    try:
-        from pyannote.audio import Pipeline
-        
-        print(f"Loading diarization model: {model_name}")
-        pipeline = Pipeline.from_pretrained(
-            model_name,
-            use_auth_token=hf_token if hf_token else None
-        )
-        
-        if device == "cpu":
-            pipeline.to(torch.device(device))
-        
-        print(f"Diarizing {audio_file}")
-        diarization = pipeline(audio_file)
-        
-        # Build speaker map
-        speaker_map = {}
-        for segment, track, label in diarization.itertracks(yield_label=True):
-            start = segment.start
-            end = segment.end
-            for seg in transcript.get("segments", []):
-                if seg["start"] >= start and seg["end"] <= end:
-                    seg["speaker"] = label
-                    break
-        
-        print(f"Diarization complete")
-        return transcript
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--audio-file", required=True, type=Path)
+    parser.add_argument("--output-file", required=True, type=Path)
+    parser.add_argument("--model", default="pyannote/speaker-diarization-community-1")
+    parser.add_argument("--token", default=os.environ.get("HF_TOKEN", ""))
+    args = parser.parse_args()
 
-    except Exception as e:
-        print(f"Diarization failed: {str(e)}")
-        # Fallback: Assign "unknown" to original segments
-        for segment in transcript.get("segments", []):
-            segment["speaker"] = "unknown"
-        return transcript
+    from pyannote.audio import Pipeline
+
+    started = time.monotonic()
+    pipeline: Any = Pipeline.from_pretrained(args.model, token=args.token or None)
+    diarization = pipeline(str(args.audio_file))
+    labels: dict[str, str] = {}
+    turns: list[dict[str, object]] = []
+    for segment, _, label in diarization.itertracks(yield_label=True):
+        start, end = float(segment.start), float(segment.end)
+        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end < start:
+            continue
+        speaker = labels.setdefault(str(label), f"Speaker {len(labels) + 1}")
+        turns.append({"start": start, "end": end, "speaker": speaker})
+    turns.sort(key=lambda turn: (float(turn["start"]), float(turn["end"]), str(turn["speaker"])))
+    document = {
+        "version": 1,
+        "model": args.model,
+        "runtime": {"device": "cpu", "elapsed_seconds": time.monotonic() - started},
+        "turns": turns,
+    }
+    args.output_file.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=args.output_file.parent, delete=False) as staged:
+        json.dump(document, staged, ensure_ascii=False)
+        staged.write("\n")
+        staged_path = Path(staged.name)
+    staged_path.replace(args.output_file)
+
+
+if __name__ == "__main__":
+    main()

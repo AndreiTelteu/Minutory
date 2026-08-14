@@ -12,10 +12,12 @@ class Stage(StrEnum):
     SOURCE = "source"
     WAV = "wav"
     TRANSCRIBE = "transcribe"
+    DIARIZE = "diarize"
     MEETING = "meeting"
     VIDEO_UPLOAD = "video_upload"
     AUDIO_UPLOAD = "audio_upload"
     TRANSCRIPT_UPLOAD = "transcript_upload"
+    SPEAKERS_UPLOAD = "speakers_upload"
     FINAL_RECONCILE = "final_reconcile"
 
 
@@ -25,23 +27,28 @@ STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     Stage.SOURCE: (Stage.PROBE,),
     Stage.WAV: (Stage.PROBE,),
     Stage.TRANSCRIBE: (Stage.WAV,),
+    Stage.DIARIZE: (Stage.WAV,),
     Stage.MEETING: (Stage.PROBE,),
     Stage.VIDEO_UPLOAD: (Stage.SOURCE, Stage.MEETING),
     Stage.AUDIO_UPLOAD: (Stage.WAV, Stage.MEETING),
     Stage.TRANSCRIPT_UPLOAD: (Stage.TRANSCRIBE, Stage.MEETING),
+    Stage.SPEAKERS_UPLOAD: (Stage.DIARIZE, Stage.MEETING),
     Stage.FINAL_RECONCILE: (
         Stage.VIDEO_UPLOAD,
         Stage.AUDIO_UPLOAD,
         Stage.TRANSCRIPT_UPLOAD,
+        Stage.SPEAKERS_UPLOAD,
     ),
 }
 
 GPU_STAGES = (Stage.PROBE, Stage.SOURCE, Stage.WAV, Stage.TRANSCRIBE)
+CPU_STAGES = (Stage.DIARIZE,)
 IO_STAGES = (
     Stage.MEETING,
     Stage.VIDEO_UPLOAD,
     Stage.AUDIO_UPLOAD,
     Stage.TRANSCRIPT_UPLOAD,
+    Stage.SPEAKERS_UPLOAD,
     Stage.FINAL_RECONCILE,
 )
 
@@ -91,12 +98,15 @@ class WorkerItem:
     selected_video_path: str | None = None
     wav_path: str | None = None
     transcript_path: str | None = None
+    speakers_path: str | None = None
     selected_video_sha256: str | None = None
     audio_sha256: str | None = None
     transcript_sha256: str | None = None
+    speakers_sha256: str | None = None
     selected_video_bytes: int | None = None
     audio_bytes: int | None = None
     transcript_bytes: int | None = None
+    speakers_bytes: int | None = None
     server_meeting_id: int | None = None
 
     def __post_init__(self) -> None:

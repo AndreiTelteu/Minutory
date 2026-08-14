@@ -21,7 +21,7 @@ from .domain import (
     dependent_stages,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 STAGE_OUTPUT_COLUMNS: dict[Stage, tuple[str, ...]] = {
     Stage.PROBE: (
@@ -38,10 +38,12 @@ STAGE_OUTPUT_COLUMNS: dict[Stage, tuple[str, ...]] = {
     ),
     Stage.WAV: ("wav_path", "audio_sha256", "audio_bytes"),
     Stage.TRANSCRIBE: ("transcript_path", "transcript_sha256", "transcript_bytes"),
+    Stage.DIARIZE: ("speakers_path", "speakers_sha256", "speakers_bytes"),
     Stage.MEETING: ("server_meeting_id",),
     Stage.VIDEO_UPLOAD: (),
     Stage.AUDIO_UPLOAD: (),
     Stage.TRANSCRIPT_UPLOAD: (),
+    Stage.SPEAKERS_UPLOAD: (),
     Stage.FINAL_RECONCILE: (),
 }
 
@@ -192,12 +194,15 @@ class StateStore:
                         selected_video_path TEXT,
                         wav_path TEXT,
                         transcript_path TEXT,
+                        speakers_path TEXT,
                         selected_video_sha256 TEXT,
                         audio_sha256 TEXT,
                         transcript_sha256 TEXT,
+                        speakers_sha256 TEXT,
                         selected_video_bytes INTEGER,
                         audio_bytes INTEGER,
                         transcript_bytes INTEGER,
+                        speakers_bytes INTEGER,
                         server_meeting_id INTEGER,
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -264,6 +269,31 @@ class StateStore:
                     )
                 connection.execute("PRAGMA user_version = 4")
             version = 4
+        if version == 4:
+            with self.transaction() as connection:
+                existing_columns = {
+                    str(row["name"]) for row in connection.execute("PRAGMA table_info(items)")
+                }
+                for column, kind in (
+                    ("speakers_path", "TEXT"),
+                    ("speakers_sha256", "TEXT"),
+                    ("speakers_bytes", "INTEGER"),
+                ):
+                    if column not in existing_columns:
+                        connection.execute(f"ALTER TABLE items ADD COLUMN {column} {kind}")
+                connection.executemany(
+                    "INSERT OR IGNORE INTO stages (item_id, stage, status) VALUES (?, ?, ?)",
+                    [
+                        (row["item_id"], Stage.DIARIZE.value, StageStatus.PENDING.value)
+                        for row in connection.execute("SELECT item_id FROM items")
+                    ]
+                    + [
+                        (row["item_id"], Stage.SPEAKERS_UPLOAD.value, StageStatus.PENDING.value)
+                        for row in connection.execute("SELECT item_id FROM items")
+                    ],
+                )
+                connection.execute("PRAGMA user_version = 5")
+            version = 5
 
     def add_item(self, item: WorkerItem) -> None:
         with self.transaction() as connection:
@@ -563,6 +593,7 @@ class StateStore:
             Stage.VIDEO_UPLOAD,
             Stage.AUDIO_UPLOAD,
             Stage.TRANSCRIPT_UPLOAD,
+            Stage.SPEAKERS_UPLOAD,
         }:
             raise StateError("Only upload stages can be reset after remote deletion.")
         with self.transaction() as connection:
@@ -790,11 +821,14 @@ def _item_from_row(row: sqlite3.Row) -> WorkerItem:
         selected_video_path=row["selected_video_path"],
         wav_path=row["wav_path"],
         transcript_path=row["transcript_path"],
+        speakers_path=row["speakers_path"],
         selected_video_sha256=row["selected_video_sha256"],
         audio_sha256=row["audio_sha256"],
         transcript_sha256=row["transcript_sha256"],
+        speakers_sha256=row["speakers_sha256"],
         selected_video_bytes=row["selected_video_bytes"],
         audio_bytes=row["audio_bytes"],
         transcript_bytes=row["transcript_bytes"],
+        speakers_bytes=row["speakers_bytes"],
         server_meeting_id=row["server_meeting_id"],
     )

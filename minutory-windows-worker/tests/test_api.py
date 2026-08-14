@@ -52,7 +52,7 @@ def meeting_response(item, *, artifacts=None):
             "artifacts": artifacts
             or {
                 name: {"uploaded": False, "sha256": None, "bytes": None, "uploaded_at": None}
-                for name in ("video", "audio", "transcript")
+                for name in ("video", "audio", "transcript", "speakers")
             },
         }
     }

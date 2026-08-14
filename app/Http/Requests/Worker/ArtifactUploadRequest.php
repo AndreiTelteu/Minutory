@@ -20,7 +20,9 @@ abstract class ArtifactUploadRequest extends WorkerFormRequest
                 'required',
                 'file',
                 'max:'.max(1, (int) ceil($maximumBytes / 1024)),
-                'mimetypes:'.implode(',', $mimeTypes),
+                in_array('video/mp4', $mimeTypes, true)
+                    ? 'mimes:mp4,mov,avi,webm'
+                    : 'mimetypes:'.implode(',', $mimeTypes),
             ],
             'replace' => ['sometimes', 'boolean'],
         ];

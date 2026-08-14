@@ -3,3 +3,4 @@ onnx-asr>=0.10.2
 huggingface_hub>=0.20.0
 faster-whisper==1.2.1
 qwen-asr==0.0.6
+pyannote.audio>=4.0,<5

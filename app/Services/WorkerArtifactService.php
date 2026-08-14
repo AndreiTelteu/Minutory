@@ -20,6 +20,8 @@ class WorkerArtifactService
 {
     public function __construct(
         private readonly TranscriptImporter $transcriptImporter,
+        private readonly SpeakerTurnsImporter $speakerTurnsImporter,
+        private readonly SpeakerAssignmentService $speakerAssignment,
         private readonly Dispatcher $dispatcher,
         private readonly AtomicFilesystem $filesystem,
         private readonly VideoProbe $videoProbe,
@@ -36,8 +38,8 @@ class WorkerArtifactService
             $this->queueGuard->ensureTransactionalDatabaseQueue();
         }
 
-        $extension = config('services.worker.artifacts.video.extensions.'.$upload->getMimeType());
-        if (! is_string($extension)) {
+        $extension = strtolower($upload->getClientOriginalExtension());
+        if (! in_array($extension, array_values(config('services.worker.artifacts.video.extensions', [])), true)) {
             throw new WorkerApiException('validation_failed', 'The video type is not supported.', 422);
         }
 
@@ -140,6 +142,7 @@ class WorkerArtifactService
 
                 $replacement = $this->filesystem->beginReplacement($staged, $target);
                 $count = $this->transcriptImporter->replaceRowsWithinTransaction($meeting, $segments);
+                $this->applySpeakersIfAvailable($meeting, $ingestion);
 
                 $ingestion->update([
                     'transcript_sha256' => $hash,
@@ -169,6 +172,58 @@ class WorkerArtifactService
         } catch (Throwable $exception) {
             $replacement?->rollback();
 
+            throw $exception;
+        } finally {
+            $this->filesystem->delete($staged);
+        }
+
+        $replacement?->commit();
+
+        return $result;
+    }
+
+    /**
+     * @return array{state: string, sha256: string, bytes: int, turns: int}
+     */
+    public function storeSpeakers(Meeting $meeting, UploadedFile $upload, bool $replace): array
+    {
+        $this->ingestionFor($meeting);
+        $target = $this->artifactDirectory($meeting).DIRECTORY_SEPARATOR.'speakers.json';
+        $staged = $this->stageUpload($meeting, $upload, 'speakers');
+        $hash = hash_file('sha256', $staged);
+        $bytes = File::size($staged);
+        $replacement = null;
+
+        try {
+            try {
+                $turns = $this->speakerTurnsImporter->validateFile($staged);
+            } catch (InvalidTranscriptException $exception) {
+                throw new WorkerApiException('invalid_speakers', $exception->getMessage(), 422);
+            }
+
+            $result = DB::transaction(function () use ($meeting, $target, $staged, $hash, $bytes, $replace, $turns, &$replacement): array {
+                $ingestion = $this->lockedIngestion($meeting);
+                if ($ingestion->speakers_sha256 === $hash && $this->filesystem->exists($target)) {
+                    return [
+                        'state' => 'already_uploaded',
+                        'sha256' => $hash,
+                        'bytes' => $bytes,
+                        'turns' => count($turns),
+                    ];
+                }
+                $this->ensureReplacementAllowed($ingestion, 'speakers', $hash, $replace);
+                $replacement = $this->filesystem->beginReplacement($staged, $target);
+                $ingestion->update([
+                    'speakers_sha256' => $hash,
+                    'speakers_bytes' => $bytes,
+                    'speakers_uploaded_at' => now(),
+                ]);
+                $this->speakerAssignment->apply($meeting, $turns);
+
+                return ['state' => 'uploaded', 'sha256' => $hash, 'bytes' => $bytes, 'turns' => count($turns)];
+            });
+        } catch (Throwable $exception) {
+            $replacement?->rollback();
             throw $exception;
         } finally {
             $this->filesystem->delete($staged);
@@ -273,6 +328,20 @@ class WorkerArtifactService
         }
 
         return $result;
+    }
+
+    private function applySpeakersIfAvailable(Meeting $meeting, WorkerIngestion $ingestion): void
+    {
+        if ($ingestion->speakers_sha256 === null) {
+            return;
+        }
+
+        $path = $this->artifactDirectory($meeting).DIRECTORY_SEPARATOR.'speakers.json';
+        if (! $this->filesystem->exists($path)) {
+            return;
+        }
+
+        $this->speakerAssignment->apply($meeting, $this->speakerTurnsImporter->validateFile($path));
     }
 
     private function ensureReplacementAllowed(

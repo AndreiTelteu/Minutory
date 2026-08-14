@@ -151,6 +151,22 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
             else f"Missing {', '.join(missing)} under {model}. Re-run bootstrap.",
         )
     )
+    diarization_model = (
+        Path(__file__).resolve().parents[2] / "models/pyannote-speaker-diarization-community-1"
+    )
+    try:
+        from pyannote.audio import Pipeline
+
+        Pipeline.from_pretrained(diarization_model)
+        checks.append(Check("SpeakerID model", True, "Complete local pyannote model snapshot loaded on CPU."))
+    except Exception as exception:
+        checks.append(
+            Check(
+                "SpeakerID model",
+                False,
+                f"{exception}. Re-run managed bootstrap; network model downloads are disabled.",
+            )
+        )
     return tuple(checks)
 
 

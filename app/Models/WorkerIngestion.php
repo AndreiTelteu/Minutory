@@ -20,6 +20,9 @@ class WorkerIngestion extends Model
         'transcript_sha256',
         'transcript_bytes',
         'transcript_uploaded_at',
+        'speakers_sha256',
+        'speakers_bytes',
+        'speakers_uploaded_at',
         'server_transcription_dispatched_at',
     ];
 
@@ -31,6 +34,8 @@ class WorkerIngestion extends Model
         'audio_uploaded_at' => 'datetime',
         'transcript_bytes' => 'integer',
         'transcript_uploaded_at' => 'datetime',
+        'speakers_bytes' => 'integer',
+        'speakers_uploaded_at' => 'datetime',
         'server_transcription_dispatched_at' => 'datetime',
     ];
 

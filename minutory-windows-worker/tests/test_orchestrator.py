@@ -85,6 +85,23 @@ class PipelineBackend:
         )
 
 
+class PipelineDiarization:
+    def __init__(self):
+        self.calls = 0
+
+    def diarize(self, audio_path, destination, *, on_progress=None):
+        self.calls += 1
+        if on_progress is not None:
+            on_progress(0.5)
+        destination.write_text(
+            json.dumps(
+                {"version": 1, "model": "fake", "runtime": {"device": "cpu"}, "turns": []}
+            )
+        )
+        if on_progress is not None:
+            on_progress(1.0)
+
+
 class FakeApi:
     def __init__(self, item):
         self.item = item
@@ -96,6 +113,7 @@ class FakeApi:
             "video": None,
             "audio": None,
             "transcript": None,
+            "speakers": None,
         }
         self.fail_audio_once = False
         self.response_mismatch: str | None = None
@@ -111,6 +129,7 @@ class FakeApi:
                 "video": item.selected_video_path,
                 "audio": item.wav_path,
                 "transcript": item.transcript_path,
+                "speakers": item.speakers_path,
             }[self.mutate_after_create]
             Path(path).write_bytes(b"mutated-after-generation")
         return MeetingState(
@@ -169,6 +188,7 @@ class FakeApi:
 def services(store, item, tmp_path):
     runner = PipelineRunner()
     backend = PipelineBackend()
+    diarization = PipelineDiarization()
     api = FakeApi(item)
     orchestrator = Orchestrator(
         store,
@@ -176,6 +196,7 @@ def services(store, item, tmp_path):
         WhisperService(backend),
         api,
         tmp_path / "work",
+        diarization=diarization,
     )
     return orchestrator, runner, backend, api
 
@@ -186,12 +207,12 @@ def test_complete_pipeline_and_resume_does_not_repeat_work(store, item, tmp_path
     assert completed.server_meeting_id == 500
     assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     assert api.created == 1
-    assert api.uploads == ["video", "audio", "transcript"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers"]
     assert api.reconciled == 1
     orchestrator.process(item.item_id)
     assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     assert api.created == 1
-    assert api.uploads == ["video", "audio", "transcript"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers"]
     assert api.reconciled == 2
     assert all(store.stage(item.item_id, stage)["status"] == StageStatus.SUCCEEDED for stage in Stage)
 
@@ -207,7 +228,7 @@ def test_failed_upload_resume_preserves_expensive_successes(store, item, tmp_pat
     assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     orchestrator.process(item.item_id)
     assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
-    assert api.uploads == ["video", "audio", "audio", "transcript"]
+    assert api.uploads == ["video", "audio", "audio", "transcript", "speakers"]
     assert store.stage(item.item_id, Stage.AUDIO_UPLOAD)["attempts"] == 2
 
 
@@ -217,7 +238,7 @@ def test_reconcile_surfaces_remote_hash_conflict_without_replacement(store, item
     api.remote["video"] = ("f" * 64, 123)
     with pytest.raises(ArtifactConflict, match="replacement requires explicit"):
         orchestrator.process(completed.item_id)
-    assert api.uploads == ["video", "audio", "transcript"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers"]
 
 
 def test_source_change_after_server_creation_preserves_history(store, item, tmp_path) -> None:
@@ -260,7 +281,7 @@ def test_remote_deletion_resets_success_and_reuploads_without_expensive_work(sto
     orchestrator.process(item.item_id)
     api.remote["video"] = None
     orchestrator.process(item.item_id)
-    assert api.uploads == ["video", "audio", "transcript", "video"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers", "video"]
     assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == (3, 1, 1, 1)
     assert store.stage(item.item_id, Stage.VIDEO_UPLOAD)["attempts"] == 2
     assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
@@ -275,7 +296,7 @@ def test_first_run_requires_remote_final_confirmation(store, item, tmp_path) -> 
     assert store.stage(item.item_id, Stage.TRANSCRIPT_UPLOAD)["status"] == StageStatus.PENDING
     assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.FAILED
     orchestrator.process(item.item_id)
-    assert api.uploads == ["video", "audio", "transcript", "transcript"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers", "transcript"]
     assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
 
 
@@ -300,7 +321,7 @@ def test_preflight_eagerly_extracts_wav_and_pipeline_reuses_it(store, item, tmp_
     completed = orchestrator.process(item.item_id)
     assert runner.wavs == 1
     assert completed.server_meeting_id == 500
-    assert api.uploads == ["video", "audio", "transcript"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers"]
 
 
 def test_explicit_artifact_retry_uploads_only_requested_then_reconciles(store, item, tmp_path) -> None:
@@ -309,7 +330,7 @@ def test_explicit_artifact_retry_uploads_only_requested_then_reconciles(store, i
     before = (runner.probes, runner.compresses, runner.wavs, backend.calls)
     api.remote["audio"] = None
     orchestrator.retry_artifact(item.item_id, "audio")
-    assert api.uploads == ["video", "audio", "transcript", "audio"]
+    assert api.uploads == ["video", "audio", "transcript", "speakers", "audio"]
     assert (runner.probes, runner.compresses, runner.wavs, backend.calls) == before
     assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
 
@@ -404,7 +425,7 @@ def test_transport_token_never_reaches_persisted_or_gui_diagnostics(store, item,
         assert token not in rendered
 
 
-@pytest.mark.parametrize("artifact", ["video", "audio", "transcript"])
+@pytest.mark.parametrize("artifact", ["video", "audio", "transcript", "speakers"])
 def test_upload_response_integrity_mismatch_fails_stage(store, item, tmp_path, artifact) -> None:
     orchestrator, _, _, api = services(store, item, tmp_path)
     api.response_mismatch = artifact
@@ -414,12 +435,13 @@ def test_upload_response_integrity_mismatch_fails_stage(store, item, tmp_path, a
         "video": Stage.VIDEO_UPLOAD,
         "audio": Stage.AUDIO_UPLOAD,
         "transcript": Stage.TRANSCRIPT_UPLOAD,
+        "speakers": Stage.SPEAKERS_UPLOAD,
     }[artifact]
     assert store.stage(item.item_id, stage)["status"] == StageStatus.FAILED
     assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.PENDING
 
 
-@pytest.mark.parametrize("artifact", ["video", "audio", "transcript"])
+@pytest.mark.parametrize("artifact", ["video", "audio", "transcript", "speakers"])
 def test_generated_file_mutation_is_detected_before_upload(store, item, tmp_path, artifact) -> None:
     orchestrator, _, _, api = services(store, item, tmp_path)
     api.mutate_after_create = artifact
