@@ -379,28 +379,35 @@ function Build-DiarizationModelPackage {
     if (Test-Path $modelStaging) { Remove-Item $modelStaging -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $modelStaging | Out-Null
 
-    $python = if (Get-Command "python" -ErrorAction SilentlyContinue) { "python" }
+    $python = if (-not [string]::IsNullOrWhiteSpace($env:MINUTORY_EXPORT_PYTHON)) { $env:MINUTORY_EXPORT_PYTHON }
+              elseif (Get-Command "python" -ErrorAction SilentlyContinue) { "python" }
               elseif (Get-Command "python3" -ErrorAction SilentlyContinue) { "python3" }
               else { throw "Python is required to export the accepted gated pyannote model." }
     $token = $env:MINUTORY_DIARIZATION_TOKEN
     if ([string]::IsNullOrWhiteSpace($token)) {
         throw "Accept pyannote/speaker-diarization-3.1 terms, then set MINUTORY_DIARIZATION_TOKEN only for this resolver session. The token is never written to a manifest, .env, archive, or log."
     }
-    & $python -c "from huggingface_hub import snapshot_download" 2>$null
+    & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "huggingface_hub is required by the asset resolver. Install it into '$python' with: $python -m pip install --upgrade huggingface_hub"
+        throw "The ONNX exporter requires Python 3.11 because pyannote.audio 3.1.1 needs the legacy torchaudio API. Set MINUTORY_EXPORT_PYTHON to a Python 3.11 executable."
     }
+    $exportVenv = Join-Path $modelStaging "export-venv"
+    & $python -m venv $exportVenv
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the isolated Python 3.11 ONNX export environment." }
+    $exportPython = Join-Path $exportVenv "Scripts\python.exe"
     @"
 import pathlib, subprocess, sys
 repo = r"$modelStaging/repo"
 token = r"$token"
+python = r"$exportPython"
 subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/samson6460/pyannote-onnx-extended.git", repo])
 subprocess.check_call(["git", "-C", repo, "-c", "advice.detachedHead=false", "checkout", "edb7dbc1f6fa5c586064665c016947fc0057a32c"])
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", repo + "/requirements.txt"])
-# The upstream exporter accesses private Pipeline internals from pyannote 3.1.
-# Do not let its unpinned requirements silently select an incompatible v4 API.
-subprocess.check_call([sys.executable, "-m", "pip", "install", "pyannote.audio==3.1.1"])
-completed = subprocess.run([sys.executable, repo + "/export_onnx.py", "--use_auth_token", token], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+subprocess.check_call([python, "-m", "pip", "install", "--upgrade", "pip"])
+# pyannote 3.1 calls torchaudio.set_audio_backend, removed by newer
+# torchaudio releases. This build-only venv avoids contaminating the worker.
+subprocess.check_call([python, "-m", "pip", "install", "torch==2.0.1", "torchaudio==2.0.2", "--index-url", "https://download.pytorch.org/whl/cpu"])
+subprocess.check_call([python, "-m", "pip", "install", "pyannote.audio==3.1.1", "onnx"])
+completed = subprocess.run([python, repo + "/export_onnx.py", "--use_auth_token", token], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 log = pathlib.Path(repo) / "export.log"
 log.write_text(completed.stdout.replace(token, "[REDACTED]"), encoding="utf-8")
 if completed.returncode:
@@ -422,6 +429,7 @@ if completed.returncode:
     # The exported models and metadata are the managed asset. Do not ship the
     # exporter clone, its token-bearing cache, or its PyTorch dependencies.
     Remove-Item -LiteralPath (Join-Path $modelStaging "repo") -Recurse -Force
+    Remove-Item -LiteralPath $exportVenv -Recurse -Force
     # Keep the staged archive name aligned with bootstrap.ps1's deterministic
     # cache convention: <asset-id>-<version>.zip.
     New-ZipFromDirectory $modelStaging "pyannote-diarization-3.1-onnx" $zipPath

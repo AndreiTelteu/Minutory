@@ -120,6 +120,10 @@ The resolver pins and exports the audited `pyannote-onnx-extended` commit into
 `models/pyannote-diarization-3.1-onnx` and builds the offline DirectML wheelhouse.
 Do not put that token in `.env`; bootstrap and normal worker startup never read
 or contact Hugging Face.
+The export step uses an isolated Python 3.11 virtual environment because the
+model's compatible `pyannote.audio` version requires the legacy torchaudio API.
+Set `MINUTORY_EXPORT_PYTHON` to a Python 3.11 executable only when your default
+`python` command is a different version.
 
 `resolve-assets.ps1` caches successful wheelhouse, Large-v3, and ONNX export
 builds for the rest of the local calendar day in `cache/resolve/daily/`. A
