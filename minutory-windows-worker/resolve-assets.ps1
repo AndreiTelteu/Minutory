@@ -392,14 +392,21 @@ function Build-DiarizationModelPackage {
     }
     @"
 import subprocess, sys
-subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/samson6460/pyannote-onnx-extended.git", r"$modelStaging/repo"])
-subprocess.check_call(["git", "-C", r"$modelStaging/repo", "checkout", "edb7dbc1f6fa5c586064665c016947fc0057a32c"])
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", r"$modelStaging/repo/requirements.txt"])
-subprocess.check_call([sys.executable, r"$modelStaging/repo/export_onnx.py", "--use_auth_token", r"$token"], cwd=r"$modelStaging")
+repo = r"$modelStaging/repo"
+subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/samson6460/pyannote-onnx-extended.git", repo])
+subprocess.check_call(["git", "-C", repo, "-c", "advice.detachedHead=false", "checkout", "edb7dbc1f6fa5c586064665c016947fc0057a32c"])
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", repo + "/requirements.txt"])
+subprocess.check_call([sys.executable, repo + "/export_onnx.py", "--use_auth_token", r"$token"], cwd=repo)
 "@ | & $python -
     if ($LASTEXITCODE -ne 0) { throw "Could not export the gated pyannote/speaker-diarization-3.1 ONNX bundle. Verify terms acceptance without printing the token." }
-    Copy-Item (Join-Path $modelStaging "models_onnx\segmentation.onnx") (Join-Path $modelStaging "segmentation.onnx")
-    Copy-Item (Join-Path $modelStaging "models_onnx\embedding.onnx") (Join-Path $modelStaging "embedding.onnx")
+    $exportedModels = Join-Path $modelStaging "repo\models_onnx"
+    foreach ($file in @("segmentation.onnx", "embedding.onnx")) {
+        $exported = Join-Path $exportedModels $file
+        if (-not (Test-Path -LiteralPath $exported -PathType Leaf)) {
+            throw "ONNX exporter completed without '$file'. Check the gated-model acceptance and exporter output; the token is redacted."
+        }
+        Copy-Item -LiteralPath $exported -Destination (Join-Path $modelStaging $file)
+    }
     '{"engine":"pyannote-onnx-extended","model":"pyannote/speaker-diarization-3.1","upstream_commit":"edb7dbc1f6fa5c586064665c016947fc0057a32c"}' | Set-Content (Join-Path $modelStaging "metadata.json") -Encoding UTF8
     foreach ($file in @("segmentation.onnx", "embedding.onnx", "metadata.json")) {
         if (-not (Test-Path -LiteralPath (Join-Path $modelStaging $file) -PathType Leaf)) { throw "ONNX diarization bundle is incomplete: $file is missing." }
