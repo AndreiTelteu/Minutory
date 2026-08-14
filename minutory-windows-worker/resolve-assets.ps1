@@ -344,7 +344,9 @@ snapshot_download(
     if (-not (Test-Path -LiteralPath (Join-Path $modelStaging "config.yaml") -PathType Leaf)) {
         throw "pyannote snapshot is incomplete: config.yaml is missing."
     }
-    $zipPath = Join-Path $DownloadsDir "pyannote-speaker-diarization-community-1.zip"
+    # Keep the staged archive name aligned with bootstrap.ps1's deterministic
+    # cache convention: <asset-id>-<version>.zip.
+    $zipPath = Join-Path $DownloadsDir "pyannote-speaker-diarization-community-1-community-1.zip"
     New-ZipFromDirectory $modelStaging "pyannote-speaker-diarization-community-1" $zipPath
     return @{
         zipPath = $zipPath

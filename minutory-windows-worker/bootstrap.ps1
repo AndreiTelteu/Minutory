@@ -225,10 +225,13 @@ function Clear-ManagedPythonBytecode {
     # drop it before hashing instead of failing closed.
     $managed = Join-Path $Root "libs\python"
     if (-not (Test-Path -LiteralPath $managed -PathType Container)) { return }
-    Get-ChildItem -LiteralPath $managed -Recurse -Force -Directory -Filter "__pycache__" |
-        Remove-Item -Recurse -Force
     Get-ChildItem -LiteralPath $managed -Recurse -Force -File -Filter "*.pyc" |
-        Remove-Item -Force
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    # The worker can be running during a manual verification and may recreate
+    # bytecode concurrently. Empty directories are only cleanup, never a
+    # reason to fail a verification.
+    Get-ChildItem -LiteralPath $managed -Recurse -Force -Directory -Filter "__pycache__" |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Get-TreeDigest {
@@ -267,10 +270,17 @@ function Get-AssetFileSnapshot {
     if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return @{} }
     $directoryPrefix = [IO.Path]::GetFullPath($Directory).TrimEnd("\") + "\"
     $markerPath = [IO.Path]::GetFullPath((Join-Path $Directory $AssetMarker))
+    $managedPython = [IO.Path]::GetFullPath((Join-Path $Root "libs\python")).TrimEnd("\")
+    $isManagedPython = [IO.Path]::GetFullPath($Directory).TrimEnd("\") -ceq $managedPython
     Assert-NoReparsePoints $Directory
     $files = @{}
     Get-ChildItem -LiteralPath $Directory -Recurse -Force -File |
-        Where-Object { [IO.Path]::GetFullPath($_.FullName) -cne $markerPath } |
+        Where-Object {
+            $fullName = [IO.Path]::GetFullPath($_.FullName)
+            $fullName -cne $markerPath -and -not (
+                $isManagedPython -and $_.Extension -ceq ".pyc" -and $_.Directory.Name -ceq "__pycache__"
+            )
+        } |
         ForEach-Object {
             $fullName = [IO.Path]::GetFullPath($_.FullName)
             if (-not $fullName.StartsWith($directoryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
