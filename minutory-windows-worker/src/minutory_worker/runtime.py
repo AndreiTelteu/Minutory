@@ -62,7 +62,10 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
         whisper,
         api,
         config.work_dir,
-        diarization=SpeakerDiarizationService(local_diarization_model),
+        diarization=SpeakerDiarizationService(
+            local_diarization_model,
+            threads=config.speaker_id_threads,
+        ),
         video_codec=config.video_codec,
         fallback_video_codec=config.fallback_video_codec,
     )
