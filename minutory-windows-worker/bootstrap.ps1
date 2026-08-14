@@ -41,7 +41,11 @@ $Contracts = @{
 }
 $RequiredExpectedFiles = @{
     "python-runtime" = @("python.exe", "pythonw.exe", "Lib/venv/__init__.py", "Lib/ensurepip/__init__.py")
-    "ffmpeg" = @("bin/ffmpeg.exe", "bin/ffprobe.exe")
+    "ffmpeg" = @(
+        "bin/ffmpeg.exe", "bin/ffprobe.exe",
+        "bin/avcodec-61.dll", "bin/avformat-61.dll", "bin/avutil-59.dll",
+        "bin/avfilter-10.dll", "bin/swscale-8.dll", "bin/swresample-5.dll"
+    )
     "ctranslate2-rocm-wheel" = @("ctranslate2-4.8.1-cp312-cp312-win_amd64.whl")
     "runtime-wheelhouse" = @(
         "requirements-runtime.txt", "httpx-0.28.1-py3-none-any.whl",
@@ -531,6 +535,8 @@ function Assert-VenvReady {
     $env:PYTHONPATH = Join-Path $Root "src"
     $env:HF_HUB_OFFLINE = "1"
     $env:TRANSFORMERS_OFFLINE = "1"
+    $ffmpegBin = Join-Path $Root "libs\ffmpeg\bin"
+    $env:PATH = "$ffmpegBin;$env:PATH"
     & $python -m minutory_worker.runtime_verify
     if ($LASTEXITCODE -ne 0) { throw "Runtime verification failed. Review the actionable errors above." }
 }

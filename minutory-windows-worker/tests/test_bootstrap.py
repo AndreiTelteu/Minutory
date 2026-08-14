@@ -201,8 +201,14 @@ def test_bootstrap_and_launchers_are_credential_free_and_local_transcription_onl
     assert "$RequiredExpected = @{" not in bootstrap
     launcher = (ROOT / "start.ps1").read_text()
     assert 'bootstrap.ps1") -Verify' in launcher
+    assert '$env:PATH = "$ffmpegBin;$env:PATH"' in launcher
     assert '$env:HF_HUB_OFFLINE = "1"' in launcher
     assert '$env:TRANSFORMERS_OFFLINE = "1"' in launcher
+
+    resolver = (ROOT / "resolve-assets.ps1").read_text()
+    assert "ffmpeg-7.1.1-full_build-shared.zip" in resolver
+    assert "ffmpeg-7.1.1-essentials_build.zip" not in resolver
+    assert '"bin/avcodec-61.dll"' in resolver
 
 
 def test_runtime_requirements_pin_gui_and_do_not_name_ctranslate2() -> None:

@@ -34,7 +34,18 @@ REQUIRED_EXPECTED_FILES: dict[str, frozenset[str]] = {
     "python-runtime": frozenset(
         {"python.exe", "pythonw.exe", "Lib/venv/__init__.py", "Lib/ensurepip/__init__.py"}
     ),
-    "ffmpeg": frozenset({"bin/ffmpeg.exe", "bin/ffprobe.exe"}),
+    "ffmpeg": frozenset(
+        {
+            "bin/ffmpeg.exe",
+            "bin/ffprobe.exe",
+            "bin/avcodec-61.dll",
+            "bin/avformat-61.dll",
+            "bin/avutil-59.dll",
+            "bin/avfilter-10.dll",
+            "bin/swscale-8.dll",
+            "bin/swresample-5.dll",
+        }
+    ),
     "ctranslate2-rocm-wheel": frozenset({"ctranslate2-4.8.1-cp312-cp312-win_amd64.whl"}),
     "runtime-wheelhouse": frozenset(
         {
