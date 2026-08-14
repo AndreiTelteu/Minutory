@@ -20,6 +20,10 @@
 .PARAMETER SkipWheelhouse
     Skip building the runtime wheelhouse (requires pip).
 
+.PARAMETER OnlyFfmpeg
+    Resolve and stage only the FFmpeg shared runtime, preserving every other
+    entry in an existing local manifest.
+
 .EXAMPLE
     .\resolve-assets.ps1
     .\resolve-assets.ps1 -SkipModel
@@ -28,7 +32,8 @@
 param(
     [switch]$SkipModel,
     [switch]$SkipDiarizationModel,
-    [switch]$SkipWheelhouse
+    [switch]$SkipWheelhouse,
+    [switch]$OnlyFfmpeg
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +47,11 @@ $CacheDir = Join-Path $Root "cache\resolve"
 $StagingBase = Join-Path $CacheDir "staging"
 $DownloadsDir = Join-Path $Root "cache\downloads"
 $AssetMarker = ".minutory-asset.json"
+$FfmpegExpectedFiles = @(
+    "bin/ffmpeg.exe", "bin/ffprobe.exe",
+    "bin/avcodec-61.dll", "bin/avformat-61.dll", "bin/avutil-59.dll",
+    "bin/avfilter-10.dll", "bin/swscale-8.dll", "bin/swresample-5.dll"
+)
 
 # ---------------------------------------------------------------------------
 #  Hash utilities — identical to bootstrap.ps1
@@ -203,6 +213,7 @@ function Resolve-DownloadAsset {
         sha256                 = $sha256
         installed_tree_sha256  = $tree
         source_subdir          = $SourceSubdir
+        archive_path           = $archive
     }
 }
 
@@ -448,7 +459,7 @@ function Write-LocalManifest {
         destination            = "libs/ffmpeg"
         archive                = "zip"
         source_subdir          = $ff["source_subdir"]
-        expected_files         = @("bin/ffmpeg.exe", "bin/ffprobe.exe")
+        expected_files         = $FfmpegExpectedFiles
         status                 = "resolved"
     }
 
@@ -594,6 +605,52 @@ function Write-LocalManifest {
     return $manifestPath
 }
 
+function Resolve-FfmpegAsset {
+    return Resolve-DownloadAsset `
+        -Id "ffmpeg" `
+        -Url "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build-shared.zip" `
+        -FileName "ffmpeg-7.1.1-full_build-shared.zip" `
+        -SourceSubdir "ffmpeg-7.1.1-full_build-shared" `
+        -ExpectedFiles $FfmpegExpectedFiles
+}
+
+function Stage-FfmpegBootstrapArchive {
+    param([hashtable]$Result)
+    $destination = Join-Path $DownloadsDir "ffmpeg-7.1.1.zip"
+    Copy-Item -LiteralPath $Result["archive_path"] -Destination $destination -Force
+    $actual = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -cne $Result["sha256"]) {
+        throw "Staged FFmpeg bootstrap archive failed SHA-256 verification."
+    }
+    Write-Host "  Bootstrap cache: $destination"
+}
+
+function Update-LocalManifestFfmpeg {
+    param([hashtable]$Result)
+    $manifestPath = Join-Path $Root "manifests\runtime-assets.local.json"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "-OnlyFfmpeg requires an existing resolved local manifest: $manifestPath"
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $asset = @($manifest.assets | Where-Object { $_.id -ceq "ffmpeg" })
+    if ($asset.Count -ne 1) { throw "Local manifest must contain exactly one FFmpeg asset." }
+    $asset[0].version = "7.1.1"
+    $asset[0].url = $Result["url"]
+    $asset[0].sha256 = $Result["sha256"]
+    $asset[0].installed_tree_sha256 = $Result["installed_tree_sha256"]
+    $asset[0].destination = "libs/ffmpeg"
+    $asset[0].archive = "zip"
+    $asset[0].source_subdir = $Result["source_subdir"]
+    $asset[0].expected_files = $FfmpegExpectedFiles
+    $asset[0].status = "resolved"
+    if ($null -ne $manifest.PSObject.Properties["generated_at"]) {
+        $manifest.generated_at = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
+    }
+    $manifest | ConvertTo-Json -Depth 10 |
+        Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    Write-Host "Local manifest updated: $manifestPath"
+}
+
 # ===========================================================================
 #  MAIN
 # ===========================================================================
@@ -610,6 +667,14 @@ New-Item -ItemType Directory -Force -Path $DownloadsDir | Out-Null
 
 $results = @{}
 
+if ($OnlyFfmpeg) {
+    $results["ffmpeg"] = Resolve-FfmpegAsset
+    Stage-FfmpegBootstrapArchive $results["ffmpeg"]
+    Update-LocalManifestFfmpeg $results["ffmpeg"]
+    Write-Host "FFmpeg shared runtime resolved and staged."
+    exit 0
+}
+
 # ---- 1. Python 3.12.10 (NuGet portable package) ----
 $results["python-runtime"] = Resolve-DownloadAsset `
     -Id "python-runtime" `
@@ -618,13 +683,9 @@ $results["python-runtime"] = Resolve-DownloadAsset `
     -SourceSubdir "tools" `
     -ExpectedFiles @("python.exe", "pythonw.exe", "Lib/venv/__init__.py", "Lib/ensurepip/__init__.py")
 
-# ---- 2. FFmpeg 7.1.1 (GyanD essentials build) ----
-$results["ffmpeg"] = Resolve-DownloadAsset `
-    -Id "ffmpeg" `
-    -Url "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip" `
-    -FileName "ffmpeg-7.1.1-essentials_build.zip" `
-    -SourceSubdir "ffmpeg-7.1.1-essentials_build" `
-    -ExpectedFiles @("bin/ffmpeg.exe", "bin/ffprobe.exe")
+# ---- 2. FFmpeg 7.1.1 full shared build (required by TorchCodec) ----
+$results["ffmpeg"] = Resolve-FfmpegAsset
+Stage-FfmpegBootstrapArchive $results["ffmpeg"]
 
 # ---- 3. CTranslate2 ROCm 4.8.1 wheel (GitHub release) ----
 $results["ctranslate2-rocm-wheel"] = Resolve-DownloadAsset `

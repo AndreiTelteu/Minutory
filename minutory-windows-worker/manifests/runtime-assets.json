@@ -32,10 +32,16 @@
       "source_subdir": "ffmpeg",
       "expected_files": [
         "bin/ffmpeg.exe",
-        "bin/ffprobe.exe"
+        "bin/ffprobe.exe",
+        "bin/avcodec-61.dll",
+        "bin/avformat-61.dll",
+        "bin/avutil-59.dll",
+        "bin/avfilter-10.dll",
+        "bin/swscale-8.dll",
+        "bin/swresample-5.dll"
       ],
       "status": "unresolved",
-      "notes": "Select one immutable Windows x86-64 FFmpeg build containing ffmpeg.exe and ffprobe.exe; record its upstream URL and SHA-256."
+      "notes": "Select an immutable Windows x86-64 FFmpeg 7.1.1 full shared build containing the executables and versioned DLLs required by TorchCodec; record its upstream URL and SHA-256."
     },
     {
       "id": "ctranslate2-rocm-wheel",

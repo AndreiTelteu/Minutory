@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import gc
+import os
 import platform
 import shutil
 import subprocess
 import sys
+import tempfile
+import wave
 from dataclasses import dataclass
 from pathlib import Path
+
+_DLL_DIRECTORY_HANDLES: list[object] = []
 
 
 @dataclass(frozen=True)
@@ -16,6 +22,12 @@ class Check:
 
 
 def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = True) -> tuple[Check, ...]:
+    if sys.platform == "win32":
+        ffmpeg_bin = ffmpeg.resolve().parent
+        os.environ["PATH"] = f"{ffmpeg_bin}{os.pathsep}{os.environ.get('PATH', '')}"
+        add_dll_directory = getattr(os, "add_dll_directory", None)
+        if add_dll_directory is not None:
+            _DLL_DIRECTORY_HANDLES.append(add_dll_directory(str(ffmpeg_bin)))
     checks = [
         Check(
             "Python",
@@ -133,6 +145,34 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
         )
     elif require_windows_gpu:
         checks.append(Check("RX 7900 XTX", False, "Hardware verification must run on Windows 11."))
+    audio_path: Path | None = None
+    decoder: object | None = None
+    try:
+        from torchcodec.decoders import AudioDecoder
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
+            audio_path = Path(audio_file.name)
+        with wave.open(str(audio_path), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16_000)
+            wav.writeframes(b"\x00\x00" * 160)
+        decoder = AudioDecoder(str(audio_path))
+        _ = decoder.metadata
+        checks.append(Check("TorchCodec FFmpeg", True, "FFmpeg shared libraries loaded successfully."))
+    except Exception as exception:
+        checks.append(
+            Check(
+                "TorchCodec FFmpeg",
+                False,
+                f"{exception}. Install the managed FFmpeg full shared build and re-run bootstrap.",
+            )
+        )
+    finally:
+        decoder = None
+        gc.collect()
+        if audio_path is not None:
+            audio_path.unlink(missing_ok=True)
     model = Path(__file__).resolve().parents[2] / "models/large-v3"
     model_files = (
         "model.bin",
