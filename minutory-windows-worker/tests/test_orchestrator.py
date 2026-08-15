@@ -145,7 +145,9 @@ class FakeApi:
 
     def upload_artifact(self, meeting_id, artifact, path, *, replace=False, on_progress=None):
         assert meeting_id == self.meeting_id
-        assert not replace
+        self.replaced = getattr(self, "replaced", [])
+        if replace:
+            self.replaced.append(artifact)
         if on_progress is not None:
             on_progress(0.5)
         self.uploads.append(artifact)
@@ -239,6 +241,28 @@ def test_reconcile_surfaces_remote_hash_conflict_without_replacement(store, item
     with pytest.raises(ArtifactConflict, match="replacement requires explicit"):
         orchestrator.process(completed.item_id)
     assert api.uploads == ["video", "audio", "transcript", "speakers"]
+
+
+def test_operator_can_keep_server_transcript_after_conflict(store, item, tmp_path) -> None:
+    orchestrator, _, _, api = services(store, item, tmp_path)
+    completed = orchestrator.process(item.item_id)
+    api.remote["transcript"] = ("f" * 64, 123)
+    with pytest.raises(ArtifactConflict):
+        orchestrator.process(completed.item_id)
+    orchestrator.resolve_artifact_conflict(item.item_id, "transcript", use_local=False)
+    assert store.get_item(item.item_id).transcript_sha256 == "f" * 64
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
+
+
+def test_operator_can_replace_server_transcript_after_conflict(store, item, tmp_path) -> None:
+    orchestrator, _, _, api = services(store, item, tmp_path)
+    completed = orchestrator.process(item.item_id)
+    api.remote["transcript"] = ("f" * 64, 123)
+    with pytest.raises(ArtifactConflict):
+        orchestrator.process(completed.item_id)
+    orchestrator.resolve_artifact_conflict(item.item_id, "transcript", use_local=True)
+    assert api.replaced == ["transcript"]
+    assert store.stage(item.item_id, Stage.FINAL_RECONCILE)["status"] == StageStatus.SUCCEEDED
 
 
 def test_source_change_after_server_creation_preserves_history(store, item, tmp_path) -> None:

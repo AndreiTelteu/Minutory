@@ -53,6 +53,7 @@ class ItemView:
     metadata_locked: bool
     removable: bool
     retryable_artifacts: tuple[str, ...]
+    transcript_conflict: bool
 
 
 @dataclass(frozen=True)
@@ -408,6 +409,13 @@ class QueueController:
                     )
                 )
             ),
+            transcript_conflict=(
+                (failed := next((stage for stage in stages if stage.stage is Stage.FINAL_RECONCILE), None))
+                is not None
+                and failed.status is StageStatus.FAILED
+                and failed.user_error is not None
+                and "different transcript artifact" in failed.user_error
+            ),
         )
 
 
@@ -449,6 +457,12 @@ class ProcessingCoordinator:
         if artifact_name not in {"video", "audio", "transcript", "speakers"}:
             raise ValueError(f"Unsupported artifact {artifact_name!r}.")
         return self._submit(item_id, f"artifact:{artifact_name}")
+
+    def resolve_artifact_conflict(self, item_id: str, artifact_name: str, *, use_local: bool) -> bool:
+        if artifact_name not in {"video", "audio", "transcript", "speakers"}:
+            raise ValueError(f"Unsupported artifact {artifact_name!r}.")
+        choice = "local" if use_local else "server"
+        return self._submit(item_id, f"conflict:{artifact_name}:{choice}")
 
     def _submit(self, item_id: str, operation: str) -> bool:
         with self._lock:
@@ -605,6 +619,16 @@ class ProcessingCoordinator:
                     self._event_sink("progress", item_id, (stage, percent))
 
         try:
+            if operation.startswith("conflict:"):
+                _, artifact_name, choice = operation.split(":", 2)
+                self._event_sink("started", item_id, None)
+                return self.orchestrator.resolve_artifact_conflict(
+                    item_id,
+                    artifact_name,
+                    use_local=choice == "local",
+                    on_stage=stage_changed,
+                    on_progress=progress,
+                )
             if operation.startswith("artifact:"):
                 return self.orchestrator.retry_artifact(
                     item_id,
@@ -662,7 +686,13 @@ class ProcessingCoordinator:
     def _io_done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
         try:
             result: object = future.result()
-            kind = "artifact_completed" if operation.startswith("artifact:") else "completed"
+            kind = (
+                "conflict_resolved"
+                if operation.startswith("conflict:")
+                else "artifact_completed"
+                if operation.startswith("artifact:")
+                else "completed"
+            )
         except Exception as exception:
             result = exception
             kind = "failed"

@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .api import ApiError, WorkerApiClient
+from .api import ApiError, MeetingState, WorkerApiClient
 from .atomic import atomic_json
 from .diarization import SpeakerDiarizationService, merge_transcript
 from .domain import (
@@ -162,6 +162,53 @@ class Orchestrator:
                 self._run_stage(item_id, Stage.FINAL_RECONCILE, on_stage=on_stage, on_progress=on_progress)
         return self.store.get_item(item_id)
 
+    def resolve_artifact_conflict(
+        self,
+        item_id: str,
+        artifact_name: str,
+        *,
+        use_local: bool,
+        on_stage: Callable[[Stage, StageStatus], None] | None = None,
+        on_progress: Callable[[float], None] | None = None,
+    ) -> WorkerItem:
+        """Resolve an operator-confirmed remote artifact conflict without reprocessing media."""
+        if artifact_name not in ARTIFACT_STAGES:
+            raise ValueError(f"Unsupported artifact {artifact_name!r}.")
+        local_stage, upload_stage = ARTIFACT_STAGES[artifact_name]
+        item = self.store.get_item(item_id)
+        if item.server_meeting_id is None:
+            raise PipelineError("Artifact conflict resolution requires an existing server meeting.")
+        if self.store.stage(item_id, local_stage)["status"] != StageStatus.SUCCEEDED.value:
+            raise PipelineError(
+                f"{artifact_name.title()} cannot be resolved before local generation succeeds."
+            )
+
+        if use_local:
+            self.store.invalidate(item_id, {upload_stage, Stage.FINAL_RECONCILE})
+            self._run_stage(
+                item_id,
+                upload_stage,
+                replace_artifact=artifact_name,
+                on_stage=on_stage,
+                on_progress=on_progress,
+            )
+            self._run_stage(
+                item_id,
+                Stage.FINAL_RECONCILE,
+                on_stage=on_stage,
+                on_progress=on_progress,
+            )
+            return self.store.get_item(item_id)
+
+        remote = self.api.reconcile(item.server_meeting_id)
+        self._validate_remote_meeting(item, remote)
+        artifact = remote.artifacts[artifact_name]
+        if not artifact.uploaded or artifact.sha256 is None or artifact.bytes is None:
+            raise RemoteArtifactMissing(f"Server has no {artifact_name} artifact to keep.")
+        self.store.adopt_remote_artifact(item_id, artifact_name, artifact.sha256, artifact.bytes)
+        self._reconcile(self.store.get_item(item_id))
+        return self.store.get_item(item_id)
+
     def retry_diarization(self, item_id: str) -> WorkerItem:
         """Invalidate only diarization, merge, and their dependent uploads."""
         self.store.invalidate(item_id, dependent_stages(Stage.DIARIZE))
@@ -234,6 +281,7 @@ class Orchestrator:
         stage: Stage,
         *,
         cancel: threading.Event | None = None,
+        replace_artifact: str | None = None,
         on_stage: Callable[[Stage, StageStatus], None] | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> None:
@@ -242,7 +290,13 @@ class Orchestrator:
             on_stage(stage, StageStatus.RUNNING)
         try:
             item = self.store.get_item(item_id)
-            self._execute(item, stage, cancel=cancel, on_progress=on_progress)
+            self._execute(
+                item,
+                stage,
+                cancel=cancel,
+                replace_artifact=replace_artifact,
+                on_progress=on_progress,
+            )
             self.store.persist_stage_output(item, stage)
             self.store.finish_stage(item_id, stage)
             if on_stage is not None:
@@ -263,6 +317,7 @@ class Orchestrator:
         stage: Stage,
         *,
         cancel: threading.Event | None = None,
+        replace_artifact: str | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> None:
         item_dir = self.work_dir / item.item_id
@@ -344,13 +399,18 @@ class Orchestrator:
             meeting = self.api.create_meeting(item)
             item.server_meeting_id = meeting.id
         elif stage is Stage.VIDEO_UPLOAD:
-            self._upload(item, "video", on_progress=on_progress)
+            self._upload(item, "video", replace=replace_artifact == "video", on_progress=on_progress)
         elif stage is Stage.AUDIO_UPLOAD:
-            self._upload(item, "audio", on_progress=on_progress)
+            self._upload(item, "audio", replace=replace_artifact == "audio", on_progress=on_progress)
         elif stage is Stage.TRANSCRIPT_UPLOAD:
-            self._upload(item, "transcript", on_progress=on_progress)
+            self._upload(
+                item,
+                "transcript",
+                replace=replace_artifact == "transcript",
+                on_progress=on_progress,
+            )
         elif stage is Stage.SPEAKERS_UPLOAD:
-            self._upload(item, "speakers", on_progress=on_progress)
+            self._upload(item, "speakers", replace=replace_artifact == "speakers", on_progress=on_progress)
         elif stage is Stage.FINAL_RECONCILE:
             self._reconcile(item, final_stage_running=True)
         else:  # pragma: no cover
@@ -361,6 +421,7 @@ class Orchestrator:
         item: WorkerItem,
         artifact_name: str,
         *,
+        replace: bool = False,
         on_progress: Callable[[float], None] | None = None,
     ) -> None:
         path, expected_hash, expected_bytes, _ = self._local_artifact(item, artifact_name)
@@ -369,6 +430,7 @@ class Orchestrator:
             _required_int(item.server_meeting_id, "server meeting"),
             artifact_name,
             path,
+            replace=replace,
             on_progress=on_progress,
         )
         if result.sha256 != actual_hash or result.bytes != actual_bytes:
@@ -378,16 +440,8 @@ class Orchestrator:
 
     def _reconcile(self, item: WorkerItem, *, final_stage_running: bool = False) -> None:
         remote = self.api.reconcile(_required_int(item.server_meeting_id, "server meeting"))
-        if remote.worker_item_id.lower() != item.item_id.lower():
-            raise PipelineError("Server meeting belongs to a different worker item.")
-        if remote.client_id != item.client_id or remote.title != item.title:
-            raise ArtifactConflict("Server meeting metadata conflicts with local state.")
-        if remote.start_transcript_server:
-            raise ArtifactConflict("Server meeting unexpectedly owns transcription.")
-        if remote.duration_seconds != item.duration_seconds or not _same_instant(
-            remote.meeting_at, item.meeting_at
-        ):
-            raise ArtifactConflict("Server meeting time or duration conflicts with local state.")
+        self._validate_remote_meeting(item, remote)
+
         all_uploaded = True
         missing: list[tuple[str, Stage]] = []
         for artifact_name in ("video", "audio", "transcript", "speakers"):
@@ -423,6 +477,19 @@ class Orchestrator:
         elif final_stage_running:
             names = ", ".join(name for name, _ in missing)
             raise RemoteArtifactMissing(f"Server final reconciliation reports missing artifacts: {names}.")
+
+    @staticmethod
+    def _validate_remote_meeting(item: WorkerItem, remote: MeetingState) -> None:
+        if remote.worker_item_id.lower() != item.item_id.lower():
+            raise PipelineError("Server meeting belongs to a different worker item.")
+        if remote.client_id != item.client_id or remote.title != item.title:
+            raise ArtifactConflict("Server meeting metadata conflicts with local state.")
+        if remote.start_transcript_server:
+            raise ArtifactConflict("Server meeting unexpectedly owns transcription.")
+        if remote.duration_seconds != item.duration_seconds or not _same_instant(
+            remote.meeting_at, item.meeting_at
+        ):
+            raise ArtifactConflict("Server meeting time or duration conflicts with local state.")
 
     @staticmethod
     def _local_artifact(

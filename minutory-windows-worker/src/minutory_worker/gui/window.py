@@ -397,6 +397,10 @@ class ItemCard(QFrame):
         self.retry_audio = QPushButton("Retry audio")
         self.retry_transcript = QPushButton("Retry transcript")
         self.retry_speakers = QPushButton("Retry SpeakerID")
+        self.keep_server_transcript = QPushButton("Use server transcript")
+        self.keep_server_transcript.setObjectName("ghost")
+        self.replace_local_transcript = QPushButton("Replace with local transcript")
+        self.replace_local_transcript.setObjectName("dangerGhost")
         retry_actions = QHBoxLayout()
         retry_actions.setSpacing(6)
         self.retry_label = QLabel("Recovery options")
@@ -406,6 +410,8 @@ class ItemCard(QFrame):
         retry_actions.addWidget(self.retry_audio)
         retry_actions.addWidget(self.retry_transcript)
         retry_actions.addWidget(self.retry_speakers)
+        retry_actions.addWidget(self.keep_server_transcript)
+        retry_actions.addWidget(self.replace_local_transcript)
         retry_actions.addStretch()
         root.addLayout(retry_actions)
         self.remove = QPushButton("Remove")
@@ -450,6 +456,12 @@ class ItemCard(QFrame):
         )
         self.retry_speakers.clicked.connect(
             lambda: self._main_window.retry_artifact(self.item_id, "speakers")
+        )
+        self.keep_server_transcript.clicked.connect(
+            lambda: self._main_window.resolve_transcript_conflict(self.item_id, use_local=False)
+        )
+        self.replace_local_transcript.clicked.connect(
+            lambda: self._main_window.resolve_transcript_conflict(self.item_id, use_local=True)
         )
         self.remove.clicked.connect(lambda: self._main_window.remove_item(self.item_id))
         self.open_source.clicked.connect(
@@ -567,6 +579,9 @@ class ItemCard(QFrame):
         self.retry_label.setVisible(bool(view.retryable_artifacts))
         for name, button in retry_buttons.items():
             button.setVisible(name in view.retryable_artifacts)
+            button.setEnabled(not scheduled and view.active_stage is None)
+        for button in (self.keep_server_transcript, self.replace_local_transcript):
+            button.setVisible(view.transcript_conflict)
             button.setEnabled(not scheduled and view.active_stage is None)
         self.start.setText(
             f"Retry {failed.stage.value.replace('_', ' ')}" if failed is not None else "Start processing"
@@ -970,6 +985,25 @@ class MainWindow(QMainWindow):
         else:
             self.show_notice("That item is already scheduled.")
 
+    def resolve_transcript_conflict(self, item_id: str, *, use_local: bool) -> None:
+        if use_local:
+            title = "Replace server transcript?"
+            message = (
+                "The local transcript will replace the server transcript. "
+                "This changes the meeting record on the server."
+            )
+        else:
+            title = "Use server transcript?"
+            message = "The server transcript will be kept and this local item will be reconciled to it."
+        answer = QMessageBox.question(self, title, message)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self.coordinator.resolve_artifact_conflict(item_id, "transcript", use_local=use_local):
+            self.show_notice("Transcript conflict resolution scheduled.")
+            self.render_state()
+        else:
+            self.show_notice("That item is already scheduled.")
+
     def cancel_media(self) -> None:
         self.show_notice(
             "Cancellation requested; the current stage will remain retryable."
@@ -1074,6 +1108,8 @@ class MainWindow(QMainWindow):
             self.show_notice("Preflight complete. Review metadata and estimated output size.")
         elif kind == "artifact_completed":
             self.show_notice("Requested artifact retry completed.")
+        elif kind == "conflict_resolved":
+            self.show_notice("Transcript conflict resolved and reconciled with the server.")
         elif kind == "stage":
             if not isinstance(value, tuple) or len(value) != 2:
                 return

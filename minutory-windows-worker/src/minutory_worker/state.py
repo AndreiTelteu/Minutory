@@ -633,6 +633,38 @@ class StateStore:
                 ],
             )
 
+    def adopt_remote_artifact(
+        self,
+        item_id: str,
+        artifact: str,
+        sha256: str,
+        byte_count: int,
+    ) -> None:
+        """Make the server's verified artifact the durable reconciliation baseline."""
+        columns = {
+            "video": ("selected_video_sha256", "selected_video_bytes"),
+            "audio": ("audio_sha256", "audio_bytes"),
+            "transcript": ("transcript_sha256", "transcript_bytes"),
+            "speakers": ("speakers_sha256", "speakers_bytes"),
+        }
+        try:
+            hash_column, bytes_column = columns[artifact]
+        except KeyError as exception:
+            raise ValueError(f"Unsupported artifact {artifact!r}.") from exception
+        with self.transaction() as connection:
+            self._refuse_running(
+                connection,
+                item_id,
+                "Artifact conflict cannot be resolved while processing.",
+            )
+            cursor = connection.execute(
+                f"UPDATE items SET {hash_column} = ?, {bytes_column} = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE item_id = ?",
+                (sha256, byte_count, item_id),
+            )
+            if cursor.rowcount != 1:
+                raise StateError(f"Unknown item {item_id}.")
+
     def set_compression_preset(self, item_id: str, preset: str) -> bool:
         if preset not in COMPRESSION_PRESETS:
             raise ValueError(f"Unsupported compression preset {preset!r}.")
