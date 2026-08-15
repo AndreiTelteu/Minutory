@@ -16,20 +16,23 @@
                 </thead>
                 <tbody>
                     <tr v-for="row in rows" :key="row.key" class="border-b border-border last:border-0">
-                        <td class="py-3 pr-4 align-top text-[13px] font-medium">{{ row.label }}</td>
-                        <td class="py-3 pr-4 align-top">
-                            <div class="flex max-h-28 flex-row flex-wrap items-start gap-1 overflow-y-auto">
+                        <td class="py-3 pr-4 align-center text-[13px] font-medium">{{ row.label }}</td>
+                        <td class="py-3 pr-4 align-center">
+                            <div class="flex max-w-md flex-row flex-nowrap items-center gap-1 overflow-hidden">
                                 <button
-                                    v-for="segment in row.segments"
+                                    v-for="segment in row.segments.slice(0, 10)"
                                     :key="segment.id"
-                                    class="tnum rounded border border-border-strong px-2 py-0.5 text-[11px] text-ink-secondary hover:bg-ground-subtle hover:text-ink"
+                                    class="tnum shrink-0 rounded border border-border-strong px-2 py-0.5 text-[11px] text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink"
                                     @click="emit('seek', segment.start_time)"
                                 >
                                     {{ formatTime(segment.start_time) }}
                                 </button>
+                                <span v-if="row.segments.length > 10" class="tnum shrink-0 px-1.5 py-0.5 text-[11px] font-medium text-ink-tertiary">
+                                    +{{ row.segments.length - 10 }}
+                                </span>
                             </div>
                         </td>
-                        <td class="py-3 align-top">
+                        <td class="py-2 align-center">
                             <div class="relative max-w-sm">
                                 <input
                                     v-model="queries[row.key]"

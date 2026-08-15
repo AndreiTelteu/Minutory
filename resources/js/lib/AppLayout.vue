@@ -3,13 +3,17 @@
         <div class="flex min-h-screen bg-ground text-ink">
             <!-- Sidebar -->
             <aside
-                class="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-ground-subtle transition-transform duration-200 ease-out lg:static lg:translate-x-0"
-                :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+                class="fixed inset-y-0 left-0 z-40 flex w-60 flex-col overflow-hidden border-r border-border bg-ground-subtle whitespace-nowrap transition-[transform,width] duration-200 ease-out lg:translate-x-0"
+                :class="[
+                    sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+                    railMode ? 'group/sidebar lg:w-14 lg:hover:w-60 lg:hover:shadow-[0_8px_24px_rgb(0_0_0/0.12)] lg:dark:hover:shadow-[0_8px_24px_rgb(0_0_0/0.4)]' : '',
+                ]"
             >
                 <!-- Workspace -->
-                <div class="flex h-14 items-center gap-2.5 border-b border-border px-4">
-                    <div class="flex h-6 w-6 items-center justify-center rounded-md bg-accent-solid text-[11px] font-bold text-white">M</div>
-                    <span class="text-[14px] font-semibold tracking-tight">Minutory</span>
+                <div class="flex h-14 items-center gap-2.5 border-b border-border" :class="railMode ? 'px-4 lg:px-[14px] lg:hover:px-4' : 'px-4'">
+                    <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent-solid text-[11px] font-bold text-white">M</div>
+                    <span v-if="!railMode" class="text-[14px] font-semibold tracking-tight">Minutory</span>
+                    <span v-else class="text-[14px] font-semibold tracking-tight lg:hidden lg:group-hover/sidebar:inline">Minutory</span>
                 </div>
 
                 <!-- Search -->
@@ -17,12 +21,20 @@
                     <button
                         @click="spotlightRef?.show()"
                         class="flex w-full items-center gap-2.5 rounded-md border border-border bg-ground-raised px-2.5 py-1.5 text-[13px] text-ink-tertiary transition-colors duration-150 hover:border-border-strong hover:text-ink-secondary"
+                        :class="railMode ? 'lg:px-[7px] lg:hover:px-2.5' : ''"
+                        :title="railMode ? 'Search (⌘K)' : undefined"
                     >
                         <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                         </svg>
-                        <span class="flex-1 text-left">Search…</span>
-                        <kbd class="rounded border border-border bg-ground-subtle px-1 py-0.5 text-[10px]">⌘K</kbd>
+                        <template v-if="railMode">
+                            <span class="flex-1 text-left lg:hidden lg:group-hover/sidebar:inline">Search…</span>
+                            <kbd class="rounded border border-border bg-ground-subtle px-1 py-0.5 text-[10px] lg:hidden lg:group-hover/sidebar:inline">⌘K</kbd>
+                        </template>
+                        <template v-else>
+                            <span class="flex-1 text-left">Search…</span>
+                            <kbd class="rounded border border-border bg-ground-subtle px-1 py-0.5 text-[10px]">⌘K</kbd>
+                        </template>
                     </button>
                 </div>
 
@@ -32,33 +44,39 @@
                         v-for="item in navItems"
                         :key="item.label"
                         :href="route(item.route)"
+                        :title="railMode ? item.label : undefined"
                         :class="[
                             'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors duration-150',
                             item.active($page.component)
                                 ? 'bg-accent-subtle text-accent'
                                 : 'text-ink-secondary hover:bg-ground-raised hover:text-ink',
+                            railMode ? 'lg:px-[7px] lg:hover:px-2.5' : '',
                         ]"
                         @click="sidebarOpen = false"
                     >
                         <component :is="item.icon" class="h-4 w-4 shrink-0" />
-                        {{ item.label }}
+                        <span v-if="railMode" class="lg:hidden lg:group-hover/sidebar:inline">{{ item.label }}</span>
+                        <template v-else>{{ item.label }}</template>
                     </Link>
                 </nav>
 
                 <!-- Recent meetings -->
                 <div class="mt-4 flex min-h-0 flex-1 flex-col">
-                    <div class="px-4 pb-1 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Recent</div>
+                    <div v-if="!railMode" class="px-4 pb-1 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase">Recent</div>
+                    <div v-else class="px-4 pb-1 text-[11px] font-medium tracking-[0.05em] text-ink-tertiary uppercase lg:hidden lg:group-hover/sidebar:block">Recent</div>
                     <div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
                         <Link
                             v-for="m in sidebarMeetings"
                             :key="m.id"
                             :href="route('meetings.show', m.id)"
+                            :title="railMode ? m.title : undefined"
                             class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-ink-secondary transition-colors duration-150 hover:bg-ground-raised hover:text-ink"
-                            :class="{ 'bg-ground-raised text-ink': isActiveMeeting(m.id) }"
+                            :class="[{ 'bg-ground-raised text-ink': isActiveMeeting(m.id) }, railMode ? 'lg:px-[9px] lg:hover:px-2.5' : '']"
                             @click="sidebarOpen = false"
                         >
                             <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="statusDotClass(m.status)" />
-                            <span class="min-w-0 flex-1 truncate">{{ m.title }}</span>
+                            <span v-if="railMode" class="min-w-0 flex-1 truncate lg:hidden lg:group-hover/sidebar:block">{{ m.title }}</span>
+                            <span v-else class="min-w-0 flex-1 truncate">{{ m.title }}</span>
                         </Link>
                         <div v-if="sidebarMeetings.length === 0" class="px-2.5 py-1.5 text-[12px] text-ink-tertiary">No meetings yet</div>
                     </div>
@@ -69,6 +87,7 @@
                     <button
                         @click="toggleTheme"
                         class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-raised hover:text-ink"
+                        :class="railMode ? 'lg:px-[7px] lg:hover:px-2.5' : ''"
                     >
                         <svg v-if="isDark" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                             <path
@@ -84,7 +103,8 @@
                                 d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"
                             />
                         </svg>
-                        {{ isDark ? 'Light mode' : 'Dark mode' }}
+                        <span v-if="railMode" class="lg:hidden lg:group-hover/sidebar:inline">{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
+                        <template v-else>{{ isDark ? 'Light mode' : 'Dark mode' }}</template>
                     </button>
                 </div>
             </aside>
@@ -93,7 +113,7 @@
             <div v-if="sidebarOpen" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="sidebarOpen = false" />
 
             <!-- Content -->
-            <div class="flex min-w-0 flex-1 flex-col">
+            <div class="flex min-w-0 flex-1 flex-col" :class="railMode ? 'lg:pl-14' : ''">
                 <!-- Mobile top bar -->
                 <div class="flex h-14 items-center gap-3 border-b border-border bg-ground px-4 lg:hidden">
                     <button
@@ -193,6 +213,9 @@ interface SidebarMeeting {
 
 const sidebarOpen = ref(false);
 const isDark = ref(false);
+// On meeting detail, the sidebar rests as a slim icon rail and overlays
+// content on hover instead of pushing it (avoids video/transcript reflow).
+const railMode = computed(() => page.component === 'Meetings/Show');
 const toastComponent = ref();
 const spotlightRef = ref<InstanceType<typeof SpotlightSearch>>();
 
