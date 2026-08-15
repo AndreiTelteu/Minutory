@@ -428,6 +428,9 @@ constraints = pathlib.Path(repo) / "export-constraints.txt"
 constraints.write_text("\n".join([
     "torch==2.0.1", "torchaudio==2.0.2", "numpy==1.26.4",
     "pytorch-lightning==2.0.9", "torchmetrics==1.2.1", "setuptools==68.2.2",
+    # pyannote.audio 3.1 passes use_auth_token directly to hf_hub_download.
+    # That parameter was removed after huggingface-hub 0.10.
+    "huggingface-hub==0.10.1",
 ]) + "\n", encoding="utf-8")
 subprocess.check_call([python, "-m", "pip", "install", "--extra-index-url", "https://download.pytorch.org/whl/cpu", "-c", str(constraints), "pyannote.audio==3.1.1", "onnx"])
 subprocess.check_call([python, "-c", "from pyannote.audio import Pipeline"])
