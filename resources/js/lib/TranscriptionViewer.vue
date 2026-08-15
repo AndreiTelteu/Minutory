@@ -1,6 +1,6 @@
 <template>
     <div class="transcription-viewer flex min-h-0 flex-1 flex-col">
-        <div class="mb-3 flex shrink-0 items-center justify-between gap-3">
+        <div class="mb-3 flex shrink-0 items-center justify-between gap-3 px-4 pt-4">
             <h3 class="text-[13px] font-semibold">Transcript</h3>
             <div class="flex items-center gap-3">
                 <label class="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-secondary select-none">
@@ -17,14 +17,20 @@
         </div>
 
         <!-- Search -->
-        <div class="relative mb-3 shrink-0">
+        <div class="relative mb-3 shrink-0 px-4">
             <input
                 v-model="searchQuery"
                 type="text"
                 placeholder="Search transcript…"
                 class="w-full rounded-md border border-border-strong bg-ground-raised py-1.5 pr-3 pl-8 text-[13px] text-ink placeholder:text-ink-tertiary focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
             />
-            <svg class="absolute top-2 left-2.5 h-4 w-4 text-ink-tertiary" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <svg
+                class="absolute top-2 left-[26px] h-4 w-4 text-ink-tertiary"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                viewBox="0 0 24 24"
+            >
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
             </svg>
         </div>
@@ -32,7 +38,7 @@
         <!-- Segments -->
         <div
             ref="transcriptionContainer"
-            class="max-h-[70vh] min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-ground-subtle"
+            class="max-h-[70vh] min-h-0 flex-1 overflow-y-auto xl:max-h-none"
             @scroll.passive="onContainerScroll"
             @wheel.passive="onManualScrollIntent"
             @touchmove.passive="onManualScrollIntent"
@@ -41,7 +47,7 @@
                 {{ searchQuery ? 'No segments match your search.' : 'No transcription available.' }}
             </div>
 
-            <div v-else class="space-y-0.5 p-1.5">
+            <div v-else class="space-y-0.5 p-4 pt-0">
                 <div
                     v-for="transcription in filteredTranscriptions"
                     :key="transcription.id"
@@ -236,17 +242,20 @@ watch(currentSegment, (newSegment) => {
     }
 });
 
-watch(() => props.currentTime, () => {
-    if (!autoScroll.value) return;
-    const el = currentSegment.value ? transcriptionRefs.value.get(currentSegment.value.id) : null;
-    if (!el || !transcriptionContainer.value) return;
-    const container = transcriptionContainer.value;
-    const rect = el.getBoundingClientRect();
-    const crect = container.getBoundingClientRect();
-    if (rect.top < crect.top || rect.bottom > crect.bottom) {
-        scrollToCurrentSegment();
-    }
-});
+watch(
+    () => props.currentTime,
+    () => {
+        if (!autoScroll.value) return;
+        const el = currentSegment.value ? transcriptionRefs.value.get(currentSegment.value.id) : null;
+        if (!el || !transcriptionContainer.value) return;
+        const container = transcriptionContainer.value;
+        const rect = el.getBoundingClientRect();
+        const crect = container.getBoundingClientRect();
+        if (rect.top < crect.top || rect.bottom > crect.bottom) {
+            scrollToCurrentSegment();
+        }
+    },
+);
 
 watch(searchQuery, () => {
     currentSegmentIndex.value = -1;
