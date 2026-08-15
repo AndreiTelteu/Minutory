@@ -16,7 +16,13 @@
                 <div class="mt-2 flex flex-wrap items-center gap-3">
                     <h1 class="text-[20px] font-semibold tracking-tight">{{ meeting.title }}</h1>
                     <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
-
+                    <button
+                        v-if="meeting.status === 'completed' && meeting.transcriptions?.length"
+                        class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink"
+                        @click="speakerEditorOpen = !speakerEditorOpen"
+                    >
+                        {{ speakerEditorOpen ? 'Hide speakers' : 'Edit speakers' }}
+                    </button>
                 </div>
                 <Link :href="route('clients.show', meeting.client.id)" class="mt-1 inline-block text-[13px] text-ink-secondary hover:text-accent">
                     {{ meeting.client.name }}
@@ -92,10 +98,12 @@
                         </span>
                     </div>
                     <SpeakerEditorModal
+                        :open="speakerEditorOpen"
                         :meeting-id="meeting.id"
                         :client-name="meeting.client.name"
                         :people="meeting.client.persons || []"
                         :transcriptions="meeting.transcriptions || []"
+                        @close="speakerEditorOpen = false"
                         @seek="onTranscriptionTimestampClick"
                     />
                 </section>
@@ -237,6 +245,7 @@ interface Props {
 
 const props = defineProps<Props>();
 
+const speakerEditorOpen = ref(false);
 const videoPlayerRef = ref<InstanceType<typeof VideoPlayer> | null>(null);
 const transcriptionViewerRef = ref<InstanceType<typeof TranscriptionViewer> | null>(null);
 

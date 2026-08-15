@@ -1,5 +1,5 @@
 <template>
-    <section class="mt-6 rounded-lg border border-border bg-ground-raised p-5">
+    <section v-if="open" class="mt-6 rounded-lg border border-border bg-ground-raised p-5">
         <header class="mb-4">
             <h2 class="text-[15px] font-semibold">Speakers</h2>
             <p class="mt-0.5 text-[12px] text-ink-secondary">Match detected labels to people for {{ clientName }}.</p>
@@ -18,7 +18,7 @@
                     <tr v-for="row in rows" :key="row.key" class="border-b border-border last:border-0">
                         <td class="py-3 pr-4 align-top text-[13px] font-medium">{{ row.label }}</td>
                         <td class="py-3 pr-4 align-top">
-                            <div class="flex max-h-28 flex-col items-start gap-1 overflow-y-auto">
+                            <div class="flex max-h-28 flex-row flex-wrap items-start gap-1 overflow-y-auto">
                                 <button
                                     v-for="segment in row.segments"
                                     :key="segment.id"
@@ -82,7 +82,10 @@
             <p v-if="createError" class="mt-2 text-[12px] text-red-600">{{ createError }}</p>
         </form>
 
-        <footer class="mt-4 flex justify-end">
+        <footer class="mt-4 flex justify-end gap-2">
+            <button class="rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-ink-secondary hover:bg-ground-subtle" @click="emit('close')">
+                Cancel
+            </button>
             <button class="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white hover:bg-accent-solid-hover disabled:opacity-50" :disabled="saving" @click="save">
                 {{ saving ? 'Saving…' : 'Save speakers' }}
             </button>
@@ -98,8 +101,8 @@ interface Person { id: number; name: string; email: string | null }
 interface Segment { id: number; detected_speaker: string | null; speaker: string | null; start_time: number; person_id?: number | null }
 interface Row { key: string; label: string; segments: Segment[] }
 
-const props = defineProps<{ meetingId: number; clientName: string; people: Person[]; transcriptions: Segment[] }>();
-const emit = defineEmits<{ seek: [time: number] }>();
+const props = defineProps<{ open: boolean; meetingId: number; clientName: string; people: Person[]; transcriptions: Segment[] }>();
+const emit = defineEmits<{ close: []; seek: [time: number] }>();
 const people = ref<Person[]>([]);
 const activeRow = ref<string | null>(null);
 const queries = reactive<Record<string, string>>({});
@@ -124,7 +127,7 @@ const rows = computed<Row[]>(() => {
     }));
 });
 
-watch(() => [props.people, props.transcriptions] as const, () => {
+watch(() => [props.open, props.people, props.transcriptions] as const, () => {
     people.value = [...props.people];
     rows.value.forEach((row) => {
         const personId = row.segments.find((segment) => segment.person_id)?.person_id ?? null;
@@ -186,6 +189,7 @@ const save = () => {
         })),
     }, {
         preserveScroll: true,
+        onSuccess: () => emit('close'),
         onFinish: () => { saving.value = false; },
     });
 };
