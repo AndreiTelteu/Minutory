@@ -407,7 +407,10 @@ subprocess.check_call([python, "-m", "pip", "install", "--upgrade", "pip"])
 # Keep every related package constrained so pip cannot upgrade only one member
 # of the legacy export stack after resolving pyannote's transitive packages.
 constraints = pathlib.Path(repo) / "export-constraints.txt"
-constraints.write_text("torch==2.0.1\\ntorchaudio==2.0.2\\nnumpy==1.26.4\\npytorch-lightning==2.0.9\\ntorchmetrics==1.2.1\\nsetuptools==68.2.2\\n", encoding="utf-8")
+constraints.write_text("\n".join([
+    "torch==2.0.1", "torchaudio==2.0.2", "numpy==1.26.4",
+    "pytorch-lightning==2.0.9", "torchmetrics==1.2.1", "setuptools==68.2.2",
+]) + "\n", encoding="utf-8")
 subprocess.check_call([python, "-m", "pip", "install", "--extra-index-url", "https://download.pytorch.org/whl/cpu", "-c", str(constraints), "pyannote.audio==3.1.1", "onnx"])
 subprocess.check_call([python, "-c", "from pyannote.audio import Pipeline"])
 completed = subprocess.run([python, repo + "/export_onnx.py", "--use_auth_token", token], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
