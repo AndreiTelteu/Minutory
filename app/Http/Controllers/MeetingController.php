@@ -316,6 +316,15 @@ class MeetingController extends Controller
             'assignments.*.person_id' => ['nullable', 'integer'],
         ]);
 
+        $assignmentKeys = collect($validated['assignments'])
+            ->map(fn (array $assignment) => $this->speakerKey($assignment['speaker'] ?? null));
+
+        if ($assignmentKeys->count() !== $assignmentKeys->unique()->count()) {
+            throw ValidationException::withMessages([
+                'assignments' => 'Each detected speaker can only be assigned once.',
+            ]);
+        }
+
         $assignments = collect($validated['assignments'])
             ->mapWithKeys(fn (array $assignment) => [$this->speakerKey($assignment['speaker'] ?? null) => $assignment['person_id'] ?? null]);
         $personIds = $assignments->filter()->values();
@@ -333,7 +342,7 @@ class MeetingController extends Controller
 
         DB::transaction(function () use ($meeting, $assignments, $people): void {
             $meeting->transcriptions()->lockForUpdate()->get()->each(function ($transcription) use ($assignments, $people): void {
-                $key = $this->speakerKey($transcription->speaker);
+                $key = $this->speakerKey($transcription->detected_speaker);
 
                 if (! $assignments->has($key)) {
                     return;
@@ -342,7 +351,10 @@ class MeetingController extends Controller
                 $personId = $assignments->get($key);
 
                 if (! $personId) {
-                    $transcription->update(['person_id' => null]);
+                    $transcription->update([
+                        'person_id' => null,
+                        'speaker' => $transcription->detected_speaker,
+                    ]);
 
                     return;
                 }
@@ -370,6 +382,13 @@ class MeetingController extends Controller
             'client_id' => 'required|exists:clients,id',
             'meeting_at' => $this->meetingAtRules(),
         ]);
+
+        if ((int) $validated['client_id'] !== $meeting->client_id
+            && $meeting->transcriptions()->whereNotNull('person_id')->exists()) {
+            throw ValidationException::withMessages([
+                'client_id' => 'A meeting with assigned speakers cannot be moved to another client.',
+            ]);
+        }
 
         $meeting->update([
             'title' => $validated['title'],

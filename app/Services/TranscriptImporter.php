@@ -253,6 +253,7 @@ class TranscriptImporter
         foreach ($segments as $segment) {
             $attributes = [
                 'meeting_id' => $meeting->id,
+                'detected_speaker' => $segment['speaker'],
                 'speaker' => $segment['speaker'],
                 'text' => $segment['text'],
                 'start_time' => $segment['start'],

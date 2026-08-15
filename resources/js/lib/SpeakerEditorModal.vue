@@ -102,7 +102,7 @@ import { router } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
 
 interface Person { id: number; name: string; email: string | null }
-interface Segment { id: number; speaker: string | null; start_time: number; person_id?: number | null }
+interface Segment { id: number; detected_speaker: string | null; speaker: string | null; start_time: number; person_id?: number | null }
 interface Row { key: string; label: string; segments: Segment[] }
 interface SegmentWithPerson extends Segment { person_id?: number | null }
 
@@ -121,7 +121,7 @@ const createError = ref('');
 const rows = computed<Row[]>(() => {
     const grouped = new Map<string, Segment[]>();
     props.transcriptions.forEach((segment) => {
-        const key = segment.speaker?.trim() || '__unknown__';
+        const key = segment.detected_speaker?.trim() || '__unknown__';
         grouped.set(key, [...(grouped.get(key) ?? []), segment]);
     });
     return [...grouped.entries()].map(([key, segments]) => ({

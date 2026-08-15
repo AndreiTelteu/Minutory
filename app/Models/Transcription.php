@@ -13,6 +13,7 @@ class Transcription extends Model
     protected $fillable = [
         'meeting_id',
         'person_id',
+        'detected_speaker',
         'speaker',
         'text',
         'start_time',

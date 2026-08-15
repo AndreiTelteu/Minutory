@@ -17,6 +17,10 @@ class SpeakerAssignmentService
     {
         $updated = 0;
         foreach ($meeting->transcriptions()->cursor() as $segment) {
+            if ($segment->person_id !== null) {
+                continue;
+            }
+
             /** @var array<string, float> $durations */
             $durations = [];
             foreach ($turns as $turn) {
@@ -31,8 +35,11 @@ class SpeakerAssignmentService
             }
             uksort($durations, fn (string $left, string $right): int => $durations[$right] <=> $durations[$left] ?: $left <=> $right);
             $speaker = array_key_first($durations);
-            if ($speaker !== null && $segment->speaker !== $speaker) {
-                $segment->update(['speaker' => $speaker]);
+            if ($speaker !== null && $segment->detected_speaker !== $speaker) {
+                $segment->update([
+                    'detected_speaker' => $speaker,
+                    'speaker' => $speaker,
+                ]);
                 $updated++;
             }
         }

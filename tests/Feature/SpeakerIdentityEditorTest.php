@@ -32,10 +32,10 @@ it('renames all selected source labels atomically while preserving unassigned la
     $client = Client::factory()->create();
     $meeting = Meeting::factory()->completed()->for($client)->create();
     $person = Person::create(['client_id' => $client->id, 'name' => 'Ana Popescu']);
-    $first = Transcription::factory()->forMeeting($meeting)->create(['speaker' => 'SPEAKER_00']);
-    $second = Transcription::factory()->forMeeting($meeting)->create(['speaker' => 'SPEAKER_01']);
-    $unassigned = Transcription::factory()->forMeeting($meeting)->create(['speaker' => 'SPEAKER_02']);
-    $unknown = Transcription::factory()->forMeeting($meeting)->create(['speaker' => null]);
+    $first = Transcription::factory()->forMeeting($meeting)->create(['detected_speaker' => 'SPEAKER_00', 'speaker' => 'SPEAKER_00']);
+    $second = Transcription::factory()->forMeeting($meeting)->create(['detected_speaker' => 'SPEAKER_01', 'speaker' => 'SPEAKER_01']);
+    $unassigned = Transcription::factory()->forMeeting($meeting)->create(['detected_speaker' => 'SPEAKER_02', 'speaker' => 'SPEAKER_02']);
+    $unknown = Transcription::factory()->forMeeting($meeting)->create(['detected_speaker' => null, 'speaker' => null]);
 
     $this->put(route('meetings.speakers.update', $meeting), [
         'assignments' => [
@@ -67,26 +67,30 @@ it('removes an existing person assignment when a detected label is left unassign
     $person = Person::create(['client_id' => $client->id, 'name' => 'Ana Popescu']);
     $transcription = Transcription::factory()->forMeeting($meeting)->create([
         'person_id' => $person->id,
+        'detected_speaker' => 'SPEAKER_00',
         'speaker' => 'Ana Popescu',
     ]);
 
     $this->put(route('meetings.speakers.update', $meeting), [
         'assignments' => [
-            ['speaker' => 'Ana Popescu', 'person_id' => null],
+            ['speaker' => 'SPEAKER_00', 'person_id' => null],
         ],
     ])->assertRedirect();
 
     $this->assertDatabaseHas('transcriptions', [
         'id' => $transcription->id,
         'person_id' => null,
-        'speaker' => 'Ana Popescu',
+        'speaker' => 'SPEAKER_00',
     ]);
 });
 
 it('rejects people belonging to another client without changing any transcription', function (): void {
     $meeting = Meeting::factory()->completed()->create();
     $otherPerson = Person::create(['client_id' => Client::factory()->create()->id, 'name' => 'Other Client Person']);
-    $transcription = Transcription::factory()->forMeeting($meeting)->create(['speaker' => 'SPEAKER_00']);
+    $transcription = Transcription::factory()->forMeeting($meeting)->create([
+        'detected_speaker' => 'SPEAKER_00',
+        'speaker' => 'SPEAKER_00',
+    ]);
 
     $this->put(route('meetings.speakers.update', $meeting), [
         'assignments' => [
@@ -108,4 +112,15 @@ it('does not allow editing speakers until a meeting is completed', function (): 
     $this->put(route('meetings.speakers.update', $meeting), [
         'assignments' => [['speaker' => 'SPEAKER_00', 'person_id' => $person->id]],
     ])->assertStatus(422);
+});
+
+it('rejects duplicate detected speaker assignments', function (): void {
+    $meeting = Meeting::factory()->completed()->create();
+
+    $this->put(route('meetings.speakers.update', $meeting), [
+        'assignments' => [
+            ['speaker' => 'SPEAKER_00', 'person_id' => null],
+            ['speaker' => 'SPEAKER_00', 'person_id' => null],
+        ],
+    ])->assertSessionHasErrors('assignments');
 });

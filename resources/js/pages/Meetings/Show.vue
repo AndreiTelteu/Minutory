@@ -210,6 +210,7 @@ interface Client {
 
 interface Transcription {
     id: number;
+    detected_speaker: string | null;
     person_id: number | null;
     speaker: string | null;
     text: string;
