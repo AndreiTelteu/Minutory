@@ -403,10 +403,13 @@ python = r"$exportPython"
 subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/samson6460/pyannote-onnx-extended.git", repo])
 subprocess.check_call(["git", "-C", repo, "-c", "advice.detachedHead=false", "checkout", "edb7dbc1f6fa5c586064665c016947fc0057a32c"])
 subprocess.check_call([python, "-m", "pip", "install", "--upgrade", "pip"])
-# pyannote 3.1 calls torchaudio.set_audio_backend, removed by newer
-# torchaudio releases. This build-only venv avoids contaminating the worker.
-subprocess.check_call([python, "-m", "pip", "install", "torch==2.0.1", "torchaudio==2.0.2", "--index-url", "https://download.pytorch.org/whl/cpu"])
-subprocess.check_call([python, "-m", "pip", "install", "pyannote.audio==3.1.1", "onnx"])
+# pyannote 3.1 calls torchaudio.set_audio_backend, removed by newer releases.
+# Keep every related package constrained so pip cannot upgrade only one member
+# of the legacy export stack after resolving pyannote's transitive packages.
+constraints = pathlib.Path(repo) / "export-constraints.txt"
+constraints.write_text("torch==2.0.1\\ntorchaudio==2.0.2\\nnumpy==1.26.4\\npytorch-lightning==2.0.9\\ntorchmetrics==1.2.1\\nsetuptools==68.2.2\\n", encoding="utf-8")
+subprocess.check_call([python, "-m", "pip", "install", "--extra-index-url", "https://download.pytorch.org/whl/cpu", "-c", str(constraints), "pyannote.audio==3.1.1", "onnx"])
+subprocess.check_call([python, "-c", "from pyannote.audio import Pipeline"])
 completed = subprocess.run([python, repo + "/export_onnx.py", "--use_auth_token", token], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 log = pathlib.Path(repo) / "export.log"
 log.write_text(completed.stdout.replace(token, "[REDACTED]"), encoding="utf-8")
