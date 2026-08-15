@@ -448,7 +448,7 @@ log = pathlib.Path(repo) / "export.log"
 log.write_text(completed.stdout.replace(token, "[REDACTED]"), encoding="utf-8")
 if completed.returncode:
     raise SystemExit("ONNX exporter failed; inspect " + str(log))
-"@ | & $python -
+"@ | & $python - | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "Could not export the gated pyannote/speaker-diarization-3.1 ONNX bundle. Verify terms acceptance without printing the token." }
     $exportedModels = Join-Path $modelStaging "repo\models_onnx"
     foreach ($file in @("segmentation.onnx", "embedding.onnx")) {
