@@ -428,11 +428,20 @@ constraints = pathlib.Path(repo) / "export-constraints.txt"
 constraints.write_text("\n".join([
     "torch==2.0.1", "torchaudio==2.0.2", "numpy==1.26.4",
     "pytorch-lightning==2.0.9", "torchmetrics==1.2.1", "setuptools==68.2.2",
-    # pyannote.audio 3.1 passes use_auth_token directly to hf_hub_download.
-    # That parameter was removed after huggingface-hub 0.10.
-    "huggingface-hub==0.10.1",
 ]) + "\n", encoding="utf-8")
 subprocess.check_call([python, "-m", "pip", "install", "--extra-index-url", "https://download.pytorch.org/whl/cpu", "-c", str(constraints), "pyannote.audio==3.1.1", "onnx"])
+# pyannote.audio 3.1 still passes use_auth_token to hf_hub_download even
+# though its declared Hub dependency requires a newer Hub API. Patch only the
+# temporary exporter interpreter, mapping the legacy parameter to token.
+sitecustomize = pathlib.Path(python).parent.parent / "Lib" / "site-packages" / "sitecustomize.py"
+sitecustomize.write_text("""import huggingface_hub
+_minutory_original_download = huggingface_hub.hf_hub_download
+def _minutory_download_compat(*args, use_auth_token=None, **kwargs):
+    if use_auth_token is not None:
+        kwargs.setdefault('token', use_auth_token)
+    return _minutory_original_download(*args, **kwargs)
+huggingface_hub.hf_hub_download = _minutory_download_compat
+""", encoding="utf-8")
 subprocess.check_call([python, "-c", "from pyannote.audio import Pipeline"])
 completed = subprocess.run([python, repo + "/export_onnx.py", "--use_auth_token", token], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 log = pathlib.Path(repo) / "export.log"
