@@ -142,7 +142,7 @@ const scrollToCurrentSegment = async () => {
     const element = transcriptionRefs.value.get(currentSegment.value.id);
     if (element) {
         markProgrammaticScroll();
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.scrollIntoView({ behavior: 'auto', block: 'center' });
     }
 };
 
@@ -196,6 +196,18 @@ const scrollToNext = (): number | null => {
     return navigateToSegment(index);
 };
 
+const seekTo = async (time: number) => {
+    autoScroll.value = true;
+    await nextTick();
+    const target = props.transcriptions.find((t) => time >= t.start_time && time <= t.end_time);
+    if (!target || !transcriptionContainer.value) return;
+    const element = transcriptionRefs.value.get(target.id);
+    if (element) {
+        markProgrammaticScroll();
+        element.scrollIntoView({ behavior: 'auto', block: 'center' });
+    }
+};
+
 const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -224,6 +236,18 @@ watch(currentSegment, (newSegment) => {
     }
 });
 
+watch(() => props.currentTime, () => {
+    if (!autoScroll.value) return;
+    const el = currentSegment.value ? transcriptionRefs.value.get(currentSegment.value.id) : null;
+    if (!el || !transcriptionContainer.value) return;
+    const container = transcriptionContainer.value;
+    const rect = el.getBoundingClientRect();
+    const crect = container.getBoundingClientRect();
+    if (rect.top < crect.top || rect.bottom > crect.bottom) {
+        scrollToCurrentSegment();
+    }
+});
+
 watch(searchQuery, () => {
     currentSegmentIndex.value = -1;
 });
@@ -231,6 +255,7 @@ watch(searchQuery, () => {
 defineExpose({
     scrollToPrevious,
     scrollToNext,
+    seekTo,
     hasPrevious,
     hasNext,
     currentSegmentIndex,

@@ -295,6 +295,7 @@ const onTranscriptionTimestampClick = (time: number | string) => {
     if (videoPlayerRef.value) {
         videoPlayerRef.value.seekTo(timestamp);
     }
+    transcriptionViewerRef.value?.seekTo(timestamp);
     videoCurrentTime.value = timestamp;
 };
 

@@ -15,7 +15,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="row in rows" :key="row.key" class="border-b border-border last:border-0">
+                    <template v-for="row in rows" :key="row.key">
+                    <tr class="border-b border-border last:border-0">
                         <td class="py-3 pr-4 align-center text-[13px] font-medium">{{ row.label }}</td>
                         <td class="py-3 pr-4 align-center">
                             <div class="flex max-w-md flex-row flex-nowrap items-center gap-1 overflow-hidden">
@@ -63,27 +64,29 @@
                             </div>
                         </td>
                     </tr>
+                    <tr v-if="createRow?.key === row.key" class="border-b border-border last:border-0">
+                        <td colspan="3" class="py-3">
+                            <form class="flex flex-wrap items-end gap-3" @submit.prevent="createPerson">
+                                <div class="min-w-48 flex-1">
+                                    <label class="block text-[12px] font-medium text-ink-secondary">New person</label>
+                                    <input v-model="newPerson.name" class="mt-1 w-full rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] focus:border-accent focus:outline-none" />
+                                </div>
+                                <div class="min-w-48 flex-1">
+                                    <label class="block text-[12px] font-medium text-ink-secondary">Email <span class="font-normal text-ink-tertiary">optional</span></label>
+                                    <input v-model="newPerson.email" type="email" class="mt-1 w-full rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] focus:border-accent focus:outline-none" />
+                                </div>
+                                <button type="button" class="rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-ink-secondary hover:bg-ground-subtle" @click="createRow = null">Cancel</button>
+                                <button type="submit" class="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white hover:bg-accent-solid-hover disabled:opacity-50" :disabled="creating || !newPerson.name.trim()">
+                                    {{ creating ? 'Creating…' : 'Create person' }}
+                                </button>
+                            </form>
+                            <p v-if="createError" class="mt-2 text-[12px] text-red-600">{{ createError }}</p>
+                        </td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
         </div>
-
-        <form v-if="createRow" class="mt-5 rounded-md border border-border bg-ground-subtle p-4" @submit.prevent="createPerson">
-            <div class="flex flex-wrap items-end gap-3">
-                <div class="min-w-48 flex-1">
-                    <label class="block text-[12px] font-medium text-ink-secondary">New person</label>
-                    <input v-model="newPerson.name" class="mt-1 w-full rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] focus:border-accent focus:outline-none" />
-                </div>
-                <div class="min-w-48 flex-1">
-                    <label class="block text-[12px] font-medium text-ink-secondary">Email <span class="font-normal text-ink-tertiary">optional</span></label>
-                    <input v-model="newPerson.email" type="email" class="mt-1 w-full rounded-md border border-border-strong bg-ground-raised px-2.5 py-1.5 text-[13px] focus:border-accent focus:outline-none" />
-                </div>
-                <button type="button" class="rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-ink-secondary hover:bg-ground-raised" @click="createRow = null">Cancel</button>
-                <button type="submit" class="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white hover:bg-accent-solid-hover disabled:opacity-50" :disabled="creating || !newPerson.name.trim()">
-                    {{ creating ? 'Creating…' : 'Create person' }}
-                </button>
-            </div>
-            <p v-if="createError" class="mt-2 text-[12px] text-red-600">{{ createError }}</p>
-        </form>
 
         <footer class="mt-4 flex justify-end gap-2">
             <button class="rounded-md border border-border-strong px-3 py-1.5 text-[13px] font-medium text-ink-secondary hover:bg-ground-subtle" @click="emit('close')">
