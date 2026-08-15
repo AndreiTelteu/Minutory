@@ -53,6 +53,24 @@ $FfmpegExpectedFiles = @(
     "bin/avfilter-10.dll", "bin/swscale-8.dll", "bin/swresample-5.dll"
 )
 
+function Get-LocalDotEnvValue {
+    param([string]$Name)
+    $envFile = Join-Path $Root ".env"
+    if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) { return $null }
+    foreach ($raw in Get-Content -LiteralPath $envFile) {
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith("#")) { continue }
+        if ($line -match "^$([regex]::Escape($Name))=(.*)$") {
+            $value = $Matches[1].Trim()
+            if ($value.Length -ge 2 -and (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'")))) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+            return $value
+        }
+    }
+    return $null
+}
+
 # ---------------------------------------------------------------------------
 #  Hash utilities — identical to bootstrap.ps1
 # ---------------------------------------------------------------------------
@@ -383,9 +401,9 @@ function Build-DiarizationModelPackage {
               elseif (Get-Command "python" -ErrorAction SilentlyContinue) { "python" }
               elseif (Get-Command "python3" -ErrorAction SilentlyContinue) { "python3" }
               else { throw "Python is required to export the accepted gated pyannote model." }
-    $token = $env:MINUTORY_DIARIZATION_TOKEN
-    if ([string]::IsNullOrWhiteSpace($token)) {
-        throw "Accept pyannote/speaker-diarization-3.1 terms, then set MINUTORY_DIARIZATION_TOKEN only for this resolver session. The token is never written to a manifest, .env, archive, or log."
+    $token = if (-not [string]::IsNullOrWhiteSpace($env:MINUTORY_DIARIZATION_TOKEN)) { $env:MINUTORY_DIARIZATION_TOKEN } else { Get-LocalDotEnvValue "MINUTORY_DIARIZATION_TOKEN" }
+    if ([string]::IsNullOrWhiteSpace($token) -or $token -eq "[REDACTED]") {
+        throw "Accept pyannote/speaker-diarization-3.1 terms, then set MINUTORY_DIARIZATION_TOKEN in the ignored .env file or the current PowerShell environment. The token is never written to a manifest, archive, or log."
     }
     & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)" 2>$null
     if ($LASTEXITCODE -ne 0) {

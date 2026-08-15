@@ -114,12 +114,14 @@ force `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`; a missing model is an
 actionable startup error, never a network download.
 
 For diarization assets, first accept the gated
-`pyannote/speaker-diarization-3.1` terms in Hugging Face. In a single PowerShell
-session only, set `MINUTORY_DIARIZATION_TOKEN` and run `./resolve-assets.ps1`.
+`pyannote/speaker-diarization-3.1` terms in Hugging Face. Set
+`MINUTORY_DIARIZATION_TOKEN` in the ignored local `.env`, then run
+`./resolve-assets.ps1`.
 The resolver pins and exports the audited `pyannote-onnx-extended` commit into
 `models/pyannote-diarization-3.1-onnx` and builds the offline DirectML wheelhouse.
-Do not put that token in `.env`; bootstrap and normal worker startup never read
-or contact Hugging Face.
+The resolver reads it only from the ignored local `.env` (or a process
+environment override); bootstrap and normal worker startup never read or contact
+Hugging Face.
 The export step uses an isolated Python 3.11 virtual environment because the
 model's compatible `pyannote.audio` version requires the legacy torchaudio API.
 Set `MINUTORY_EXPORT_PYTHON` to a Python 3.11 executable only when your default
