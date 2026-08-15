@@ -204,6 +204,7 @@ class SerialOrchestrator:
     def __init__(self, items):
         self.store = FakeStore(items)
         self.calls: list[str] = []
+        self.stage_batches: list[tuple[Stage, ...]] = []
         self.concurrent = 0
         self.maximum_concurrent = 0
         self.release = threading.Event()
@@ -212,6 +213,7 @@ class SerialOrchestrator:
 
     def process_stages(self, item_id, stages, *, cancel=None, on_stage=None, on_progress=None):
         self.calls.append(item_id)
+        self.stage_batches.append(tuple(stages))
         if Stage.TRANSCRIBE in stages:
             self.concurrent += 1
             self.maximum_concurrent = max(self.maximum_concurrent, self.concurrent)
@@ -335,8 +337,21 @@ def test_dual_lane_serializes_transcription_and_overlaps_uploads(item: WorkerIte
     orchestrator.io_release.set()
     wait_until(lambda: not coordinator.busy)
     assert orchestrator.maximum_concurrent == 1
-    assert orchestrator.calls.count(item.item_id) == 5
-    assert orchestrator.calls.count(second.item_id) == 5
+    assert orchestrator.calls.count(item.item_id) == 4
+    assert orchestrator.calls.count(second.item_id) == 4
+    assert coordinator.close()
+
+
+def test_gpu_lane_follows_the_visible_processing_order(item: WorkerItem) -> None:
+    orchestrator = SerialOrchestrator([item])
+    orchestrator.release.set()
+    coordinator = ProcessingCoordinator(orchestrator)
+    assert coordinator.start(item.item_id)
+    wait_until(lambda: not coordinator.busy)
+    assert orchestrator.stage_batches[:2] == [
+        (Stage.PROBE, Stage.WAV),
+        (Stage.SOURCE, Stage.TRANSCRIBE, Stage.DIARIZE),
+    ]
     assert coordinator.close()
 
 
@@ -366,10 +381,10 @@ def test_gpu_lane_failure_skips_io_and_retry_recovers(item: WorkerItem) -> None:
     coordinator = ProcessingCoordinator(orchestrator)
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
-    assert orchestrator.calls.count(item.item_id) == 3
+    assert orchestrator.calls.count(item.item_id) == 2
     assert coordinator.start(item.item_id)
     wait_until(lambda: not coordinator.busy)
-    assert orchestrator.calls.count(item.item_id) == 8
+    assert orchestrator.calls.count(item.item_id) == 6
     assert coordinator.close()
 
 

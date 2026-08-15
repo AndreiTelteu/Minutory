@@ -423,26 +423,23 @@ EventSink = Callable[[str, str, object | None], None]
 
 
 class ProcessingCoordinator:
-    """Bounded ASR, DirectML diarization, and IO lanes.
+    """Bounded GPU and IO lanes.
 
-    The GPU lane runs probe/source/wav/transcribe for one item at a time so only
-    one ASR model lives in VRAM. As soon as an item finishes transcribing, the GPU
-    lane starts the next item while the finished item's meeting creation and uploads
-    proceed on the IO lane.
+    The GPU lane runs audio conversion, compression, transcription, and SpeakerID
+    for one item at a time, in the same order shown in the interface. Completed
+    items then continue meeting creation and uploads on the IO lane.
     """
 
     def __init__(self, orchestrator: Orchestrator, event_sink: EventSink | None = None) -> None:
         self.orchestrator = orchestrator
         self._event_sink = event_sink or (lambda _kind, _item_id, _value: None)
         self._gpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-gpu")
-        self._cpu_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="minutory-directml")
         self._io_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="minutory-io")
         self._lock = threading.RLock()
         self._scheduled: dict[str, str] = {}
         self._gpu_item: str | None = None
         self._gpu_stage: Stage | None = None
         self._io_stages: dict[str, Stage | None] = {}
-        self._cpu_futures: dict[str, Future[WorkerItem]] = {}
         self._progress: dict[str, tuple[Stage, int]] = {}
         self._cancel = threading.Event()
         self._closed = False
@@ -480,12 +477,6 @@ class ProcessingCoordinator:
     def _submit_gpu(self, item_id: str, operation: str) -> None:
         future = self._gpu_executor.submit(self._run_gpu, item_id, operation)
         future.add_done_callback(lambda result: self._gpu_done(item_id, operation, result))
-
-    def _submit_cpu(self, item_id: str) -> None:
-        future = self._cpu_executor.submit(self._run_cpu, item_id)
-        with self._lock:
-            self._cpu_futures[item_id] = future
-        future.add_done_callback(lambda result: self._cpu_done(item_id, result))
 
     def _submit_io(self, item_id: str, operation: str) -> None:
         with self._lock:
@@ -554,8 +545,6 @@ class ProcessingCoordinator:
                     on_stage=stage_changed,
                     on_progress=progress,
                 )
-            # Both GPU APIs start from exactly the extracted WAV. The bounded
-            # DirectML lane starts now and deliberately overlaps HIP ASR.
             self.orchestrator.process_stages(
                 item_id,
                 (Stage.PROBE, Stage.WAV),
@@ -563,10 +552,9 @@ class ProcessingCoordinator:
                 on_stage=stage_changed,
                 on_progress=progress,
             )
-            self._submit_cpu(item_id)
             return self.orchestrator.process_stages(
                 item_id,
-                (Stage.SOURCE, Stage.TRANSCRIBE),
+                (Stage.SOURCE, Stage.TRANSCRIBE, Stage.DIARIZE),
                 cancel=cancel,
                 on_stage=stage_changed,
                 on_progress=progress,
@@ -575,20 +563,6 @@ class ProcessingCoordinator:
             with self._lock:
                 self._gpu_item = None
                 self._gpu_stage = None
-
-    def _run_cpu(self, item_id: str) -> WorkerItem:
-        def stage_changed(stage: Stage, status: StageStatus) -> None:
-            self._event_sink("stage", item_id, (stage, status))
-
-        def progress(fraction: float) -> None:
-            percent = int(min(max(fraction, 0.0), 1.0) * 100)
-            with self._lock:
-                self._progress[item_id] = (Stage.DIARIZE, percent)
-            self._event_sink("progress", item_id, (Stage.DIARIZE, percent))
-
-        return self.orchestrator.process_stages(
-            item_id, (Stage.DIARIZE,), on_stage=stage_changed, on_progress=progress
-        )
 
     def _run_io(self, item_id: str, operation: str) -> WorkerItem:
         if operation.startswith("artifact:"):
@@ -647,10 +621,6 @@ class ProcessingCoordinator:
                     on_stage=stage_changed,
                     on_progress=progress,
                 )
-                with self._lock:
-                    diarization = self._cpu_futures.get(item_id)
-                if diarization is not None:
-                    diarization.result()
                 return self.orchestrator.process_stages(
                     item_id,
                     (Stage.MERGE, Stage.TRANSCRIPT_UPLOAD, Stage.SPEAKERS_UPLOAD, Stage.FINAL_RECONCILE),
@@ -677,11 +647,6 @@ class ProcessingCoordinator:
             self._submit_io(item_id, "pipeline-io")
             return
         self._finalize(item_id, "preflight_completed", result)
-
-    def _cpu_done(self, item_id: str, future: Future[WorkerItem]) -> None:
-        # The IO lane owns final completion; it observes this future before speakers upload.
-        with self._lock:
-            self._cpu_futures[item_id] = future
 
     def _io_done(self, item_id: str, operation: str, future: Future[WorkerItem]) -> None:
         try:
@@ -752,7 +717,6 @@ class ProcessingCoordinator:
             if self._gpu_item is not None:
                 self._cancel.set()
         self._gpu_executor.shutdown(wait=True, cancel_futures=True)
-        self._cpu_executor.shutdown(wait=True, cancel_futures=True)
         self._io_executor.shutdown(wait=True, cancel_futures=True)
         return True
 

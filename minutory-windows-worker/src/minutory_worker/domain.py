@@ -22,7 +22,20 @@ class Stage(StrEnum):
     FINAL_RECONCILE = "final_reconcile"
 
 
-STAGE_ORDER = tuple(Stage)
+STAGE_ORDER = (
+    Stage.PROBE,
+    Stage.WAV,
+    Stage.SOURCE,
+    Stage.TRANSCRIBE,
+    Stage.DIARIZE,
+    Stage.MERGE,
+    Stage.MEETING,
+    Stage.VIDEO_UPLOAD,
+    Stage.AUDIO_UPLOAD,
+    Stage.TRANSCRIPT_UPLOAD,
+    Stage.SPEAKERS_UPLOAD,
+    Stage.FINAL_RECONCILE,
+)
 STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     Stage.PROBE: (),
     Stage.SOURCE: (Stage.PROBE,),
@@ -43,7 +56,7 @@ STAGE_DEPENDENCIES: dict[Stage, tuple[Stage, ...]] = {
     ),
 }
 
-GPU_STAGES = (Stage.PROBE, Stage.SOURCE, Stage.WAV, Stage.TRANSCRIBE, Stage.DIARIZE)
+GPU_STAGES = (Stage.PROBE, Stage.WAV, Stage.SOURCE, Stage.TRANSCRIBE, Stage.DIARIZE)
 CPU_STAGES: tuple[Stage, ...] = ()
 IO_STAGES = (
     Stage.MEETING,
