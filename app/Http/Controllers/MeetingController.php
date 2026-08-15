@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Jobs\TranscribeMeetingJob;
 use App\Models\Client;
 use App\Models\Meeting;
+use App\Models\Person;
 use Carbon\CarbonImmutable;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -211,7 +213,7 @@ class MeetingController extends Controller
             return redirect()->route('meetings.show', $meeting)
                 ->with('success', 'Meeting uploaded successfully and is being processed.');
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             // Re-throw validation exceptions to be handled by Laravel
             throw $e;
         } catch (\RuntimeException $e) {
@@ -245,9 +247,10 @@ class MeetingController extends Controller
     public function show(Meeting $meeting): Response
     {
         try {
-            $meeting->load(['client', 'transcriptions' => function ($query) {
-                $query->orderBy('start_time');
-            }]);
+            $meeting->load([
+                'client.persons' => fn ($query) => $query->orderBy('name'),
+                'transcriptions' => fn ($query) => $query->orderBy('start_time'),
+            ]);
 
             // Generate video URL for frontend
             $videoUrl = null;
@@ -281,6 +284,83 @@ class MeetingController extends Controller
             return redirect()->route('meetings.index')
                 ->with('error', 'Failed to load meeting details. Please try again.');
         }
+    }
+
+    public function createPerson(Request $request, Meeting $meeting): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $person = Person::create([
+            'client_id' => $meeting->client_id,
+            'name' => trim($validated['name']),
+            'email' => isset($validated['email']) ? trim($validated['email']) : null,
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json(['person' => $person], 201);
+        }
+
+        return back()->with('success', 'Person created successfully.');
+    }
+
+    public function updateSpeakers(Request $request, Meeting $meeting): RedirectResponse
+    {
+        abort_unless($meeting->isCompleted(), 422, 'Speakers can only be edited after a meeting is completed.');
+
+        $validated = $request->validate([
+            'assignments' => ['required', 'array'],
+            'assignments.*.speaker' => ['nullable', 'string', 'max:255'],
+            'assignments.*.person_id' => ['nullable', 'integer'],
+        ]);
+
+        $assignments = collect($validated['assignments'])
+            ->mapWithKeys(fn (array $assignment) => [$this->speakerKey($assignment['speaker'] ?? null) => $assignment['person_id'] ?? null]);
+        $personIds = $assignments->filter()->values();
+        $people = Person::query()
+            ->where('client_id', $meeting->client_id)
+            ->whereIn('id', $personIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($people->count() !== $personIds->unique()->count()) {
+            throw ValidationException::withMessages([
+                'assignments' => 'Each selected person must belong to this meeting client.',
+            ]);
+        }
+
+        DB::transaction(function () use ($meeting, $assignments, $people): void {
+            $meeting->transcriptions()->lockForUpdate()->get()->each(function ($transcription) use ($assignments, $people): void {
+                $key = $this->speakerKey($transcription->speaker);
+
+                if (! $assignments->has($key)) {
+                    return;
+                }
+
+                $personId = $assignments->get($key);
+
+                if (! $personId) {
+                    $transcription->update(['person_id' => null]);
+
+                    return;
+                }
+
+                $person = $people->get($personId);
+                $transcription->update([
+                    'person_id' => $person->id,
+                    'speaker' => $person->name,
+                ]);
+            });
+        });
+
+        return back()->with('success', 'Speaker identities updated successfully.');
+    }
+
+    private function speakerKey(?string $speaker): string
+    {
+        return $speaker === null || trim($speaker) === '' ? '__unknown__' : trim($speaker);
     }
 
     public function update(Request $request, Meeting $meeting): RedirectResponse

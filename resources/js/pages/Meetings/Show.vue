@@ -16,6 +16,13 @@
                 <div class="mt-2 flex flex-wrap items-center gap-3">
                     <h1 class="text-[20px] font-semibold tracking-tight">{{ meeting.title }}</h1>
                     <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
+                    <button
+                        v-if="meeting.status === 'completed' && meeting.transcriptions?.length"
+                        class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink"
+                        @click="speakerEditorOpen = true"
+                    >
+                        Edit speakers
+                    </button>
                 </div>
                 <Link :href="route('clients.show', meeting.client.id)" class="mt-1 inline-block text-[13px] text-ink-secondary hover:text-accent">
                     {{ meeting.client.name }}
@@ -167,6 +174,15 @@
                 />
             </div>
         </div>
+        <SpeakerEditorModal
+            :open="speakerEditorOpen"
+            :meeting-id="meeting.id"
+            :client-name="meeting.client.name"
+            :people="meeting.client.persons || []"
+            :transcriptions="meeting.transcriptions || []"
+            @close="speakerEditorOpen = false"
+            @seek="onTranscriptionTimestampClick"
+        />
     </AppLayout>
 </template>
 
@@ -174,19 +190,28 @@
 import AppLayout from '@/lib/AppLayout.vue';
 import { formatBrowserDateTime } from '@/lib/browserDateTime';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
+import SpeakerEditorModal from '@/lib/SpeakerEditorModal.vue';
 import TranscriptionViewer from '@/lib/TranscriptionViewer.vue';
 import VideoPlayer from '@/lib/VideoPlayer.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
+interface Person {
+    id: number;
+    name: string;
+    email: string | null;
+}
+
 interface Client {
     id: number;
     name: string;
+    persons?: Person[];
 }
 
 interface Transcription {
     id: number;
-    speaker: string;
+    person_id: number | null;
+    speaker: string | null;
     text: string;
     start_time: number;
     end_time: number;
@@ -218,6 +243,7 @@ interface Props {
 
 const props = defineProps<Props>();
 
+const speakerEditorOpen = ref(false);
 const videoPlayerRef = ref<InstanceType<typeof VideoPlayer> | null>(null);
 const transcriptionViewerRef = ref<InstanceType<typeof TranscriptionViewer> | null>(null);
 

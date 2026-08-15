@@ -25,4 +25,9 @@ class Client extends Model
     {
         return $this->hasMany(Meeting::class);
     }
+
+    public function persons(): HasMany
+    {
+        return $this->hasMany(Person::class);
+    }
 }

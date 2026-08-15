@@ -12,6 +12,7 @@ class Transcription extends Model
 
     protected $fillable = [
         'meeting_id',
+        'person_id',
         'speaker',
         'text',
         'start_time',
@@ -28,6 +29,11 @@ class Transcription extends Model
     public function meeting(): BelongsTo
     {
         return $this->belongsTo(Meeting::class);
+    }
+
+    public function person(): BelongsTo
+    {
+        return $this->belongsTo(Person::class);
     }
 
     public function getFormattedStartTimeAttribute(): string
