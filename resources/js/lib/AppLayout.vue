@@ -113,7 +113,7 @@
             <div v-if="sidebarOpen" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="sidebarOpen = false" />
 
             <!-- Content -->
-            <div class="flex min-w-0 flex-1 flex-col" :class="railMode ? 'lg:pl-14' : ''">
+            <div class="flex min-w-0 flex-1 flex-col" :class="railMode ? 'lg:pl-14' : 'lg:pl-60'">
                 <!-- Mobile top bar -->
                 <div class="flex h-14 items-center gap-3 border-b border-border bg-ground px-4 lg:hidden">
                     <button
