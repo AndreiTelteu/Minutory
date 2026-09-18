@@ -103,7 +103,7 @@ class HttpxTransport:
             )
         except Exception:
             # Transport exception messages and causes may echo request headers. Discard
-            # both at the first boundary so no bearer token can enter diagnostics.
+            # both at the first boundary so no API token can enter diagnostics.
             raise TransportFailure("The HTTP transport failed.") from None
         return TransportResponse(response.status_code, response.headers, response.content)
 
@@ -384,7 +384,7 @@ class WorkerApiClient:
     ) -> dict[str, object]:
         headers = {"Accept": "application/json"}
         if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+            headers["X-Token"] = self._token
         if self._basic_auth_username is not None and self._basic_auth_password is not None:
             credentials = f"{self._basic_auth_username}:{self._basic_auth_password}".encode()
             headers["Authorization"] = f"Basic {b64encode(credentials).decode('ascii')}"

@@ -43,7 +43,7 @@ entries, and duplicate/colliding targets.
 
 ## Operator workflow
 
-Copy `.env.example` to `.env`; set only the application URL, bearer token, and
+Copy `.env.example` to `.env`; set only the application URL, API token, and
 operator preferences. Launch with `start.bat`. Runtime/model/cache paths are
 forced below the worker directory by `start.ps1`.
 

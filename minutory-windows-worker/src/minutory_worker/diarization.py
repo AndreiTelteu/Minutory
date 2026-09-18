@@ -40,7 +40,7 @@ def select_provider(available: Sequence[str], *, device_id: int, device: str) ->
         return ProviderSelection(
             "DmlExecutionProvider", device, [("DmlExecutionProvider", {"device_id": device_id})]
         )
-    return ProviderSelection("CPUExecutionProvider", "CPU fallback", ["CPUExecutionProvider"], True)
+    return ProviderSelection("CPUExecutionProvider", "CPU", ["CPUExecutionProvider"], os.name == "nt")
 
 
 def windows_discrete_adapter() -> tuple[int, str]:
@@ -52,7 +52,7 @@ def windows_discrete_adapter() -> tuple[int, str]:
     if device_id < 0:
         raise DiarizationError("MINUTORY_DML_DEVICE_ID must be a non-negative integer.")
     if os.name != "nt":
-        return device_id, f"DirectML adapter {device_id} (test host)"
+        return device_id, "CPU (Linux)"
     try:
         result = subprocess.run(
             [
@@ -131,10 +131,10 @@ class SpeakerDiarizationService:
             import onnxruntime as ort  # type: ignore[import-untyped]
         except ImportError as exception:
             raise DiarizationError(
-                "onnxruntime-directml is not installed; run managed bootstrap."
+                "ONNX Runtime is not installed; run the platform bootstrap."
             ) from exception
         device_id, device = windows_discrete_adapter()
-        if self.device_id is not None:
+        if self.device_id is not None and os.name == "nt":
             device_id, device = self.device_id, f"RX 7900 XTX (DirectML device_id={self.device_id})"
         selection = select_provider(ort.get_available_providers(), device_id=device_id, device=device)
         try:
@@ -315,7 +315,7 @@ def _segment(
 def _embeddings(
     waveform: Any, segments: list[tuple[float, float]], session: Any, progress: Callable[[float], None] | None
 ) -> tuple[Any, list[tuple[float, float]]]:
-    import librosa  # type: ignore[import-not-found]
+    import librosa
     import numpy as np
 
     embeddings, valid = [], []
@@ -343,7 +343,7 @@ def _embeddings(
 def _cluster(embeddings: Any, segments: list[tuple[float, float]]) -> list[int]:
     import numpy as np
     from scipy.spatial.distance import cdist  # type: ignore[import-untyped]
-    from sklearn.cluster import AgglomerativeClustering  # type: ignore[import-not-found]
+    from sklearn.cluster import AgglomerativeClustering  # type: ignore[import-untyped]
 
     if len(embeddings) < 2:
         return [0] * len(embeddings)

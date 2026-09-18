@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -75,7 +76,7 @@ class FasterWhisperBackend:
                 raise RuntimeError(
                     "faster-whisper failed to import "
                     f"({exception}). "
-                    "Stage 4 bootstrap must install the managed ROCm runtime."
+                    "Install faster-whisper and the CTranslate2 runtime for your platform."
                 ) from exception
             model: Any = WhisperModel(
                 str(self.model_path),
@@ -132,7 +133,7 @@ class FasterWhisperBackend:
                 "device": self.device,
                 "compute_type": self.compute_type,
                 "elapsed_seconds": time.monotonic() - started,
-                "backend": "ctranslate2-rocm-4.8.1",
+                "backend": "ctranslate2-rocm-4.8.1" if sys.platform == "win32" else "ctranslate2",
             },
         )
 
@@ -217,7 +218,7 @@ def normalize_transcript(
             on_progress(min(max(end / duration, 0.0), 0.999))
 
     return {
-        "driver": "faster-whisper-windows",
+        "driver": "faster-whisper-windows" if sys.platform == "win32" else "faster-whisper-linux",
         "model": model,
         "language": language,
         "language_probability": probability,

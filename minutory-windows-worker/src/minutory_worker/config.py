@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from ipaddress import ip_address
@@ -113,7 +114,7 @@ class WorkerConfig:
     read_timeout: float = 120.0
     upload_timeout: float = 3600.0
     compression_preset: str = "crf22"
-    video_codec: str = "h264_amf"
+    video_codec: str = "h264_amf" if sys.platform == "win32" else "libx264"
     fallback_video_codec: str = "libx264"
     whisper_model: str = "large-v3"
     language: str = "ro"
@@ -122,6 +123,8 @@ class WorkerConfig:
     beam_size: int = 5
     batch_size: int = 0
     dml_device_id: int = 0
+    asr_device: str = "cuda" if sys.platform == "win32" else "cpu"
+    asr_compute_type: str = "float16" if sys.platform == "win32" else "int8"
     timezone: str = "Europe/Bucharest"
 
     def __repr__(self) -> str:
@@ -193,6 +196,24 @@ def load_config(
     except ZoneInfoNotFoundError as exception:
         raise ConfigError("MINUTORY_TIMEZONE must be a valid IANA timezone.") from exception
 
+    asr_device = get("MINUTORY_ASR_DEVICE", "cuda" if sys.platform == "win32" else "cpu")
+    if asr_device not in {"cuda", "cpu"}:
+        raise ConfigError("MINUTORY_ASR_DEVICE must be cuda (CUDA/HIP) or cpu.")
+    compute_type = get("MINUTORY_ASR_COMPUTE_TYPE", "int8" if asr_device == "cpu" else "float16")
+    if compute_type not in {
+        "default",
+        "auto",
+        "float32",
+        "float16",
+        "bfloat16",
+        "int8",
+        "int8_float32",
+        "int8_float16",
+        "int8_bfloat16",
+        "int16",
+    }:
+        raise ConfigError("MINUTORY_ASR_COMPUTE_TYPE is invalid.")
+
     return WorkerConfig(
         api_base_url=base_url,
         api_token=token,
@@ -210,7 +231,9 @@ def load_config(
         read_timeout=_positive_float(get("MINUTORY_READ_TIMEOUT", "120"), "MINUTORY_READ_TIMEOUT"),
         upload_timeout=_positive_float(get("MINUTORY_UPLOAD_TIMEOUT", "3600"), "MINUTORY_UPLOAD_TIMEOUT"),
         compression_preset=preset,
-        video_codec=get("MINUTORY_VIDEO_CODEC", "h264_amf"),
+        video_codec=get("MINUTORY_VIDEO_CODEC", "h264_amf" if sys.platform == "win32" else "libx264"),
+        asr_device=asr_device,
+        asr_compute_type=compute_type,
         fallback_video_codec=get("MINUTORY_FALLBACK_VIDEO_CODEC", "libx264"),
         whisper_model=get("MINUTORY_MODEL_NAME", get("MINUTORY_WHISPER_MODEL", "large-v3")),
         language=get("MINUTORY_LANGUAGE", "ro"),

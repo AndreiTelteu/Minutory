@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from minutory_worker.diarization import _normalize_turns, merge_transcript, select_provider
 
 
@@ -9,7 +11,7 @@ def test_provider_prefers_explicit_directml_device_and_cpu_fallback() -> None:
     assert selected.providers == [("DmlExecutionProvider", {"device_id": 3})]
     fallback = select_provider(["CPUExecutionProvider"], device_id=0, device="RX")
     assert fallback.provider == "CPUExecutionProvider"
-    assert fallback.fallback
+    assert fallback.fallback == (os.name == "nt")
 
 
 def test_turns_are_sorted_and_receive_stable_friendly_labels() -> None:

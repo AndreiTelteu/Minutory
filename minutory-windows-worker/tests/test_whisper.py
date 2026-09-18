@@ -63,7 +63,9 @@ def test_normalized_exact_contract_and_atomic_write(tmp_path: Path) -> None:
         "runtime",
         "segments",
     ]
-    assert document["driver"] == "faster-whisper-windows"
+    assert document["driver"] == (
+        "faster-whisper-windows" if sys.platform == "win32" else "faster-whisper-linux"
+    )
     assert document["segments"][0] == {
         "start": 0.0,
         "end": 1.5,

@@ -8,7 +8,7 @@ Keep the existing Linux/Lerd transcription runtime unchanged and add a native Wi
 
 - Do not change `transcribe-microservice/` behavior or the Linux driver contract.
 - Windows sends `start_transcript_server=false`; other API clients may send `true`.
-- Bearer secrets exist only in ignored `.env` files; tracked examples contain placeholders.
+- API token secrets exist only in ignored `.env` files; tracked examples contain placeholders.
 - Meeting creation is separate from video, WAV, and transcript uploads.
 - Every local stage and remote artifact is independently retryable and persisted locally.
 - Existing known-good transcript rows and `transcript.json` survive invalid replacement attempts.
@@ -18,7 +18,7 @@ Keep the existing Linux/Lerd transcription runtime unchanged and add a native Wi
 
 ## API v1 contract
 
-All endpoints are under `/api/v1/worker` and protected by a constant-time Bearer-token middleware plus throttling.
+All endpoints are under `/api/v1/worker` and protected by a constant-time `X-Token` middleware plus throttling.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -235,7 +235,7 @@ claimed as verified.
 
 ### Stage 5 — Integration and Windows acceptance
 
-- [ ] Apply migrations and set a generated local Bearer token without committing it.
+- [ ] Apply migrations and set a generated local API token without committing it.
 - [ ] Exercise authenticated API create/upload/retry/import against the live container.
 - [ ] Verify Linux web upload/transcription regression behavior.
 - [ ] On Windows 11 + RX 7900 XTX, install runtime and benchmark Large v3 FP16.

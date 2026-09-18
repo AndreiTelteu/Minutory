@@ -78,7 +78,7 @@ class _ProcessLock:
             else:
                 import fcntl
 
-                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except (OSError, ImportError) as exception:
             stream.close()
             raise StateOwnershipError(
@@ -100,7 +100,7 @@ class _ProcessLock:
             else:
                 import fcntl
 
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
         finally:
             stream.close()
             self._stream = None

@@ -42,6 +42,8 @@ def build_orchestrator(config: WorkerConfig) -> Orchestrator:
         FasterWhisperBackend(
             local_model,
             model_name=config.whisper_model,
+            device=config.asr_device,
+            compute_type=config.asr_compute_type,
             beam_size=config.beam_size,
             batch_size=config.batch_size,
         ),

@@ -34,7 +34,7 @@ beforeEach(function () {
 function workerHeaders(): array
 {
     return [
-        'Authorization' => 'Bearer test-worker-token',
+        'X-Token' => 'test-worker-token',
         'Accept' => 'application/json',
     ];
 }
@@ -129,7 +129,7 @@ class WorkerApiRestoreFailingFilesystem extends AtomicFilesystem
     }
 }
 
-it('requires a configured constant-time bearer credential', function () {
+it('requires a configured constant-time X-Token credential', function () {
     config()->set('services.worker.token', null);
     $this->getJson('/api/v1/worker/clients', workerHeaders())
         ->assertStatus(503)
@@ -147,10 +147,21 @@ it('requires a configured constant-time bearer credential', function () {
         ->assertJsonPath('error.code', 'unauthenticated');
 
     $this->getJson('/api/v1/worker/clients', [
-        'Authorization' => 'Bearer wrong-token',
+        'X-Token' => 'wrong-token',
     ])->assertUnauthorized()
         ->assertJsonMissing(['test-worker-token'])
         ->assertJsonMissing(['wrong-token']);
+});
+
+it('accepts an API token alongside Basic authorization and rejects bearer-only credentials', function () {
+    $this->getJson('/api/v1/worker/clients', [
+        'Authorization' => 'Basic '.base64_encode('admin:test-password'),
+        'x-token' => 'test-worker-token',
+    ])->assertOk();
+
+    $this->getJson('/api/v1/worker/clients', [
+        'Authorization' => 'Bearer test-worker-token',
+    ])->assertUnauthorized()->assertJsonPath('error.code', 'unauthenticated');
 });
 
 it('returns an ordered minimal client list', function () {
@@ -676,18 +687,18 @@ it('enforces configured upload limits and the authenticated API throttle', funct
     config()->set('services.worker.token', 'throttle-worker-token');
     config()->set('services.worker.throttle_per_minute', 1);
     $server = ['REMOTE_ADDR' => '10.20.30.40'];
-    $headers = ['Authorization' => 'Bearer throttle-worker-token'];
+    $headers = ['X-Token' => 'throttle-worker-token'];
     $this->withServerVariables($server)->getJson('/api/v1/worker/clients', $headers)->assertOk();
     $this->withServerVariables($server)->getJson('/api/v1/worker/clients', $headers)
         ->assertTooManyRequests()
         ->assertJsonPath('error.code', 'rate_limit_exceeded');
 });
 
-it('throttles invalid bearer attempts before authentication', function () {
+it('throttles invalid X-Token attempts before authentication', function () {
     config()->set('services.worker.auth_attempts_per_minute', 2);
     config()->set('services.worker.auth_attempts_per_credential_per_minute', 2);
     $server = ['REMOTE_ADDR' => '10.99.0.1'];
-    $headers = ['Authorization' => 'Bearer invalid-token'];
+    $headers = ['X-Token' => 'invalid-token'];
 
     $this->withServerVariables($server)->getJson('/api/v1/worker/clients', $headers)->assertUnauthorized();
     $this->withServerVariables($server)->getJson('/api/v1/worker/clients', $headers)->assertUnauthorized();

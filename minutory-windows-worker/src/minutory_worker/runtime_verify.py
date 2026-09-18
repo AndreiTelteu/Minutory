@@ -19,6 +19,8 @@ class Check:
 
 
 def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = True) -> tuple[Check, ...]:
+    if sys.platform == "linux":
+        return verify_linux_runtime(ffmpeg, ffprobe)
     if sys.platform == "win32":
         ffmpeg_bin = ffmpeg.resolve().parent
         os.environ["PATH"] = f"{ffmpeg_bin}{os.pathsep}{os.environ.get('PATH', '')}"
@@ -179,12 +181,88 @@ def verify_runtime(ffmpeg: Path, ffprobe: Path, *, require_windows_gpu: bool = T
     return tuple(checks)
 
 
-def main() -> int:
-    root = Path(__file__).resolve().parents[2]
-    checks = verify_runtime(
-        root / "libs/ffmpeg/bin/ffmpeg.exe",
-        root / "libs/ffmpeg/bin/ffprobe.exe",
+def verify_linux_runtime(ffmpeg: Path, ffprobe: Path) -> tuple[Check, ...]:
+    from .config import load_config
+
+    config = load_config(Path(os.environ.get("MINUTORY_ENV_FILE", ".env")))
+    checks = [Check("Python", sys.version_info >= (3, 12), platform.python_version())]
+    for name, command in (("FFmpeg", ffmpeg), ("FFprobe", ffprobe)):
+        try:
+            result = subprocess.run(
+                [str(command), "-version"], capture_output=True, text=True, timeout=20, check=False
+            )
+            checks.append(
+                Check(name, result.returncode == 0, (result.stdout or result.stderr).splitlines()[0])
+            )
+        except (OSError, subprocess.SubprocessError, IndexError) as exception:
+            checks.append(Check(name, False, str(exception)))
+    try:
+        import ctranslate2
+
+        types = ctranslate2.get_supported_compute_types(config.asr_device)
+        supported = config.asr_compute_type in types or config.asr_compute_type in {"auto", "default"}
+        checks.append(
+            Check(
+                "CTranslate2", supported, f"{ctranslate2.__version__} · {config.asr_device} · {sorted(types)}"
+            )
+        )
+        if config.asr_device == "cuda":
+            checks.append(
+                Check(
+                    "GPU",
+                    ctranslate2.get_cuda_device_count() > 0,
+                    "CUDA/HIP device visibility; AMD requires a HIP build, not the stock CUDA wheel.",
+                )
+            )
+        import faster_whisper  # noqa: F401
+    except Exception as exception:
+        checks.append(
+            Check("ASR runtime", False, f"{exception}. Use CPU or install a compatible HIP/CUDA build.")
+        )
+    try:
+        import onnxruntime as ort
+
+        checks.append(
+            Check("ONNX CPU", "CPUExecutionProvider" in ort.get_available_providers(), ort.__version__)
+        )
+        bundle = config.model_dir / "pyannote-diarization-3.1-onnx"
+        if not (bundle / "metadata.json").is_file():
+            raise RuntimeError(f"Missing metadata.json under {bundle}")
+        for filename in ("segmentation.onnx", "embedding.onnx"):
+            ort.InferenceSession(
+                str(config.model_dir / "pyannote-diarization-3.1-onnx" / filename),
+                providers=["CPUExecutionProvider"],
+            )
+        checks.append(Check("Speaker models", True, "Both local ONNX models loaded."))
+    except Exception as exception:
+        checks.append(Check("Speaker models", False, str(exception)))
+    model = config.model_dir / config.whisper_model
+    missing = [
+        name
+        for name in (
+            "model.bin",
+            "config.json",
+            "tokenizer.json",
+            "vocabulary.json",
+            "preprocessor_config.json",
+        )
+        if not (model / name).is_file()
+    ]
+    checks.append(
+        Check("Whisper model", not missing, f"Missing: {', '.join(missing)}" if missing else str(model))
     )
+    return tuple(checks)
+
+
+def main() -> int:
+    from .config import load_config
+
+    if sys.platform == "win32":
+        root = Path(__file__).resolve().parents[2]
+        checks = verify_runtime(root / "libs/ffmpeg/bin/ffmpeg.exe", root / "libs/ffmpeg/bin/ffprobe.exe")
+    else:
+        config = load_config(Path(os.environ.get("MINUTORY_ENV_FILE", ".env")))
+        checks = verify_runtime(config.ffmpeg_path, config.ffprobe_path)
     for check in checks:
         print(f"{'OK' if check.ok else 'ERROR'}  {check.name}: {check.detail}")
     return 0 if all(check.ok for check in checks) else 1

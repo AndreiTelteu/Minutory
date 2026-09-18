@@ -25,13 +25,13 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('worker-auth-attempts', function (Request $request): array {
             $key = (string) config('app.key');
             $remoteAddress = (string) $request->server('REMOTE_ADDR', 'unknown');
-            $authorization = (string) $request->header('Authorization', '');
+            $token = (string) $request->header('X-Token', '');
 
             return [
                 Limit::perMinute((int) config('services.worker.auth_attempts_per_minute', 20))
                     ->by('worker-auth-remote:'.hash_hmac('sha256', $remoteAddress, $key)),
                 Limit::perMinute((int) config('services.worker.auth_attempts_per_credential_per_minute', 10))
-                    ->by('worker-auth-credential:'.hash_hmac('sha256', $authorization, $key)),
+                    ->by('worker-auth-credential:'.hash_hmac('sha256', $token, $key)),
             ];
         });
     }

@@ -1,6 +1,8 @@
-# Minutory Windows Worker
+# Minutory Worker
 
-This directory contains the native Windows 11 ingestion application. Its PySide6
+This directory contains the shared Windows/Linux ingestion application.
+For Linux installation and runtime configuration, see [Linux operations](docs/linux-operations.md).
+The Windows runtime setup below is specific to Windows 11. Its PySide6
 desktop queue prepares several videos, transcribes them locally on a Radeon RX
 7900 XTX, persists every transition in SQLite, and uploads independently
 retryable artifacts through the Laravel Worker API.
@@ -12,13 +14,13 @@ delegate ASR to Laravel.
 ## Windows operator setup
 
 1. Copy `.env.example` to the ignored `.env` and set the Worker API URL and authentication.
-   The existing Bearer token, optional HTTP Basic credentials
-   (`MINUTORY_API_BASIC_AUTH_USERNAME` / `MINUTORY_API_BASIC_AUTH_PASSWORD`),
-   and optional arbitrary header (`MINUTORY_API_CUSTOM_HEADER_KEY` /
-   `MINUTORY_API_CUSTOM_HEADER_VALUE`) are supported. Basic Auth replaces the
-   Bearer `Authorization` header; the custom header is additive. When no
-   authentication variable is configured, requests are sent without auth. Never
-   commit actual secret values.
+   `MINUTORY_API_TOKEN` is sent in `X-Token` and must match the server's
+   `WORKER_API_TOKEN`. Optional HTTP Basic credentials
+   (`MINUTORY_API_BASIC_AUTH_USERNAME` / `MINUTORY_API_BASIC_AUTH_PASSWORD`)
+   are sent independently in `Authorization`, for a proxy that requires Basic
+   Auth. Optional arbitrary headers (`MINUTORY_API_CUSTOM_HEADER_KEY` /
+   `MINUTORY_API_CUSTOM_HEADER_VALUE`) are also supported. Never commit actual
+   secret values. Restart the worker after changing `.env`.
 2. Obtain a release-approved `manifests/runtime-assets.local.json` containing
    verified immutable HTTPS URLs, archive SHA-256 values, and normalized
    installed-tree SHA-256 values.

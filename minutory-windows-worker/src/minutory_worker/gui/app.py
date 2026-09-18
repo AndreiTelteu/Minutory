@@ -13,7 +13,7 @@ def main() -> int:
     try:
         from PySide6.QtWidgets import QApplication, QMessageBox
     except ImportError:
-        print("PySide6 is not installed. Run bootstrap.ps1 before starting Minutory Worker.")
+        print("PySide6 is not installed. Run the platform bootstrap before starting Minutory Worker.")
         return 2
 
     app = QApplication(sys.argv)

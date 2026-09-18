@@ -87,7 +87,7 @@ with positive duration and the source resolution and rational frame rate.
 
 ## API and secrets
 
-The client matches `/api/v1/worker`, sends Bearer authentication, creates with
+The client matches `/api/v1/worker`, sends the API token in `X-Token` alongside optional Basic authentication in `Authorization`, creates with
 the item UUID, and uploads video/audio/transcript separately. Transport is
 dependency-injected. Only transport errors, HTTP 429, and HTTP 5xx are retried;
 validation, authentication, and conflict errors are permanent. Delta-seconds and
@@ -95,7 +95,7 @@ IMF-fixdate `Retry-After` values are honored.
 
 Configuration representations, diagnostics, and CLI output redact the token.
 The HTTP boundary discards raw transport exception text and its exception cause,
-so chained tracebacks cannot retain a header or bearer token.
+so chained tracebacks cannot retain a header or API token.
 Tracked configuration uses `[REDACTED]` only. HTTPS is required except for
 loopback development hosts (`localhost`, `127.0.0.0/8`, and `::1`).
 

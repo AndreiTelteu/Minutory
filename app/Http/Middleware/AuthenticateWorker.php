@@ -21,18 +21,12 @@ class AuthenticateWorker
             );
         }
 
-        $authorization = $request->header('Authorization', '');
-        $providedToken = null;
-
-        if (is_string($authorization)
-            && preg_match('/^Bearer[ \t]+(.+)$/i', $authorization, $matches) === 1) {
-            $providedToken = $matches[1];
-        }
+        $providedToken = $request->header('X-Token');
 
         if (! is_string($providedToken) || ! hash_equals($configuredToken, $providedToken)) {
             return $this->error(
                 'unauthenticated',
-                'A valid Bearer token is required.',
+                'A valid X-Token header is required.',
                 Response::HTTP_UNAUTHORIZED,
             );
         }

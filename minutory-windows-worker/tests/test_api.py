@@ -83,7 +83,8 @@ def test_exact_paths_payload_auth_and_forced_false(item) -> None:
     assert isinstance(timeout, RequestTimeout)
     assert timeout.connect == 10
     assert timeout.read == 120
-    assert transport.calls[0]["headers"]["Authorization"] == "Bearer secret-test-token"
+    assert transport.calls[0]["headers"]["X-Token"] == "secret-test-token"
+    assert "Authorization" not in transport.calls[0]["headers"]
     assert "secret-test-token" not in repr(client)
 
 
@@ -96,7 +97,7 @@ def test_optional_basic_auth_and_custom_header_apply_to_every_request(item) -> N
     )
     client = WorkerApiClient(
         "https://example.test",
-        "unused-bearer-token",
+        "worker-api-token",
         transport,
         basic_auth_username="worker-user",
         basic_auth_password="worker-password",
@@ -108,8 +109,9 @@ def test_optional_basic_auth_and_custom_header_apply_to_every_request(item) -> N
     expected_basic = "Basic d29ya2VyLXVzZXI6d29ya2VyLXBhc3N3b3Jk"
     for call in transport.calls:
         assert call["headers"]["Authorization"] == expected_basic
+        assert call["headers"]["X-Token"] == "worker-api-token"
         assert call["headers"]["X-Api-Key"] == "custom-secret"
-    assert "unused-bearer-token" not in repr(client)
+    assert "worker-api-token" not in repr(client)
     assert "worker-password" not in repr(client)
 
 
@@ -120,7 +122,7 @@ def test_unauthenticated_requests_are_allowed() -> None:
     assert "Authorization" not in transport.calls[0]["headers"]
 
 
-def test_custom_header_auth_works_without_bearer_token() -> None:
+def test_custom_header_auth_works_without_api_token() -> None:
     transport = RecordingTransport([response(200, {"data": []})])
     client = WorkerApiClient(
         "https://example.test",
@@ -340,10 +342,10 @@ def test_httpx_multipart_retry_rewinds_full_file_and_maps_timeouts(tmp_path: Pat
 
 
 def test_httpx_transport_discards_raw_exception_message_and_cause() -> None:
-    token = "exact-bearer-value-never-display"
+    token = "exact-token-value-never-display"
 
     def handler(request: httpx.Request) -> httpx.Response:
-        raise RuntimeError(f"failed Authorization: {request.headers['authorization']}")
+        raise RuntimeError(f"failed X-Token: {request.headers['x-token']}")
 
     client = WorkerApiClient(
         "https://example.test",
