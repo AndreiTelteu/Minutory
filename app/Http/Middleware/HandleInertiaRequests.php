@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Meeting;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Tighten\Ziggy\Ziggy;
@@ -34,6 +35,10 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if ($request->routeIs('share.*')) {
+            return parent::share($request);
+        }
+
         return array_merge(parent::share($request), [
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
@@ -61,7 +66,7 @@ class HandleInertiaRequests extends Middleware
                 ? $request->user()->only('id', 'name', 'email')
                 : null,
 
-            'sidebarMeetings' => fn () => \App\Models\Meeting::query()
+            'sidebarMeetings' => fn () => Meeting::query()
                 ->with('client:id,name')
                 ->orderBy('created_at', 'desc')
                 ->limit(10)

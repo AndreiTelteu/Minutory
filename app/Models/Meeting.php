@@ -57,6 +57,11 @@ class Meeting extends Model
         return $this->hasMany(Transcription::class);
     }
 
+    public function shares(): HasMany
+    {
+        return $this->hasMany(MeetingShare::class);
+    }
+
     public function workerIngestion(): HasOne
     {
         return $this->hasOne(WorkerIngestion::class);

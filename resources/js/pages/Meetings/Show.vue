@@ -1,5 +1,5 @@
 <template>
-    <AppLayout>
+    <component :is="publicShare ? PublicMeetingLayout : AppLayout">
         <Head :title="`${meeting.title} - ${meeting.client.name}`" />
         <div class="px-6 py-8 lg:px-10">
             <div class="grid grid-cols-1 gap-6 xl:grid-cols-5">
@@ -7,6 +7,7 @@
                     <!-- Header -->
                     <div class="mb-6">
                         <Link
+                            v-if="!publicShare"
                             :href="route('meetings.index')"
                             class="inline-flex items-center gap-1 text-[13px] font-medium text-ink-secondary transition-colors duration-150 hover:text-ink"
                         >
@@ -19,7 +20,7 @@
                             <h1 class="text-[20px] font-semibold tracking-tight">{{ meeting.title }}</h1>
                             <MeetingStatusBadge :status="meeting.status" :meeting="meeting" />
                             <button
-                                v-if="meeting.status === 'completed' && meeting.transcriptions?.length"
+                                v-if="!publicShare && meeting.status === 'completed' && meeting.transcriptions?.length"
                                 class="rounded-md border border-border-strong px-2.5 py-1 text-[12px] font-medium text-ink-secondary transition-colors duration-150 hover:bg-ground-subtle hover:text-ink"
                                 @click="speakerEditorOpen = !speakerEditorOpen"
                             >
@@ -27,16 +28,19 @@
                             </button>
                         </div>
                         <Link
+                            v-if="!publicShare"
                             :href="route('clients.show', meeting.client.id)"
                             class="mt-1 inline-block text-[13px] text-ink-secondary hover:text-accent"
                         >
                             {{ meeting.client.name }}
                         </Link>
+                        <p v-else class="mt-1 text-[13px] text-ink-secondary">{{ meeting.client.name }}</p>
                         <div class="tnum mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-ink-tertiary">
                             <span>Language {{ meeting.language === 'en' ? 'English' : 'Română' }}</span>
                             <span>Meeting time {{ formatDateTime(meeting.meeting_at) }}</span>
                             <span>Uploaded {{ formatDateTime(meeting.uploaded_at) }}</span>
                         </div>
+                        <MeetingShareButton v-if="!publicShare" :meeting-id="meeting.id" class="mt-3" />
                     </div>
 
                     <!-- Processing status -->
@@ -102,6 +106,7 @@
                             </span>
                         </div>
                         <SpeakerEditorModal
+                            v-if="!publicShare"
                             :open="speakerEditorOpen"
                             :meeting-id="meeting.id"
                             :client-name="meeting.client.name"
@@ -184,7 +189,7 @@
                 </div>
 
                 <section
-                    v-if="meeting.status === 'completed' && videoUrl && meeting.transcriptions && meeting.transcriptions.length > 0"
+                    v-if="isLargeScreen && meeting.status === 'completed' && videoUrl && meeting.transcriptions && meeting.transcriptions.length > 0"
                     class="hidden flex-col overflow-hidden rounded-lg border border-border bg-ground-subtle xl:sticky xl:top-8 xl:col-span-2 xl:flex xl:h-[calc(100vh_-_4rem)] xl:self-start"
                 >
                     <TranscriptionViewer
@@ -196,18 +201,21 @@
                 </section>
             </div>
         </div>
-    </AppLayout>
+    </component>
 </template>
 
 <script setup lang="ts">
 import AppLayout from '@/lib/AppLayout.vue';
 import { formatBrowserDateTime } from '@/lib/browserDateTime';
+import MeetingShareButton from '@/lib/MeetingShareButton.vue';
 import MeetingStatusBadge from '@/lib/MeetingStatusBadge.vue';
+import PublicMeetingLayout from '@/lib/PublicMeetingLayout.vue';
 import SpeakerEditorModal from '@/lib/SpeakerEditorModal.vue';
 import TranscriptionViewer from '@/lib/TranscriptionViewer.vue';
 import VideoPlayer from '@/lib/VideoPlayer.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useMediaQuery } from '@vueuse/core';
+import { onMounted, onUnmounted, ref } from 'vue';
 
 interface Person {
     id: number;
@@ -253,6 +261,8 @@ interface Meeting {
 interface Props {
     meeting: Meeting;
     videoUrl: string | null;
+    publicShare?: boolean;
+    statusUrl?: string;
 }
 
 const props = defineProps<Props>();
@@ -269,10 +279,7 @@ const timestampsReady = ref(false);
 
 const formatDateTime = (value: string | null) => formatBrowserDateTime(value, timestampsReady.value);
 
-const isLargeScreen = computed(() => {
-    if (typeof window === 'undefined') return true;
-    return window.innerWidth >= 1280;
-});
+const isLargeScreen = useMediaQuery('(min-width: 1280px)');
 
 let statusInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -328,7 +335,7 @@ const goToNext = () => {
 const pollStatus = async () => {
     if (props.meeting.status === 'pending' || props.meeting.status === 'processing') {
         try {
-            const response = await fetch(`/meetings/${props.meeting.id}/status`);
+            const response = await fetch(props.statusUrl ?? `/meetings/${props.meeting.id}/status`);
             const data = await response.json();
             if (data.data.status !== props.meeting.status) {
                 window.location.reload();

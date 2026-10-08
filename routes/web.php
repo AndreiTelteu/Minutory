@@ -3,6 +3,7 @@
 use App\Http\Controllers\AIAgentController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\MeetingController;
+use App\Http\Controllers\MeetingShareController;
 use App\Http\Controllers\SearchController;
 use App\Models\Client;
 use App\Models\Meeting;
@@ -39,6 +40,11 @@ Route::get('/', function () {
 
 Route::resource('clients', ClientController::class);
 Route::resource('meetings', MeetingController::class);
+Route::post('meetings/{meeting}/shares', [MeetingShareController::class, 'store'])->name('meetings.shares.store');
+
+Route::get('share/{share:token}', [MeetingShareController::class, 'show'])->name('share.show');
+Route::get('share/{share:token}/video', [MeetingShareController::class, 'video'])->name('share.video');
+Route::get('share/{share:token}/status', [MeetingShareController::class, 'status'])->name('share.status');
 
 // API endpoint for real-time meeting status updates
 Route::get('meetings/{meeting}/status', [MeetingController::class, 'status'])->name('meetings.status');
