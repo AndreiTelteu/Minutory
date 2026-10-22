@@ -12,6 +12,13 @@
                     />
                     Auto-scroll
                 </label>
+                <button
+                    type="button"
+                    class="rounded border border-border-strong px-2 py-0.5 text-[12px] text-ink-secondary transition-colors hover:bg-ground-raised hover:text-ink"
+                    @click="copyAll"
+                >
+                    {{ copied ? 'Copied!' : 'Copy all' }}
+                </button>
                 <span class="tnum text-[12px] text-ink-tertiary">{{ transcriptions.length }} segments</span>
             </div>
         </div>
@@ -107,6 +114,26 @@ const autoScroll = ref(true);
 
 let programmaticScroll = false;
 let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
+
+const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+const copyAll = async () => {
+    const text = props.transcriptions.map((t) => `${t.speaker || 'Unknown Speaker'}: ${t.text ?? ''}`).join('\n');
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    }
+    copied.value = true;
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied.value = false), 2000);
+};
 
 const filteredTranscriptions = computed(() => {
     if (!searchQuery.value.trim()) {
